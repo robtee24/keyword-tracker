@@ -8,6 +8,8 @@ import SectionHeader from '../SectionHeader';
 import LineChart from '../LineChart';
 import RecommendationsPanel from './RecommendationsPanel';
 import type { Recommendation } from './RecommendationsPanel';
+import KeywordInsightsPanel from './KeywordInsightsPanel';
+import type { MonthlyPosition } from './KeywordInsightsPanel';
 
 interface GoogleSearchConsoleProps {
   dateRange: DateRange;
@@ -44,6 +46,8 @@ export default function GoogleSearchConsole({
   const [recommendations, setRecommendations] = useState<Map<string, Recommendation[]>>(new Map());
   const [loadingRecs, setLoadingRecs] = useState<Set<string>>(new Set());
   const [recsError, setRecsError] = useState<Map<string, string>>(new Map());
+  const [keywordHistory, setKeywordHistory] = useState<Map<string, MonthlyPosition[]>>(new Map());
+  const [loadingHistory, setLoadingHistory] = useState<Set<string>>(new Set());
 
   const itemsPerPage = 20;
 
@@ -175,6 +179,34 @@ export default function GoogleSearchConsole({
     setCurrentPage(1);
   };
 
+  const fetchKeywordHistory = async (keyword: string) => {
+    if (keywordHistory.has(keyword)) return;
+
+    setLoadingHistory((prev) => new Set(prev).add(keyword));
+    try {
+      const response = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.keywordHistory, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword, siteUrl }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setKeywordHistory((prev) => new Map(prev).set(keyword, result.monthly || []));
+      } else {
+        setKeywordHistory((prev) => new Map(prev).set(keyword, []));
+      }
+    } catch {
+      setKeywordHistory((prev) => new Map(prev).set(keyword, []));
+    } finally {
+      setLoadingHistory((prev) => {
+        const s = new Set(prev);
+        s.delete(keyword);
+        return s;
+      });
+    }
+  };
+
   const handleKeywordRowClick = async (keyword: string) => {
     if (expandedKeyword === keyword) {
       setExpandedKeyword(null);
@@ -182,43 +214,47 @@ export default function GoogleSearchConsole({
     }
     setExpandedKeyword(keyword);
 
-    if (keywordPages.has(keyword)) return;
+    // Fetch pages and history in parallel
+    if (!keywordPages.has(keyword)) {
+      setLoadingPages((prev) => new Set(prev).add(keyword));
+      try {
+        const startDate = format(dateRange.startDate, 'yyyy-MM-dd');
+        const endDate = format(dateRange.endDate, 'yyyy-MM-dd');
 
-    setLoadingPages((prev) => new Set(prev).add(keyword));
-    try {
-      const startDate = format(dateRange.startDate, 'yyyy-MM-dd');
-      const endDate = format(dateRange.endDate, 'yyyy-MM-dd');
+        const response = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.keywordPages, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keyword, startDate, endDate, siteUrl }),
+        });
 
-      const response = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.keywordPages, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword, startDate, endDate, siteUrl }),
-      });
+        if (response.ok) {
+          const result = await response.json();
+          const pages = (result.rows || [])
+            .map((row: any) => ({
+              page: row.keys?.[1] || '',
+              clicks: parseInt(row.clicks || '0', 10),
+              impressions: parseInt(row.impressions || '0', 10),
+              ctr: parseFloat(row.ctr || '0') * 100,
+            }))
+            .sort((a: any, b: any) => b.clicks - a.clicks);
 
-      if (response.ok) {
-        const result = await response.json();
-        const pages = (result.rows || [])
-          .map((row: any) => ({
-            page: row.keys?.[1] || '',
-            clicks: parseInt(row.clicks || '0', 10),
-            impressions: parseInt(row.impressions || '0', 10),
-            ctr: parseFloat(row.ctr || '0') * 100,
-          }))
-          .sort((a: any, b: any) => b.clicks - a.clicks);
-
-        setKeywordPages((prev) => new Map(prev).set(keyword, pages));
-      } else {
+          setKeywordPages((prev) => new Map(prev).set(keyword, pages));
+        } else {
+          setKeywordPages((prev) => new Map(prev).set(keyword, []));
+        }
+      } catch {
         setKeywordPages((prev) => new Map(prev).set(keyword, []));
+      } finally {
+        setLoadingPages((prev) => {
+          const s = new Set(prev);
+          s.delete(keyword);
+          return s;
+        });
       }
-    } catch {
-      setKeywordPages((prev) => new Map(prev).set(keyword, []));
-    } finally {
-      setLoadingPages((prev) => {
-        const s = new Set(prev);
-        s.delete(keyword);
-        return s;
-      });
     }
+
+    // Also fetch position history
+    fetchKeywordHistory(keyword);
   };
 
   const getSortIcon = (column: string) => {
@@ -520,6 +556,8 @@ export default function GoogleSearchConsole({
                       isLoadingRecs={loadingRecs.has(keyword.keyword)}
                       recsError={recsError.get(keyword.keyword) || null}
                       onScanRecommendations={() => handleScanRecommendations(keyword.keyword)}
+                      history={keywordHistory.get(keyword.keyword) || null}
+                      loadingHistory={loadingHistory.has(keyword.keyword)}
                     />
                   );
                 })
@@ -603,6 +641,8 @@ function KeywordRow({
   isLoadingRecs,
   recsError,
   onScanRecommendations,
+  history,
+  loadingHistory,
 }: {
   keyword: any;
   compareKeyword: any;
@@ -618,6 +658,8 @@ function KeywordRow({
   isLoadingRecs: boolean;
   recsError: string | null;
   onScanRecommendations: () => void;
+  history: MonthlyPosition[] | null;
+  loadingHistory: boolean;
 }) {
   return (
     <>
@@ -749,6 +791,21 @@ function KeywordRow({
             <tr className="bg-apple-fill-secondary">
               <td colSpan={compareDateRange ? 10 : 6} className="px-6 py-4 text-apple-sm text-apple-text-tertiary">
                 No page data available for this keyword
+              </td>
+            </tr>
+          )}
+
+          {/* Insights: position chart, trending, opportunity */}
+          {!isLoadingPages && (
+            <tr className="bg-apple-fill-secondary">
+              <td colSpan={compareDateRange ? 10 : 6} className="px-6 py-2">
+                <KeywordInsightsPanel
+                  keyword={keyword.keyword}
+                  currentPosition={keyword.position ?? null}
+                  history={history}
+                  loadingHistory={loadingHistory}
+                  recommendations={recommendations}
+                />
               </td>
             </tr>
           )}

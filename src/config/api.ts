@@ -29,6 +29,7 @@ export const API_ENDPOINTS = {
       keywordPages: `${API_BASE_URL}/api/google/search-console/keyword-pages`,
       sites: `${API_BASE_URL}/api/google/search-console/sites`,
       recommendations: `${API_BASE_URL}/api/google/search-console/recommendations`,
+      keywordHistory: `${API_BASE_URL}/api/google/search-console/keyword-history`,
     },
   },
 };
