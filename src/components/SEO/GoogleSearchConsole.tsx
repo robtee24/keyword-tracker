@@ -7,7 +7,7 @@ import { API_ENDPOINTS } from '../../config/api';
 import SectionHeader from '../SectionHeader';
 import LineChart from '../LineChart';
 import RecommendationsPanel from './RecommendationsPanel';
-import type { Recommendation } from './RecommendationsPanel';
+import type { ScanResult } from './RecommendationsPanel';
 import KeywordInsightsPanel from './KeywordInsightsPanel';
 import type { MonthlyPosition } from './KeywordInsightsPanel';
 
@@ -43,7 +43,7 @@ export default function GoogleSearchConsole({
     Map<string, Array<{ page: string; clicks: number; impressions: number; ctr: number }>>
   >(new Map());
   const [loadingPages, setLoadingPages] = useState<Set<string>>(new Set());
-  const [recommendations, setRecommendations] = useState<Map<string, Recommendation[]>>(new Map());
+  const [scanResults, setScanResults] = useState<Map<string, ScanResult>>(new Map());
   const [loadingRecs, setLoadingRecs] = useState<Set<string>>(new Set());
   const [recsError, setRecsError] = useState<Map<string, string>>(new Map());
   const [keywordHistory, setKeywordHistory] = useState<Map<string, MonthlyPosition[]>>(new Map());
@@ -275,7 +275,7 @@ export default function GoogleSearchConsole({
   };
 
   const handleScanRecommendations = async (keyword: string) => {
-    if (recommendations.has(keyword)) return; // Already scanned
+    if (scanResults.has(keyword)) return; // Already scanned
 
     const pages = keywordPages.get(keyword) || [];
     if (pages.length === 0) return;
@@ -299,8 +299,8 @@ export default function GoogleSearchConsole({
         throw new Error(err.error || `HTTP ${response.status}`);
       }
 
-      const data = await response.json();
-      setRecommendations((prev) => new Map(prev).set(keyword, data.recommendations || []));
+      const result: ScanResult = await response.json();
+      setScanResults((prev) => new Map(prev).set(keyword, result));
     } catch (err: any) {
       console.error('Failed to get recommendations:', err);
       setRecsError((prev) => new Map(prev).set(keyword, err.message || 'Failed to generate recommendations'));
@@ -552,12 +552,13 @@ export default function GoogleSearchConsole({
                       onToggleSelect={() => toggleKeyword(keyword.keyword)}
                       onRowClick={() => handleKeywordRowClick(keyword.keyword)}
                       getCompareColor={getCompareColor}
-                      recommendations={recommendations.get(keyword.keyword) || null}
+                      scanResult={scanResults.get(keyword.keyword) || null}
                       isLoadingRecs={loadingRecs.has(keyword.keyword)}
                       recsError={recsError.get(keyword.keyword) || null}
                       onScanRecommendations={() => handleScanRecommendations(keyword.keyword)}
                       history={keywordHistory.get(keyword.keyword) || null}
                       loadingHistory={loadingHistory.has(keyword.keyword)}
+                      siteUrl={siteUrl}
                     />
                   );
                 })
@@ -637,12 +638,13 @@ function KeywordRow({
   onToggleSelect,
   onRowClick,
   getCompareColor,
-  recommendations,
+  scanResult,
   isLoadingRecs,
   recsError,
   onScanRecommendations,
   history,
   loadingHistory,
+  siteUrl,
 }: {
   keyword: any;
   compareKeyword: any;
@@ -654,12 +656,13 @@ function KeywordRow({
   onToggleSelect: () => void;
   onRowClick: () => void;
   getCompareColor: (metric: string, current: number | null, compare: number | null) => string;
-  recommendations: Recommendation[] | null;
+  scanResult: ScanResult | null;
   isLoadingRecs: boolean;
   recsError: string | null;
   onScanRecommendations: () => void;
   history: MonthlyPosition[] | null;
   loadingHistory: boolean;
+  siteUrl: string;
 }) {
   return (
     <>
@@ -739,140 +742,186 @@ function KeywordRow({
       </tr>
 
       {/* Expanded keyword details */}
-      {isExpanded && (
-        <>
-          {/* 1. Insights: trending, opportunity score, position chart */}
-          <tr className="bg-apple-fill-secondary">
-            <td colSpan={compareDateRange ? 10 : 6} className="px-6 py-2">
-              <KeywordInsightsPanel
-                keyword={keyword.keyword}
-                currentPosition={keyword.position ?? null}
-                history={history}
-                loadingHistory={loadingHistory}
-                recommendations={recommendations}
-              />
-            </td>
-          </tr>
+      {isExpanded && (() => {
+        const colSpan = compareDateRange ? 10 : 6;
+        const topPage = pages.length > 0 ? pages[0] : null;
+        const additionalPages = pages.length > 1 ? pages.slice(1) : [];
 
-          {/* 2. Recommendations section */}
-          <tr className="bg-apple-fill-secondary">
-            <td colSpan={compareDateRange ? 10 : 6} className="px-6 py-3">
-              {/* Scan button or results */}
-              {!recommendations && !isLoadingRecs && !recsError && pages.length > 0 && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onScanRecommendations();
-                  }}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-apple-pill bg-apple-blue text-white text-apple-sm font-normal transition-all duration-200 hover:bg-apple-blue-hover active:opacity-80"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                  </svg>
-                  Scan for Recommendations
-                </button>
-              )}
+        return (
+          <>
+            {/* 1. Insights: trending, opportunity score, position chart */}
+            <tr className="bg-apple-fill-secondary">
+              <td colSpan={colSpan} className="px-6 py-2">
+                <KeywordInsightsPanel
+                  keyword={keyword.keyword}
+                  currentPosition={keyword.position ?? null}
+                  history={history}
+                  loadingHistory={loadingHistory}
+                  checklist={scanResult?.checklist || null}
+                />
+              </td>
+            </tr>
 
-              {/* Loading state */}
-              {isLoadingRecs && (
-                <div className="flex items-center gap-3 py-2">
-                  <div className="w-5 h-5 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
-                  <div>
-                    <span className="text-apple-sm font-medium text-apple-text">Analyzing pages...</span>
-                    <span className="text-apple-xs text-apple-text-tertiary ml-2">Crawling content and generating SEO recommendations</span>
+            {/* 2. Top Ranking Page */}
+            <tr className="bg-apple-fill-secondary">
+              <td colSpan={colSpan} className="px-6 py-3">
+                {isLoadingPages ? (
+                  <div className="flex items-center gap-2 text-apple-sm text-apple-text-tertiary">
+                    <div className="w-4 h-4 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
+                    Loading pages...
                   </div>
-                </div>
-              )}
+                ) : topPage ? (
+                  <div className="rounded-apple-sm border border-apple-divider bg-white p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <svg className="w-4 h-4 text-apple-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                      </svg>
+                      <span className="text-apple-xs font-semibold text-apple-text-secondary uppercase tracking-wider">
+                        Top Ranking Page
+                      </span>
+                    </div>
+                    <a
+                      href={topPage.page}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-apple-sm text-apple-blue hover:underline break-all font-medium"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {topPage.page}
+                    </a>
+                    <div className="flex gap-6 mt-2">
+                      <div>
+                        <span className="text-apple-xs text-apple-text-tertiary">Clicks</span>
+                        <div className="text-apple-sm font-semibold text-apple-text">{topPage.clicks.toLocaleString()}</div>
+                      </div>
+                      <div>
+                        <span className="text-apple-xs text-apple-text-tertiary">Impressions</span>
+                        <div className="text-apple-sm font-semibold text-apple-text">{topPage.impressions.toLocaleString()}</div>
+                      </div>
+                      <div>
+                        <span className="text-apple-xs text-apple-text-tertiary">CTR</span>
+                        <div className="text-apple-sm font-semibold text-apple-text">{topPage.ctr.toFixed(2)}%</div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-apple-sm text-apple-text-tertiary">
+                    No page data available for this keyword
+                  </div>
+                )}
+              </td>
+            </tr>
 
-              {/* Error state */}
-              {recsError && (
-                <div className="flex items-center gap-3 py-2">
-                  <span className="text-apple-sm text-apple-red">{recsError}</span>
+            {/* 3. Scan button / loading / error / results */}
+            <tr className="bg-apple-fill-secondary">
+              <td colSpan={colSpan} className="px-6 py-3">
+                {/* Scan button */}
+                {!scanResult && !isLoadingRecs && !recsError && pages.length > 0 && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       onScanRecommendations();
                     }}
-                    className="text-apple-sm text-apple-blue hover:underline"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-apple-pill bg-apple-blue text-white text-apple-sm font-medium transition-all duration-200 hover:bg-apple-blue-hover active:opacity-80 shadow-sm"
                   >
-                    Retry
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    Scan for Recommendations
                   </button>
-                </div>
-              )}
+                )}
 
-              {/* Results */}
-              {recommendations && (
-                <RecommendationsPanel recommendations={recommendations} keyword={keyword.keyword} />
-              )}
-            </td>
-          </tr>
+                {/* Loading */}
+                {isLoadingRecs && (
+                  <div className="flex items-center gap-3 py-2">
+                    <div className="w-5 h-5 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
+                    <div>
+                      <span className="text-apple-sm font-medium text-apple-text">Analyzing pages...</span>
+                      <span className="text-apple-xs text-apple-text-tertiary ml-2">
+                        Crawling content, grading SEO elements, and generating your action plan
+                      </span>
+                    </div>
+                  </div>
+                )}
 
-          {/* 3. Pages list */}
-          {isLoadingPages ? (
-            <tr className="bg-apple-fill-secondary">
-              <td colSpan={compareDateRange ? 10 : 6} className="px-6 py-4">
-                <div className="flex items-center gap-2 text-apple-sm text-apple-text-tertiary">
-                  <div className="w-4 h-4 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
-                  Loading pages...
-                </div>
-              </td>
-            </tr>
-          ) : pages.length > 0 ? (
-            <>
-              {/* Pages sub-header */}
-              <tr className="bg-apple-fill-secondary border-b border-apple-divider">
-                <td colSpan={compareDateRange ? 10 : 6} className="px-6 pt-4 pb-2">
-                  <span className="text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider">
-                    Ranking Pages ({pages.length})
-                  </span>
-                </td>
-              </tr>
-              {pages.map((page, pageIndex) => (
-                <tr key={`page-${pageIndex}`} className="bg-apple-fill-secondary border-b border-apple-divider">
-                  <td className="px-6 py-3" />
-                  <td className="px-6 py-3 text-apple-sm text-apple-text">
-                    <a
-                      href={page.page}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-apple-blue hover:underline"
-                      onClick={(e) => e.stopPropagation()}
-                      title={page.page}
+                {/* Error */}
+                {recsError && (
+                  <div className="flex items-center gap-3 py-2">
+                    <span className="text-apple-sm text-apple-red">{recsError}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onScanRecommendations();
+                      }}
+                      className="text-apple-sm text-apple-blue hover:underline"
                     >
-                      {page.page}
-                    </a>
-                  </td>
-                  {compareDateRange ? (
-                    <>
-                      <td className="px-6 py-3" />
-                      <td className="px-6 py-3" />
-                      <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.impressions.toLocaleString()}</td>
-                      <td className="px-6 py-3" />
-                      <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.clicks.toLocaleString()}</td>
-                      <td className="px-6 py-3" />
-                      <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.ctr.toFixed(2)}%</td>
-                      <td className="px-6 py-3" />
-                    </>
-                  ) : (
-                    <>
-                      <td className="px-6 py-3" />
-                      <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.impressions.toLocaleString()}</td>
-                      <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.clicks.toLocaleString()}</td>
-                      <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.ctr.toFixed(2)}%</td>
-                    </>
-                  )}
-                </tr>
-              ))}
-            </>
-          ) : !isLoadingPages ? (
-            <tr className="bg-apple-fill-secondary">
-              <td colSpan={compareDateRange ? 10 : 6} className="px-6 py-4 text-apple-sm text-apple-text-tertiary">
-                No page data available for this keyword
+                      Retry
+                    </button>
+                  </div>
+                )}
+
+                {/* Results: strategy + audit + checklist */}
+                {scanResult && (
+                  <RecommendationsPanel
+                    scanResult={scanResult}
+                    keyword={keyword.keyword}
+                    siteUrl={siteUrl}
+                  />
+                )}
               </td>
             </tr>
-          ) : null}
-        </>
-      )}
+
+            {/* 4. Additional Pages */}
+            {!isLoadingPages && additionalPages.length > 0 && (
+              <>
+                <tr className="bg-apple-fill-secondary border-b border-apple-divider">
+                  <td colSpan={colSpan} className="px-6 pt-4 pb-2">
+                    <span className="text-apple-xs font-semibold text-apple-text-secondary uppercase tracking-wider">
+                      Additional Pages Ranking For "{keyword.keyword}" ({additionalPages.length})
+                    </span>
+                  </td>
+                </tr>
+                {additionalPages.map((page, pageIndex) => (
+                  <tr key={`page-${pageIndex}`} className="bg-apple-fill-secondary border-b border-apple-divider">
+                    <td className="px-6 py-3" />
+                    <td className="px-6 py-3 text-apple-sm text-apple-text">
+                      <a
+                        href={page.page}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-apple-blue hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                        title={page.page}
+                      >
+                        {page.page}
+                      </a>
+                    </td>
+                    {compareDateRange ? (
+                      <>
+                        <td className="px-6 py-3" />
+                        <td className="px-6 py-3" />
+                        <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.impressions.toLocaleString()}</td>
+                        <td className="px-6 py-3" />
+                        <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.clicks.toLocaleString()}</td>
+                        <td className="px-6 py-3" />
+                        <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.ctr.toFixed(2)}%</td>
+                        <td className="px-6 py-3" />
+                      </>
+                    ) : (
+                      <>
+                        <td className="px-6 py-3" />
+                        <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.impressions.toLocaleString()}</td>
+                        <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.clicks.toLocaleString()}</td>
+                        <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.ctr.toFixed(2)}%</td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </>
+            )}
+          </>
+        );
+      })()}
     </>
   );
 }

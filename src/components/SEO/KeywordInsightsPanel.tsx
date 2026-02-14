@@ -8,7 +8,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
-import type { Recommendation } from './RecommendationsPanel';
+import type { ChecklistItem } from './RecommendationsPanel';
 
 export interface MonthlyPosition {
   month: string; // YYYY-MM
@@ -22,7 +22,7 @@ interface KeywordInsightsPanelProps {
   currentPosition: number | null;
   history: MonthlyPosition[] | null;
   loadingHistory: boolean;
-  recommendations: Recommendation[] | null;
+  checklist: ChecklistItem[] | null;
 }
 
 export default function KeywordInsightsPanel({
@@ -30,12 +30,12 @@ export default function KeywordInsightsPanel({
   currentPosition,
   history,
   loadingHistory,
-  recommendations,
+  checklist,
 }: KeywordInsightsPanelProps) {
   // Calculate trending from history
   const trending = calculateTrending(history);
   // Calculate opportunity score
-  const opportunityScore = calculateOpportunityScore(currentPosition, recommendations);
+  const opportunityScore = calculateOpportunityScore(currentPosition, checklist);
 
   return (
     <div className="mt-4 mb-2 space-y-4">
@@ -247,9 +247,9 @@ function calculateTrending(history: MonthlyPosition[] | null): TrendResult | nul
 
 function calculateOpportunityScore(
   currentPosition: number | null,
-  recommendations: Recommendation[] | null
+  checklist: ChecklistItem[] | null
 ): number | null {
-  if (!recommendations) return null;
+  if (!checklist) return null;
 
   // Base score from current position (further from #1 = more room to improve)
   let score = 0;
@@ -264,9 +264,9 @@ function calculateOpportunityScore(
     score += 40; // Unknown position
   }
 
-  // Boost from high-priority recommendations
-  const highCount = recommendations.filter((r) => r.priority === 'high').length;
-  const medCount = recommendations.filter((r) => r.priority === 'medium').length;
+  // Boost from high-priority checklist items
+  const highCount = checklist.filter((r) => r.priority === 'high').length;
+  const medCount = checklist.filter((r) => r.priority === 'medium').length;
 
   score += Math.min(highCount * 8, 20);   // Up to +20 from high priority recs
   score += Math.min(medCount * 3, 10);    // Up to +10 from medium priority recs
