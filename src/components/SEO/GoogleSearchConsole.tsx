@@ -291,7 +291,7 @@ export default function GoogleSearchConsole({
               page: row.keys?.[1] || '',
               clicks: parseInt(row.clicks || '0', 10),
               impressions: parseInt(row.impressions || '0', 10),
-              ctr: parseFloat(row.ctr || '0') * 100,
+              ctr: (() => { const raw = parseFloat(row.ctr || '0'); return raw > 1 ? raw : raw * 100; })(),
             }))
             .sort((a: any, b: any) => b.clicks - a.clicks);
 
