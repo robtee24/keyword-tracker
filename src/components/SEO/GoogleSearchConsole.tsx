@@ -6,6 +6,8 @@ import { authenticatedFetch } from '../../services/authService';
 import { API_ENDPOINTS } from '../../config/api';
 import SectionHeader from '../SectionHeader';
 import LineChart from '../LineChart';
+import RecommendationsPanel from './RecommendationsPanel';
+import type { Recommendation } from './RecommendationsPanel';
 
 interface GoogleSearchConsoleProps {
   dateRange: DateRange;
@@ -39,6 +41,9 @@ export default function GoogleSearchConsole({
     Map<string, Array<{ page: string; clicks: number; impressions: number; ctr: number }>>
   >(new Map());
   const [loadingPages, setLoadingPages] = useState<Set<string>>(new Set());
+  const [recommendations, setRecommendations] = useState<Map<string, Recommendation[]>>(new Map());
+  const [loadingRecs, setLoadingRecs] = useState<Set<string>>(new Set());
+  const [recsError, setRecsError] = useState<Map<string, string>>(new Map());
 
   const itemsPerPage = 20;
 
@@ -231,6 +236,41 @@ export default function GoogleSearchConsole({
         {sortDirection === 'asc' ? '↑' : '↓'}
       </span>
     );
+  };
+
+  const handleScanRecommendations = async (keyword: string) => {
+    if (recommendations.has(keyword)) return; // Already scanned
+
+    const pages = keywordPages.get(keyword) || [];
+    if (pages.length === 0) return;
+
+    setLoadingRecs((prev) => new Set(prev).add(keyword));
+    setRecsError((prev) => { const m = new Map(prev); m.delete(keyword); return m; });
+
+    try {
+      const response = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.recommendations, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keyword,
+          pages: pages.map((p) => ({ url: p.page, clicks: p.clicks, impressions: p.impressions })),
+          siteUrl,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      setRecommendations((prev) => new Map(prev).set(keyword, data.recommendations || []));
+    } catch (err: any) {
+      console.error('Failed to get recommendations:', err);
+      setRecsError((prev) => new Map(prev).set(keyword, err.message || 'Failed to generate recommendations'));
+    } finally {
+      setLoadingRecs((prev) => { const s = new Set(prev); s.delete(keyword); return s; });
+    }
   };
 
   const getCompareColor = (metric: string, current: number | null, compare: number | null): string => {
@@ -476,6 +516,10 @@ export default function GoogleSearchConsole({
                       onToggleSelect={() => toggleKeyword(keyword.keyword)}
                       onRowClick={() => handleKeywordRowClick(keyword.keyword)}
                       getCompareColor={getCompareColor}
+                      recommendations={recommendations.get(keyword.keyword) || null}
+                      isLoadingRecs={loadingRecs.has(keyword.keyword)}
+                      recsError={recsError.get(keyword.keyword) || null}
+                      onScanRecommendations={() => handleScanRecommendations(keyword.keyword)}
                     />
                   );
                 })
@@ -555,6 +599,10 @@ function KeywordRow({
   onToggleSelect,
   onRowClick,
   getCompareColor,
+  recommendations,
+  isLoadingRecs,
+  recsError,
+  onScanRecommendations,
 }: {
   keyword: any;
   compareKeyword: any;
@@ -566,6 +614,10 @@ function KeywordRow({
   onToggleSelect: () => void;
   onRowClick: () => void;
   getCompareColor: (metric: string, current: number | null, compare: number | null) => string;
+  recommendations: Recommendation[] | null;
+  isLoadingRecs: boolean;
+  recsError: string | null;
+  onScanRecommendations: () => void;
 }) {
   return (
     <>
@@ -697,6 +749,61 @@ function KeywordRow({
             <tr className="bg-apple-fill-secondary">
               <td colSpan={compareDateRange ? 10 : 6} className="px-6 py-4 text-apple-sm text-apple-text-tertiary">
                 No page data available for this keyword
+              </td>
+            </tr>
+          )}
+
+          {/* Recommendations section */}
+          {!isLoadingPages && (
+            <tr className="bg-apple-fill-secondary">
+              <td colSpan={compareDateRange ? 10 : 6} className="px-6 py-3">
+                {/* Scan button or results */}
+                {!recommendations && !isLoadingRecs && !recsError && pages.length > 0 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onScanRecommendations();
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-apple-pill bg-apple-blue text-white text-apple-sm font-normal transition-all duration-200 hover:bg-apple-blue-hover active:opacity-80"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    Scan for Recommendations
+                  </button>
+                )}
+
+                {/* Loading state */}
+                {isLoadingRecs && (
+                  <div className="flex items-center gap-3 py-2">
+                    <div className="w-5 h-5 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
+                    <div>
+                      <span className="text-apple-sm font-medium text-apple-text">Analyzing pages...</span>
+                      <span className="text-apple-xs text-apple-text-tertiary ml-2">Crawling content and generating SEO recommendations</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Error state */}
+                {recsError && (
+                  <div className="flex items-center gap-3 py-2">
+                    <span className="text-apple-sm text-apple-red">{recsError}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onScanRecommendations();
+                      }}
+                      className="text-apple-sm text-apple-blue hover:underline"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+
+                {/* Results */}
+                {recommendations && (
+                  <RecommendationsPanel recommendations={recommendations} keyword={keyword.keyword} />
+                )}
               </td>
             </tr>
           )}

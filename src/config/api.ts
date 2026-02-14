@@ -28,6 +28,7 @@ export const API_ENDPOINTS = {
       daily: `${API_BASE_URL}/api/google/search-console/daily`,
       keywordPages: `${API_BASE_URL}/api/google/search-console/keyword-pages`,
       sites: `${API_BASE_URL}/api/google/search-console/sites`,
+      recommendations: `${API_BASE_URL}/api/google/search-console/recommendations`,
     },
   },
 };
