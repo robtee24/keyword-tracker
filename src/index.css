@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+      'Helvetica Neue', Helvetica, Arial, sans-serif;
+    background-color: #F5F5F7;
+    color: #1D1D1F;
+    font-size: 15px;
+    line-height: 1.47;
+    letter-spacing: -0.009em;
+  }
+
+  /* Apple-style input focus rings */
+  input:focus,
+  select:focus,
+  textarea:focus {
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.3);
+  }
+
+  /* Apple-style scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #D2D2D7;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #86868B;
+  }
+}
+
+@layer components {
+  /* Primary pill button (Apple style) */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-apple-blue text-white font-normal
+           px-5 py-2.5 rounded-apple-pill
+           transition-all duration-200
+           hover:bg-apple-blue-hover
+           active:opacity-80
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  /* Secondary text button */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2
+           text-apple-blue font-normal
+           px-5 py-2.5 rounded-apple-pill
+           transition-all duration-200
+           hover:bg-blue-50
+           active:opacity-80;
+  }
+
+  /* Destructive button */
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2
+           text-apple-red font-normal
+           px-5 py-2.5 rounded-apple-pill
+           transition-all duration-200
+           hover:bg-red-50
+           active:opacity-80;
+  }
+
+  /* Apple-style card */
+  .card {
+    @apply bg-white rounded-apple shadow-apple;
+  }
+
+  /* Apple-style input */
+  .input {
+    @apply px-3 py-2 rounded-apple-sm
+           border border-apple-border
+           bg-white text-apple-text
+           text-apple-base
+           transition-all duration-200
+           placeholder:text-apple-text-tertiary;
+  }
+}
