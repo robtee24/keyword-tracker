@@ -23,6 +23,7 @@ interface KeywordInsightsPanelProps {
   history: MonthlyPosition[] | null;
   loadingHistory: boolean;
   checklist: ChecklistItem[] | null;
+  searchVolume: number | null;
 }
 
 export default function KeywordInsightsPanel({
@@ -31,11 +32,12 @@ export default function KeywordInsightsPanel({
   history,
   loadingHistory,
   checklist,
+  searchVolume,
 }: KeywordInsightsPanelProps) {
   // Calculate trending from history
   const trending = calculateTrending(history);
-  // Calculate opportunity score
-  const opportunityScore = calculateOpportunityScore(currentPosition, checklist);
+  // Calculate opportunity score (now factors in search volume)
+  const opportunityScore = calculateOpportunityScore(currentPosition, checklist, searchVolume);
 
   return (
     <div className="mt-4 mb-2 space-y-4">
@@ -108,6 +110,11 @@ export default function KeywordInsightsPanel({
               </div>
               <p className="text-apple-xs text-apple-text-tertiary mt-1">
                 {opportunityScore !== null ? getScoreLabel(opportunityScore) : 'Scan for recommendations to calculate'}
+                {searchVolume !== null && searchVolume > 0 && opportunityScore !== null && (
+                  <span className="block text-apple-xs text-apple-text-tertiary mt-0.5">
+                    Volume factor: {searchVolume.toLocaleString()} monthly searches
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -247,7 +254,8 @@ function calculateTrending(history: MonthlyPosition[] | null): TrendResult | nul
 
 function calculateOpportunityScore(
   currentPosition: number | null,
-  checklist: ChecklistItem[] | null
+  checklist: ChecklistItem[] | null,
+  searchVolume: number | null
 ): number | null {
   if (!checklist) return null;
 
@@ -255,21 +263,30 @@ function calculateOpportunityScore(
   let score = 0;
 
   if (currentPosition !== null && currentPosition > 0) {
-    if (currentPosition <= 3) score += 10;        // Already near top, limited room
-    else if (currentPosition <= 10) score += 30;   // Page 1, good potential
-    else if (currentPosition <= 20) score += 50;   // Page 2, significant opportunity
-    else if (currentPosition <= 50) score += 65;   // Pages 3-5, lots of room
-    else score += 75;                              // Deep positions, max opportunity
+    if (currentPosition <= 3) score += 8;          // Already near top, limited room
+    else if (currentPosition <= 10) score += 25;    // Page 1, good potential
+    else if (currentPosition <= 20) score += 40;    // Page 2, significant opportunity
+    else if (currentPosition <= 50) score += 55;    // Pages 3-5, lots of room
+    else score += 65;                               // Deep positions, max opportunity
   } else {
-    score += 40; // Unknown position
+    score += 35; // Unknown position
   }
 
-  // Boost from high-priority checklist items
+  // Boost from high-priority checklist items (up to +20)
   const highCount = checklist.filter((r) => r.priority === 'high').length;
   const medCount = checklist.filter((r) => r.priority === 'medium').length;
+  score += Math.min(highCount * 6, 15);
+  score += Math.min(medCount * 3, 5);
 
-  score += Math.min(highCount * 8, 20);   // Up to +20 from high priority recs
-  score += Math.min(medCount * 3, 10);    // Up to +10 from medium priority recs
+  // Boost from search volume — higher volume = more opportunity (up to +20)
+  if (searchVolume !== null && searchVolume > 0) {
+    if (searchVolume >= 10000) score += 20;
+    else if (searchVolume >= 5000) score += 16;
+    else if (searchVolume >= 1000) score += 12;
+    else if (searchVolume >= 500) score += 8;
+    else if (searchVolume >= 100) score += 5;
+    else score += 2;
+  }
 
   return Math.min(100, Math.max(0, Math.round(score)));
 }

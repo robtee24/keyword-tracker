@@ -53,6 +53,7 @@ export default function GoogleSearchConsole({
     competition: string | null;
     competitionIndex: number | null;
   }>>(new Map());
+  const [intentFilter, setIntentFilter] = useState<KeywordIntent | ''>('');
 
   const itemsPerPage = 20;
 
@@ -154,6 +155,13 @@ export default function GoogleSearchConsole({
     );
   }
 
+  // Intent filter
+  if (intentFilter) {
+    filteredKeywords = filteredKeywords.filter(
+      (keyword: any) => classifyKeywordIntent(keyword.keyword) === intentFilter
+    );
+  }
+
   // Compare keywords map
   const compareKeywordsMap = new Map();
   if (data.compare?.keywords && Array.isArray(data.compare.keywords)) {
@@ -165,11 +173,23 @@ export default function GoogleSearchConsole({
   // Sort
   if (sortColumn) {
     filteredKeywords = [...filteredKeywords].sort((a: any, b: any) => {
-      let aVal: any = a[sortColumn];
-      let bVal: any = b[sortColumn];
-      if (sortColumn === 'keyword') {
-        aVal = aVal.toLowerCase();
-        bVal = bVal.toLowerCase();
+      let aVal: any;
+      let bVal: any;
+
+      if (sortColumn === 'volume') {
+        aVal = searchVolumes.get(a.keyword)?.avgMonthlySearches ?? -1;
+        bVal = searchVolumes.get(b.keyword)?.avgMonthlySearches ?? -1;
+      } else if (sortColumn === 'intent') {
+        aVal = classifyKeywordIntent(a.keyword);
+        bVal = classifyKeywordIntent(b.keyword);
+      } else {
+        aVal = a[sortColumn];
+        bVal = b[sortColumn];
+      }
+
+      if (sortColumn === 'keyword' || sortColumn === 'intent') {
+        aVal = String(aVal).toLowerCase();
+        bVal = String(bVal).toLowerCase();
       }
       if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
       if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
@@ -200,6 +220,7 @@ export default function GoogleSearchConsole({
     setSearchTerm('');
     setSelectedKeywords(new Set());
     setAppliedFilter(new Set());
+    setIntentFilter('');
     setCurrentPage(1);
     setSortColumn(null);
     setSortDirection('asc');
@@ -469,17 +490,30 @@ export default function GoogleSearchConsole({
               }}
               className="input flex-1"
             />
+            <select
+              value={intentFilter}
+              onChange={(e) => {
+                setIntentFilter(e.target.value as KeywordIntent | '');
+                setCurrentPage(1);
+              }}
+              className="px-3 py-2 text-apple-sm rounded-apple-sm border border-apple-border bg-white text-apple-text-secondary focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue transition-all duration-200"
+            >
+              <option value="">All Intents</option>
+              {ALL_INTENTS.map((intent) => (
+                <option key={intent} value={intent}>{intent}</option>
+              ))}
+            </select>
             {selectedKeywords.size > 0 && appliedFilter.size === 0 && (
               <button onClick={applyFilter} className="btn-primary text-apple-sm">
                 Apply Filter ({selectedKeywords.size})
               </button>
             )}
-            {appliedFilter.size > 0 && (
+            {(appliedFilter.size > 0 || intentFilter) && (
               <button onClick={clearFilter} className="btn-danger text-apple-sm">
-                Clear Filter
+                Clear Filters
               </button>
             )}
-            {searchTerm && appliedFilter.size === 0 && (
+            {searchTerm && appliedFilter.size === 0 && !intentFilter && (
               <button
                 onClick={() => {
                   setSearchTerm('');
@@ -523,10 +557,18 @@ export default function GoogleSearchConsole({
                   Keyword {getSortIcon('keyword')}
                 </th>
                 <th
-                  className="px-6 py-3 text-left text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider"
+                  className="px-6 py-3 text-left text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider cursor-pointer hover:text-apple-text transition-colors"
                   rowSpan={compareDateRange ? 2 : 1}
+                  onClick={() => handleSort('intent')}
                 >
-                  Volume
+                  Intent {getSortIcon('intent')}
+                </th>
+                <th
+                  className="px-6 py-3 text-left text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider cursor-pointer hover:text-apple-text transition-colors"
+                  rowSpan={compareDateRange ? 2 : 1}
+                  onClick={() => handleSort('volume')}
+                >
+                  Volume {getSortIcon('volume')}
                 </th>
                 {compareDateRange ? (
                   <>
@@ -607,7 +649,7 @@ export default function GoogleSearchConsole({
                 })
               ) : (
                 <tr>
-                  <td colSpan={compareDateRange ? 11 : 7} className="px-6 py-12 text-center text-apple-text-tertiary text-apple-base">
+                  <td colSpan={compareDateRange ? 12 : 8} className="px-6 py-12 text-center text-apple-text-tertiary text-apple-base">
                     No keywords found
                   </td>
                 </tr>
@@ -675,6 +717,65 @@ function formatVolume(vol: number): string {
   if (vol >= 1_000) return `${(vol / 1_000).toFixed(vol >= 10_000 ? 0 : 1)}K`;
   return vol.toLocaleString();
 }
+
+/* ------------------------------------------------------------------ */
+/*  Keyword Intent Classification                                      */
+/* ------------------------------------------------------------------ */
+
+export type KeywordIntent = 'Transactional' | 'Product' | 'Educational' | 'Navigational' | 'Local';
+
+const INTENT_PATTERNS: { intent: KeywordIntent; patterns: RegExp[] }[] = [
+  {
+    intent: 'Transactional',
+    patterns: [
+      /\b(buy|purchase|order|deal|deals|discount|coupon|price|pricing|cheap|cost|hire|book|subscribe|shop|for sale|free trial|sign up|signup|get started|quote|estimate|affordable)\b/i,
+    ],
+  },
+  {
+    intent: 'Product',
+    patterns: [
+      /\b(best|top|review|reviews|compare|comparison|vs|versus|alternative|alternatives|recommended|pros and cons|specs|features|rating|ratings|benchmark)\b/i,
+    ],
+  },
+  {
+    intent: 'Local',
+    patterns: [
+      /\b(near me|nearby|in my area|local|directions|hours|open now|closest)\b/i,
+      /\bin\s+[A-Z][a-z]+/,  // "in Miami", "in Chicago" etc.
+    ],
+  },
+  {
+    intent: 'Navigational',
+    patterns: [
+      /\b(login|log in|sign in|signin|website|official|app|download|contact|support|dashboard|portal|account)\b/i,
+    ],
+  },
+  {
+    intent: 'Educational',
+    patterns: [
+      /\b(how|what|why|when|where|who|which|guide|tutorial|tips|learn|example|examples|definition|meaning|explained|is|are|can you|does|do|should|ways to|steps|beginner|basics)\b/i,
+    ],
+  },
+];
+
+function classifyKeywordIntent(keyword: string): KeywordIntent {
+  for (const { intent, patterns } of INTENT_PATTERNS) {
+    for (const pattern of patterns) {
+      if (pattern.test(keyword)) return intent;
+    }
+  }
+  return 'Educational'; // Default — most long-tail keywords are informational
+}
+
+const INTENT_COLORS: Record<KeywordIntent, { bg: string; text: string }> = {
+  Transactional: { bg: 'bg-green-50', text: 'text-green-700' },
+  Product: { bg: 'bg-purple-50', text: 'text-purple-700' },
+  Educational: { bg: 'bg-blue-50', text: 'text-blue-700' },
+  Navigational: { bg: 'bg-orange-50', text: 'text-orange-700' },
+  Local: { bg: 'bg-rose-50', text: 'text-rose-700' },
+};
+
+const ALL_INTENTS: KeywordIntent[] = ['Transactional', 'Product', 'Educational', 'Navigational', 'Local'];
 
 /* ------------------------------------------------------------------ */
 /*  KeywordRow sub-component (keeps main component cleaner)           */
@@ -751,6 +852,17 @@ function KeywordRow({
             </svg>
           </div>
         </td>
+        <td className="px-6 py-3.5">
+          {(() => {
+            const intent = classifyKeywordIntent(keyword.keyword);
+            const colors = INTENT_COLORS[intent];
+            return (
+              <span className={`inline-block px-2 py-0.5 rounded-apple-pill text-apple-xs font-medium ${colors.bg} ${colors.text}`}>
+                {intent}
+              </span>
+            );
+          })()}
+        </td>
         <td className="px-6 py-3.5 text-apple-sm text-apple-text-secondary">
           {volume?.avgMonthlySearches != null ? (
             <span title={`Competition: ${volume.competition || '—'} (${volume.competitionIndex ?? '—'}/100)`}>
@@ -807,7 +919,7 @@ function KeywordRow({
 
       {/* Expanded keyword details */}
       {isExpanded && (() => {
-        const colSpan = compareDateRange ? 11 : 7;
+        const colSpan = compareDateRange ? 12 : 8;
         const topPage = pages.length > 0 ? pages[0] : null;
         const additionalPages = pages.length > 1 ? pages.slice(1) : [];
 
@@ -822,6 +934,7 @@ function KeywordRow({
                   history={history}
                   loadingHistory={loadingHistory}
                   checklist={scanResult?.checklist || null}
+                  searchVolume={volume?.avgMonthlySearches ?? null}
                 />
               </td>
             </tr>
@@ -960,6 +1073,7 @@ function KeywordRow({
                         {page.page}
                       </a>
                     </td>
+                    <td className="px-6 py-3" />
                     <td className="px-6 py-3" />
                     {compareDateRange ? (
                       <>
