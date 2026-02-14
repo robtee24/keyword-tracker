@@ -48,6 +48,11 @@ export default function GoogleSearchConsole({
   const [recsError, setRecsError] = useState<Map<string, string>>(new Map());
   const [keywordHistory, setKeywordHistory] = useState<Map<string, MonthlyPosition[]>>(new Map());
   const [loadingHistory, setLoadingHistory] = useState<Set<string>>(new Set());
+  const [searchVolumes, setSearchVolumes] = useState<Map<string, {
+    avgMonthlySearches: number | null;
+    competition: string | null;
+    competitionIndex: number | null;
+  }>>(new Map());
 
   const itemsPerPage = 20;
 
@@ -77,6 +82,37 @@ export default function GoogleSearchConsole({
     };
     loadData();
   }, [loadTrigger, dateRange, compareDateRange, siteUrl]);
+
+  // Fetch search volumes after keyword data loads
+  useEffect(() => {
+    if (!data?.current?.keywords?.length) return;
+
+    const keywords = data.current.keywords.map((kw: any) => kw.keyword);
+    if (keywords.length === 0) return;
+
+    const fetchVolumes = async () => {
+      try {
+        const response = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keywords }),
+        });
+        if (response.ok) {
+          const result = await response.json();
+          if (result.volumes && Object.keys(result.volumes).length > 0) {
+            const volumeMap = new Map<string, any>();
+            for (const [kw, vol] of Object.entries(result.volumes)) {
+              volumeMap.set(kw, vol as any);
+            }
+            setSearchVolumes(volumeMap);
+          }
+        }
+      } catch {
+        // Silently fail — search volume is optional
+      }
+    };
+    fetchVolumes();
+  }, [data]);
 
   if (loading) {
     return (
@@ -486,6 +522,12 @@ export default function GoogleSearchConsole({
                 >
                   Keyword {getSortIcon('keyword')}
                 </th>
+                <th
+                  className="px-6 py-3 text-left text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider"
+                  rowSpan={compareDateRange ? 2 : 1}
+                >
+                  Volume
+                </th>
                 {compareDateRange ? (
                   <>
                     <th colSpan={2} className="px-6 py-3 text-center text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider cursor-pointer hover:text-apple-text transition-colors" onClick={() => handleSort('position')}>
@@ -559,12 +601,13 @@ export default function GoogleSearchConsole({
                       history={keywordHistory.get(keyword.keyword) || null}
                       loadingHistory={loadingHistory.has(keyword.keyword)}
                       siteUrl={siteUrl}
+                      volume={searchVolumes.get(keyword.keyword) || null}
                     />
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={compareDateRange ? 10 : 6} className="px-6 py-12 text-center text-apple-text-tertiary text-apple-base">
+                  <td colSpan={compareDateRange ? 11 : 7} className="px-6 py-12 text-center text-apple-text-tertiary text-apple-base">
                     No keywords found
                   </td>
                 </tr>
@@ -624,6 +667,16 @@ export default function GoogleSearchConsole({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+function formatVolume(vol: number): string {
+  if (vol >= 1_000_000) return `${(vol / 1_000_000).toFixed(1)}M`;
+  if (vol >= 1_000) return `${(vol / 1_000).toFixed(vol >= 10_000 ? 0 : 1)}K`;
+  return vol.toLocaleString();
+}
+
+/* ------------------------------------------------------------------ */
 /*  KeywordRow sub-component (keeps main component cleaner)           */
 /* ------------------------------------------------------------------ */
 
@@ -645,6 +698,7 @@ function KeywordRow({
   history,
   loadingHistory,
   siteUrl,
+  volume,
 }: {
   keyword: any;
   compareKeyword: any;
@@ -663,6 +717,7 @@ function KeywordRow({
   history: MonthlyPosition[] | null;
   loadingHistory: boolean;
   siteUrl: string;
+  volume: { avgMonthlySearches: number | null; competition: string | null; competitionIndex: number | null } | null;
 }) {
   return (
     <>
@@ -695,6 +750,15 @@ function KeywordRow({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </div>
+        </td>
+        <td className="px-6 py-3.5 text-apple-sm text-apple-text-secondary">
+          {volume?.avgMonthlySearches != null ? (
+            <span title={`Competition: ${volume.competition || '—'} (${volume.competitionIndex ?? '—'}/100)`}>
+              {formatVolume(volume.avgMonthlySearches)}
+            </span>
+          ) : (
+            <span className="text-apple-text-tertiary">—</span>
+          )}
         </td>
         {compareDateRange ? (
           <>
@@ -743,7 +807,7 @@ function KeywordRow({
 
       {/* Expanded keyword details */}
       {isExpanded && (() => {
-        const colSpan = compareDateRange ? 10 : 6;
+        const colSpan = compareDateRange ? 11 : 7;
         const topPage = pages.length > 0 ? pages[0] : null;
         const additionalPages = pages.length > 1 ? pages.slice(1) : [];
 
@@ -896,6 +960,7 @@ function KeywordRow({
                         {page.page}
                       </a>
                     </td>
+                    <td className="px-6 py-3" />
                     {compareDateRange ? (
                       <>
                         <td className="px-6 py-3" />
