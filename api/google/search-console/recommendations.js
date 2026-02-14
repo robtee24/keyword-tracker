@@ -9,6 +9,10 @@ export const config = {
  * improvement recommendations via OpenAI GPT-4.
  */
 export default async function handler(req, res) {
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -18,7 +22,7 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  const { keyword, pages, siteUrl } = req.body;
+  const { keyword, pages, siteUrl } = req.body || {};
 
   if (!keyword || !pages || !siteUrl) {
     return res.status(400).json({ error: 'keyword, pages, and siteUrl are required' });
@@ -26,27 +30,40 @@ export default async function handler(req, res) {
 
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey) {
-    return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+    return res.status(500).json({
+      error: 'OPENAI_API_KEY is not configured. Add it in your Vercel project Settings → Environment Variables.',
+    });
   }
 
   try {
-    // 1. Crawl each page and extract SEO signals
-    const pageAnalyses = await Promise.all(
-      pages.slice(0, 5).map((page) => crawlAndAnalyze(page.url, keyword, siteUrl))
-    );
+    // 1. Crawl each page and extract SEO signals (max 3 pages to stay within time limits)
+    const pagesToCrawl = pages.slice(0, 3);
+    const pageAnalyses = [];
+
+    for (const page of pagesToCrawl) {
+      try {
+        const analysis = await crawlAndAnalyze(page.url, keyword, siteUrl);
+        pageAnalyses.push(analysis);
+      } catch (crawlErr) {
+        pageAnalyses.push({
+          url: page.url,
+          crawlSuccess: false,
+          error: crawlErr.message || 'Crawl failed',
+        });
+      }
+    }
 
     // 2. Build the prompt for OpenAI
     const prompt = buildPrompt(keyword, siteUrl, pages, pageAnalyses);
 
-    // 3. Call OpenAI GPT-4
+    // 3. Call OpenAI
     const recommendations = await callOpenAI(openaiKey, prompt);
 
     return res.status(200).json({ recommendations });
   } catch (error) {
     console.error('Recommendations API error:', error);
     return res.status(500).json({
-      error: 'Failed to generate recommendations',
-      details: error.message,
+      error: error.message || 'Failed to generate recommendations',
     });
   }
 }
@@ -84,20 +101,29 @@ async function crawlAndAnalyze(url, keyword, siteUrl) {
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 6000);
 
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; KeywordTrackerBot/1.0)',
-        Accept: 'text/html',
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
       },
       signal: controller.signal,
+      redirect: 'follow',
     });
 
     clearTimeout(timeout);
 
     if (!response.ok) {
       analysis.error = `HTTP ${response.status}`;
+      return analysis;
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
+      analysis.error = `Non-HTML content: ${contentType}`;
       return analysis;
     }
 
@@ -122,8 +148,9 @@ async function crawlAndAnalyze(url, keyword, siteUrl) {
     }
 
     // Meta description
-    const metaDescMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([\s\S]*?)["']/i)
-      || html.match(/<meta[^>]*content=["']([\s\S]*?)["'][^>]*name=["']description["']/i);
+    const metaDescMatch =
+      html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([\s\S]*?)["']/i) ||
+      html.match(/<meta[^>]*content=["']([\s\S]*?)["'][^>]*name=["']description["']/i);
     if (metaDescMatch) {
       analysis.metaDescription = metaDescMatch[1].trim();
       analysis.keywordInMetaDescription = analysis.metaDescription.toLowerCase().includes(kw);
@@ -209,7 +236,9 @@ async function crawlAndAnalyze(url, keyword, siteUrl) {
     }
 
     // Schema / structured data
-    const schemaMatches = html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+    const schemaMatches = html.matchAll(
+      /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+    );
     for (const m of schemaMatches) {
       analysis.hasSchema = true;
       try {
@@ -220,7 +249,9 @@ async function crawlAndAnalyze(url, keyword, siteUrl) {
             if (item['@type']) analysis.schemaTypes.push(item['@type']);
           });
         }
-      } catch { /* ignore parse errors */ }
+      } catch {
+        /* ignore parse errors */
+      }
     }
 
     // Canonical
@@ -230,14 +261,21 @@ async function crawlAndAnalyze(url, keyword, siteUrl) {
       analysis.hasCanonical = true;
     }
   } catch (err) {
-    analysis.error = err.message;
+    analysis.error = err.name === 'AbortError' ? 'Timeout (page took too long to respond)' : err.message;
   }
 
   return analysis;
 }
 
 function stripTags(html) {
-  return html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/\s+/g, ' ').trim();
+  return html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /* ------------------------------------------------------------------ */
@@ -262,8 +300,8 @@ function buildPrompt(keyword, siteUrl, pages, pageAnalyses) {
     prompt += `\n### ${a.url}\n`;
     prompt += `- Title: "${a.title || 'MISSING'}"\n`;
     prompt += `- Meta Description: "${a.metaDescription || 'MISSING'}" (${a.metaDescription ? a.metaDescription.length : 0} chars)\n`;
-    prompt += `- H1 tags: ${a.h1.length > 0 ? a.h1.map(h => `"${h}"`).join(', ') : 'NONE'}\n`;
-    prompt += `- H2 tags: ${a.h2.length} found${a.h2.length > 0 ? ' — ' + a.h2.slice(0, 5).map(h => `"${h}"`).join(', ') : ''}\n`;
+    prompt += `- H1 tags: ${a.h1.length > 0 ? a.h1.map((h) => `"${h}"`).join(', ') : 'NONE'}\n`;
+    prompt += `- H2 tags: ${a.h2.length} found${a.h2.length > 0 ? ' — ' + a.h2.slice(0, 5).map((h) => `"${h}"`).join(', ') : ''}\n`;
     prompt += `- H3 tags: ${a.h3.length} found\n`;
     prompt += `- Word count: ${a.wordCount}\n`;
     prompt += `- Keyword "${keyword}" found in: ${[a.keywordInTitle && 'title', a.keywordInH1 && 'H1', a.keywordInMetaDescription && 'meta description', a.keywordInFirstParagraph && 'first paragraph'].filter(Boolean).join(', ') || 'NONE of the key positions'}\n`;
@@ -292,30 +330,52 @@ function buildPrompt(keyword, siteUrl, pages, pageAnalyses) {
 /* ------------------------------------------------------------------ */
 
 async function callOpenAI(apiKey, prompt) {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an expert SEO consultant who provides specific, data-driven recommendations. Always respond with valid JSON only.',
-        },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.4,
-      max_tokens: 3000,
-    }),
-  });
+  let response;
+  try {
+    response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are an expert SEO consultant who provides specific, data-driven recommendations. Always respond with valid JSON only.',
+          },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.4,
+        max_tokens: 3000,
+      }),
+    });
+  } catch (fetchErr) {
+    throw new Error(`Failed to reach OpenAI API: ${fetchErr.message}`);
+  }
 
   if (!response.ok) {
-    const errorText = await response.text();
-    console.error('OpenAI API error:', response.status, errorText);
-    throw new Error(`OpenAI API error: ${response.status}`);
+    let errorDetail = '';
+    try {
+      const errorBody = await response.json();
+      errorDetail = errorBody.error?.message || JSON.stringify(errorBody);
+    } catch {
+      errorDetail = await response.text().catch(() => 'unknown');
+    }
+
+    if (response.status === 401) {
+      throw new Error('OpenAI API key is invalid or expired. Check your OPENAI_API_KEY in Vercel settings.');
+    }
+    if (response.status === 429) {
+      throw new Error('OpenAI rate limit exceeded. Please wait a moment and try again.');
+    }
+    if (response.status === 402 || response.status === 403) {
+      throw new Error('OpenAI API access denied — check billing/quota on your OpenAI account.');
+    }
+
+    throw new Error(`OpenAI API error (${response.status}): ${errorDetail}`);
   }
 
   const data = await response.json();
@@ -331,7 +391,7 @@ async function callOpenAI(apiKey, prompt) {
     const parsed = JSON.parse(cleaned);
     return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
-    console.error('Failed to parse OpenAI response:', cleaned);
-    throw new Error('Failed to parse AI recommendations');
+    console.error('Failed to parse OpenAI response:', cleaned.substring(0, 500));
+    throw new Error('Failed to parse AI recommendations — the AI returned invalid JSON');
   }
 }

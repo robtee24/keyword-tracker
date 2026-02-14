@@ -738,9 +738,76 @@ function KeywordRow({
         )}
       </tr>
 
-      {/* Expanded pages rows */}
+      {/* Expanded keyword details */}
       {isExpanded && (
         <>
+          {/* 1. Insights: trending, opportunity score, position chart */}
+          <tr className="bg-apple-fill-secondary">
+            <td colSpan={compareDateRange ? 10 : 6} className="px-6 py-2">
+              <KeywordInsightsPanel
+                keyword={keyword.keyword}
+                currentPosition={keyword.position ?? null}
+                history={history}
+                loadingHistory={loadingHistory}
+                recommendations={recommendations}
+              />
+            </td>
+          </tr>
+
+          {/* 2. Recommendations section */}
+          <tr className="bg-apple-fill-secondary">
+            <td colSpan={compareDateRange ? 10 : 6} className="px-6 py-3">
+              {/* Scan button or results */}
+              {!recommendations && !isLoadingRecs && !recsError && pages.length > 0 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onScanRecommendations();
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-apple-pill bg-apple-blue text-white text-apple-sm font-normal transition-all duration-200 hover:bg-apple-blue-hover active:opacity-80"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                  Scan for Recommendations
+                </button>
+              )}
+
+              {/* Loading state */}
+              {isLoadingRecs && (
+                <div className="flex items-center gap-3 py-2">
+                  <div className="w-5 h-5 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
+                  <div>
+                    <span className="text-apple-sm font-medium text-apple-text">Analyzing pages...</span>
+                    <span className="text-apple-xs text-apple-text-tertiary ml-2">Crawling content and generating SEO recommendations</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Error state */}
+              {recsError && (
+                <div className="flex items-center gap-3 py-2">
+                  <span className="text-apple-sm text-apple-red">{recsError}</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onScanRecommendations();
+                    }}
+                    className="text-apple-sm text-apple-blue hover:underline"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {/* Results */}
+              {recommendations && (
+                <RecommendationsPanel recommendations={recommendations} keyword={keyword.keyword} />
+              )}
+            </td>
+          </tr>
+
+          {/* 3. Pages list */}
           {isLoadingPages ? (
             <tr className="bg-apple-fill-secondary">
               <td colSpan={compareDateRange ? 10 : 6} className="px-6 py-4">
@@ -751,119 +818,59 @@ function KeywordRow({
               </td>
             </tr>
           ) : pages.length > 0 ? (
-            pages.map((page, pageIndex) => (
-              <tr key={`page-${pageIndex}`} className="bg-apple-fill-secondary border-b border-apple-divider">
-                <td className="px-6 py-3" />
-                <td className="px-6 py-3 text-apple-sm text-apple-text">
-                  <a
-                    href={page.page}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-apple-blue hover:underline"
-                    onClick={(e) => e.stopPropagation()}
-                    title={page.page}
-                  >
-                    {page.page}
-                  </a>
+            <>
+              {/* Pages sub-header */}
+              <tr className="bg-apple-fill-secondary border-b border-apple-divider">
+                <td colSpan={compareDateRange ? 10 : 6} className="px-6 pt-4 pb-2">
+                  <span className="text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider">
+                    Ranking Pages ({pages.length})
+                  </span>
                 </td>
-                {compareDateRange ? (
-                  <>
-                    <td className="px-6 py-3" />
-                    <td className="px-6 py-3" />
-                    <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.impressions.toLocaleString()}</td>
-                    <td className="px-6 py-3" />
-                    <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.clicks.toLocaleString()}</td>
-                    <td className="px-6 py-3" />
-                    <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.ctr.toFixed(2)}%</td>
-                    <td className="px-6 py-3" />
-                  </>
-                ) : (
-                  <>
-                    <td className="px-6 py-3" />
-                    <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.impressions.toLocaleString()}</td>
-                    <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.clicks.toLocaleString()}</td>
-                    <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.ctr.toFixed(2)}%</td>
-                  </>
-                )}
               </tr>
-            ))
-          ) : (
+              {pages.map((page, pageIndex) => (
+                <tr key={`page-${pageIndex}`} className="bg-apple-fill-secondary border-b border-apple-divider">
+                  <td className="px-6 py-3" />
+                  <td className="px-6 py-3 text-apple-sm text-apple-text">
+                    <a
+                      href={page.page}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-apple-blue hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                      title={page.page}
+                    >
+                      {page.page}
+                    </a>
+                  </td>
+                  {compareDateRange ? (
+                    <>
+                      <td className="px-6 py-3" />
+                      <td className="px-6 py-3" />
+                      <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.impressions.toLocaleString()}</td>
+                      <td className="px-6 py-3" />
+                      <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.clicks.toLocaleString()}</td>
+                      <td className="px-6 py-3" />
+                      <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.ctr.toFixed(2)}%</td>
+                      <td className="px-6 py-3" />
+                    </>
+                  ) : (
+                    <>
+                      <td className="px-6 py-3" />
+                      <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.impressions.toLocaleString()}</td>
+                      <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.clicks.toLocaleString()}</td>
+                      <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">{page.ctr.toFixed(2)}%</td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </>
+          ) : !isLoadingPages ? (
             <tr className="bg-apple-fill-secondary">
               <td colSpan={compareDateRange ? 10 : 6} className="px-6 py-4 text-apple-sm text-apple-text-tertiary">
                 No page data available for this keyword
               </td>
             </tr>
-          )}
-
-          {/* Insights: position chart, trending, opportunity */}
-          {!isLoadingPages && (
-            <tr className="bg-apple-fill-secondary">
-              <td colSpan={compareDateRange ? 10 : 6} className="px-6 py-2">
-                <KeywordInsightsPanel
-                  keyword={keyword.keyword}
-                  currentPosition={keyword.position ?? null}
-                  history={history}
-                  loadingHistory={loadingHistory}
-                  recommendations={recommendations}
-                />
-              </td>
-            </tr>
-          )}
-
-          {/* Recommendations section */}
-          {!isLoadingPages && (
-            <tr className="bg-apple-fill-secondary">
-              <td colSpan={compareDateRange ? 10 : 6} className="px-6 py-3">
-                {/* Scan button or results */}
-                {!recommendations && !isLoadingRecs && !recsError && pages.length > 0 && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onScanRecommendations();
-                    }}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-apple-pill bg-apple-blue text-white text-apple-sm font-normal transition-all duration-200 hover:bg-apple-blue-hover active:opacity-80"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                    </svg>
-                    Scan for Recommendations
-                  </button>
-                )}
-
-                {/* Loading state */}
-                {isLoadingRecs && (
-                  <div className="flex items-center gap-3 py-2">
-                    <div className="w-5 h-5 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
-                    <div>
-                      <span className="text-apple-sm font-medium text-apple-text">Analyzing pages...</span>
-                      <span className="text-apple-xs text-apple-text-tertiary ml-2">Crawling content and generating SEO recommendations</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Error state */}
-                {recsError && (
-                  <div className="flex items-center gap-3 py-2">
-                    <span className="text-apple-sm text-apple-red">{recsError}</span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onScanRecommendations();
-                      }}
-                      className="text-apple-sm text-apple-blue hover:underline"
-                    >
-                      Retry
-                    </button>
-                  </div>
-                )}
-
-                {/* Results */}
-                {recommendations && (
-                  <RecommendationsPanel recommendations={recommendations} keyword={keyword.keyword} />
-                )}
-              </td>
-            </tr>
-          )}
+          ) : null}
         </>
       )}
     </>
