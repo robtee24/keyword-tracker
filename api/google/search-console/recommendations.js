@@ -424,19 +424,82 @@ function stripTags(html) {
 /* ------------------------------------------------------------------ */
 
 function buildPrompt(keyword, siteUrl, pages, pageAnalyses) {
-  let prompt = '';
+  const domain = siteDomain(siteUrl);
+  const topPage = pageAnalyses[0];
+  const topUrl = topPage?.url || pages[0]?.url || siteUrl;
 
-  prompt += `You are a world-class SEO consultant. Your client wants to reach POSITION 1 in Google for the keyword "${keyword}" on the domain ${siteUrl}.\n\n`;
-  prompt += `Analyze the data below and provide two things:\n`;
-  prompt += `1. A STRATEGY OVERVIEW — should we boost the current top-ranking page, or shift focus to a different page with better long-term potential?\n`;
-  prompt += `2. An EXTREMELY SPECIFIC ACTION CHECKLIST — each item must contain EXACT text, values, or code to implement.\n\n`;
+  let prompt = `You are a senior SEO strategist with 15+ years of experience ranking sites in competitive niches. You combine deep technical SEO knowledge with content strategy, information architecture, and user experience expertise.
 
-  prompt += `## Search Console Performance\n`;
+Your client wants to reach POSITION 1 in Google for: "${keyword}"
+Domain: ${siteUrl}
+
+## Your Analysis Framework
+
+Evaluate the data below through ALL of these lenses:
+
+### 1. SERP Intent Analysis
+- What is the dominant SERP intent for "${keyword}"? (informational, transactional, commercial investigation, navigational, local)
+- What content format does Google prefer for this query? (long-form guide, tool/calculator, product page, listicle, comparison, FAQ, video)
+- Does the current ranking page MATCH the SERP intent? If not, this is the #1 problem.
+
+### 2. Topical Authority & Content Gaps
+- Does the site demonstrate topical authority around "${keyword}" through supporting content (related articles, guides, hub pages)?
+- What supporting pages or content clusters are MISSING that competitors likely have?
+- Are there keyword cannibalization issues (multiple pages competing for the same term)?
+
+### 3. E-E-A-T Signals (Experience, Expertise, Authoritativeness, Trustworthiness)
+- Does the page show first-hand experience or original data?
+- Are there author bios, credentials, citations, or trust signals?
+- Does the page link to authoritative sources?
+
+### 4. On-Page Optimization (Deep)
+- Title tag: keyword placement, emotional triggers, click-through optimization
+- Meta description: compelling CTA, keyword inclusion, unique value proposition
+- H1: exact match vs. natural variation, single H1 rule
+- Heading hierarchy: logical H2→H3 structure, keyword variations in sub-headings
+- Keyword density and semantic coverage (LSI terms, related entities)
+- First paragraph: does it immediately address the query and include the keyword?
+- Content depth: word count relative to top-ranking competitors (typically 1,500-3,000+ for competitive terms)
+- Content freshness signals (dates, "updated" markers, current-year references)
+
+### 5. Internal Linking Architecture
+- How many internal links point TO this page? (hub page status)
+- Are anchor texts descriptive and keyword-relevant (not "click here")?
+- Is there a logical silo/cluster structure supporting this page?
+- Which high-authority pages on the site should link to this page?
+
+### 6. Technical SEO
+- Canonical tag correctness
+- Schema markup (is the RIGHT type used? Article, FAQPage, HowTo, Product, SoftwareApplication, etc.)
+- URL structure (clean, keyword-containing, not too deep)
+- Page speed signals from content structure (image optimization, code bloat)
+- Mobile-friendliness indicators from HTML structure
+
+### 7. Featured Snippet & SERP Feature Optimization
+- Could this page win a featured snippet? If so, what format (paragraph, list, table)?
+- Are there opportunities for FAQ rich results, How-To rich results, or sitelinks?
+- Would adding a clear definition, numbered list, or comparison table help?
+
+### 8. Backlink & Off-Page Strategy
+- What types of pages would naturally link to content about "${keyword}"?
+- What linkable assets could be created (original data, tools, infographics, studies)?
+- Are there broken link building or resource page opportunities?
+
+### 9. Conversion & UX Alignment
+- Does the page serve the user's FULL intent (not just ranking, but satisfying the query)?
+- Is there a clear next action (CTA) that matches the search intent?
+- How is the content structured for scannability (short paragraphs, bullets, visuals)?
+
+---
+
+## Search Console Performance Data
+`;
+
   pages.forEach((p) => {
     prompt += `- ${p.url}: ${p.clicks || 0} clicks, ${p.impressions || 0} impressions\n`;
   });
 
-  prompt += `\n## Page-Level SEO Analysis\n`;
+  prompt += `\n## Page-Level SEO Crawl Data\n`;
   pageAnalyses.forEach((a) => {
     if (!a.crawlSuccess) {
       prompt += `\n### ${a.url}\nCould not crawl: ${a.error || 'unknown error'}\n`;
@@ -446,50 +509,61 @@ function buildPrompt(keyword, siteUrl, pages, pageAnalyses) {
     prompt += `- Title: "${a.title || 'MISSING'}" (${a.title ? a.title.length : 0} chars)\n`;
     prompt += `- Meta Description: "${a.metaDescription || 'MISSING'}" (${a.metaDescription ? a.metaDescription.length : 0} chars)\n`;
     prompt += `- H1 tags: ${a.h1.length > 0 ? a.h1.map((h) => `"${h}"`).join(', ') : 'NONE'}\n`;
-    prompt += `- H2 tags (${a.h2.length}): ${a.h2.length > 0 ? a.h2.slice(0, 8).map((h) => `"${h}"`).join(', ') : 'NONE'}\n`;
-    prompt += `- H3 tags: ${a.h3.length} found\n`;
+    prompt += `- H2 tags (${a.h2.length}): ${a.h2.length > 0 ? a.h2.slice(0, 10).map((h) => `"${h}"`).join(', ') : 'NONE'}\n`;
+    prompt += `- H3 tags (${a.h3.length}): ${a.h3.length > 0 ? a.h3.slice(0, 8).map((h) => `"${h}"`).join(', ') : 'NONE'}\n`;
     prompt += `- Word count: ${a.wordCount}\n`;
     prompt += `- Keyword "${keyword}" found in: ${[a.keywordInTitle && 'title', a.keywordInH1 && 'H1', a.keywordInMetaDescription && 'meta description', a.keywordInFirstParagraph && 'first paragraph'].filter(Boolean).join(', ') || 'NONE of the key positions'}\n`;
     prompt += `- Keyword mentions in body: ${a.keywordMentions}\n`;
-    prompt += `- Internal links: ${a.internalLinkCount}${a.internalLinks.length > 0 ? ' (' + a.internalLinks.slice(0, 10).join(', ') + ')' : ''}\n`;
+    prompt += `- Internal links: ${a.internalLinkCount}${a.internalLinks.length > 0 ? ' (paths: ' + a.internalLinks.slice(0, 12).join(', ') + ')' : ''}\n`;
     prompt += `- External links: ${a.externalLinkCount}\n`;
     prompt += `- Images: ${a.imageCount} total, ${a.imagesWithAlt} with alt, ${a.imagesWithoutAlt} without alt\n`;
     prompt += `- Schema: ${a.hasSchema ? 'Yes (' + a.schemaTypes.join(', ') + ')' : 'None'}\n`;
     prompt += `- Canonical: ${a.hasCanonical ? a.canonicalUrl : 'Not set'}\n`;
   });
 
-  prompt += `\n## Response Format\n`;
-  prompt += `Return ONLY valid JSON with this exact structure:\n`;
-  prompt += `{\n`;
-  prompt += `  "strategy": {\n`;
-  prompt += `    "targetPage": "the URL to focus optimization efforts on",\n`;
-  prompt += `    "approach": "boost-current" OR "focus-alternative",\n`;
-  prompt += `    "summary": "3-5 sentences explaining WHY this page should be the target, what its strengths are, and the high-level plan to reach position 1"\n`;
-  prompt += `  },\n`;
-  prompt += `  "checklist": [\n`;
-  prompt += `    {\n`;
-  prompt += `      "id": "1",\n`;
-  prompt += `      "category": "one of: title-tag, meta-description, heading-structure, content, internal-linking, schema-markup, technical-seo, backlinks, images",\n`;
-  prompt += `      "task": "THE EXACT, SPECIFIC ACTION — see rules below",\n`;
-  prompt += `      "page": "URL this action applies to",\n`;
-  prompt += `      "priority": "high | medium | low"\n`;
-  prompt += `    }\n`;
-  prompt += `  ]\n`;
-  prompt += `}\n\n`;
+  prompt += `
+## Response Format
+Return ONLY valid JSON with this exact structure:
+{
+  "strategy": {
+    "targetPage": "the URL to focus optimization efforts on",
+    "approach": "boost-current" OR "focus-alternative" OR "create-new",
+    "summary": "5-8 sentences. Start with the SERP intent analysis — what does Google want for this query? Then explain whether the current page matches that intent. Then outline the high-level plan: what are the 3-4 biggest levers to pull? Be specific about WHY each lever matters for this particular keyword."
+  },
+  "checklist": [
+    {
+      "id": "1",
+      "category": "one of: title-tag, meta-description, heading-structure, content, internal-linking, schema-markup, technical-seo, backlinks, images, featured-snippet, topical-authority, eeat",
+      "task": "THE EXACT, SPECIFIC ACTION — see rules below",
+      "page": "URL this action applies to",
+      "priority": "high | medium | low",
+      "impact": "1-2 sentence explanation of WHY this will help rankings for this specific keyword"
+    }
+  ]
+}
 
-  prompt += `## Checklist Rules — CRITICAL\n`;
-  prompt += `Each checklist item MUST be immediately actionable. Provide EXACT values:\n\n`;
-  prompt += `WRONG: "Optimize the title tag for the keyword"\n`;
-  prompt += `RIGHT: "Change title tag from \\"${pageAnalyses[0]?.title || 'Current Title'}\\" to \\"Best ${keyword} Guide 2026 | ${siteDomain(siteUrl)}\\"\n\n`;
-  prompt += `WRONG: "Add a meta description"\n`;
-  prompt += `RIGHT: "Set meta description to: \\"Discover the best ${keyword} options. Our comprehensive guide covers features, pricing, and expert tips to help you choose the right solution in 2026.\\"\n\n`;
-  prompt += `WRONG: "Add internal links"\n`;
-  prompt += `RIGHT: "Add an internal link from /blog/related-topic to ${pageAnalyses[0]?.url || '/target-page'} with anchor text \\"${keyword} guide\\""\n\n`;
-  prompt += `WRONG: "Add schema markup"\n`;
-  prompt += `RIGHT: "Add Article schema markup with the following JSON-LD: {type snippet}"\n\n`;
-  prompt += `WRONG: "Improve content"\n`;
-  prompt += `RIGHT: "Add a new H2 section titled \\"How to Choose the Best ${keyword}\\" with 300+ words covering: comparison criteria, top picks, and pricing breakdown"\n\n`;
-  prompt += `Provide 10-18 checklist items. Cover ALL categories. Every item must have exact copy, exact URLs, or exact code.`;
+## Checklist Rules — ABSOLUTELY CRITICAL
+Every item must be IMMEDIATELY ACTIONABLE with zero ambiguity. Include EXACT text, code, or URLs.
+
+WRONG: "Optimize the title tag for the keyword"
+RIGHT: "Change title tag from \\"${topPage?.title || 'Current Title'}\\" to \\"${keyword} — Free Calculator & Analysis Tool | ${domain}\\" (places primary keyword first for maximum weight, adds emotional trigger 'Free', stays within 55 chars)"
+
+WRONG: "Add a meta description"
+RIGHT: "Set meta description to: \\"Use our free ${keyword} to estimate rental income, expenses, and ROI. Trusted by 6,000+ investors. Try it now — no credit card required.\\" (155 chars, includes keyword, CTA, social proof)"
+
+WRONG: "Add internal links"
+RIGHT: "Add internal link from /blog/how-to-invest-in-airbnb with anchor text \\"${keyword}\\" pointing to ${topUrl}. Add second link from /guides/str-revenue-projections with anchor text \\"calculate your rental income\\" pointing to ${topUrl}."
+
+WRONG: "Add schema markup"
+RIGHT: "Add SoftwareApplication schema: { \\"@context\\": \\"https://schema.org\\", \\"@type\\": \\"SoftwareApplication\\", \\"name\\": \\"${domain} ${keyword}\\", \\"applicationCategory\\": \\"FinanceApplication\\", \\"offers\\": { \\"@type\\": \\"Offer\\", \\"price\\": \\"0\\", \\"priceCurrency\\": \\"USD\\" } }"
+
+WRONG: "Improve content"
+RIGHT: "Add new H2 section \\"How to Use an ${keyword}\\" after the current second H2. Include a 4-step numbered walkthrough (300+ words): 1) Enter property address, 2) Adjust assumptions, 3) Review revenue projections, 4) Compare with long-term rental. This targets the 'how to' featured snippet opportunity."
+
+WRONG: "Build backlinks"
+RIGHT: "Create a linkable asset: \\"2026 Short-Term Rental Market Report\\" with original data from your platform (average ROI by city, top-performing markets). Pitch to BiggerPockets, Mashable Travel, and NerdWallet as a data source. Template outreach subject line: \\"Original STR data for your readers — 2026 market report\\""
+
+Provide 15-22 checklist items. Cover ALL of these categories: title-tag, meta-description, heading-structure, content (multiple items), internal-linking (multiple items), schema-markup, technical-seo, backlinks, images, featured-snippet, topical-authority, eeat. Each item must explain its impact.`;
 
   return prompt;
 }
@@ -521,12 +595,12 @@ async function callOpenAI(apiKey, prompt) {
           {
             role: 'system',
             content:
-              'You are a world-class SEO consultant. You provide extremely specific, actionable recommendations with exact text, URLs, and code. Always respond with valid JSON only — no markdown fences, no explanation outside JSON.',
+              'You are a senior SEO strategist with 15+ years of experience in technical SEO, content strategy, and competitive analysis. You think through SERP intent, topical authority, E-E-A-T, content gaps, featured snippet opportunities, and conversion optimization. You provide extremely specific, actionable recommendations with exact text, URLs, code, and clear reasoning for why each action will improve rankings. Always respond with valid JSON only — no markdown fences, no explanation outside the JSON structure.',
           },
           { role: 'user', content: prompt },
         ],
         temperature: 0.3,
-        max_tokens: 4000,
+        max_tokens: 6000,
       }),
     });
   } catch (fetchErr) {

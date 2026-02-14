@@ -12,6 +12,7 @@ export interface ChecklistItem {
   task: string;
   page: string;
   priority: 'high' | 'medium' | 'low';
+  impact?: string;
 }
 
 export interface ScanStrategy {
@@ -46,6 +47,9 @@ const CATEGORY_META: Record<string, { label: string; icon: string }> = {
   'technical-seo': { label: 'Technical SEO', icon: '🔧' },
   backlinks: { label: 'Backlinks', icon: '🌐' },
   images: { label: 'Images', icon: '🖼️' },
+  'featured-snippet': { label: 'Featured Snippet', icon: '⭐' },
+  'topical-authority': { label: 'Topical Authority', icon: '🏛️' },
+  eeat: { label: 'E-E-A-T', icon: '🛡️' },
 };
 
 const CATEGORY_ORDER = [
@@ -148,9 +152,15 @@ export default function RecommendationsPanel({
             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-apple-pill text-apple-xs font-medium ${
               strategy.approach === 'boost-current'
                 ? 'bg-green-50 text-green-700'
+                : strategy.approach === 'create-new'
+                ? 'bg-amber-50 text-amber-700'
                 : 'bg-purple-50 text-purple-700'
             }`}>
-              {strategy.approach === 'boost-current' ? '🎯 Boost Current Top Page' : '🔄 Focus on Alternative Page'}
+              {strategy.approach === 'boost-current'
+                ? '🎯 Boost Current Top Page'
+                : strategy.approach === 'create-new'
+                ? '✨ Create New Dedicated Page'
+                : '🔄 Focus on Alternative Page'}
             </span>
           </div>
           {strategy.targetPage && (
@@ -252,6 +262,11 @@ export default function RecommendationsPanel({
                         {item.page && (
                           <span className="text-apple-xs text-apple-text-tertiary mt-0.5 block truncate">
                             {item.page}
+                          </span>
+                        )}
+                        {item.impact && !isDone && (
+                          <span className="text-apple-xs text-apple-blue/70 mt-1 block italic">
+                            Why: {item.impact}
                           </span>
                         )}
                       </div>

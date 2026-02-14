@@ -158,7 +158,7 @@ export default function GoogleSearchConsole({
   // Intent filter
   if (intentFilter) {
     filteredKeywords = filteredKeywords.filter(
-      (keyword: any) => classifyKeywordIntent(keyword.keyword) === intentFilter
+      (keyword: any) => classifyKeywordIntent(keyword.keyword, keywordPages.get(keyword.keyword)?.[0]?.page, siteUrl) === intentFilter
     );
   }
 
@@ -180,8 +180,8 @@ export default function GoogleSearchConsole({
         aVal = searchVolumes.get(a.keyword)?.avgMonthlySearches ?? -1;
         bVal = searchVolumes.get(b.keyword)?.avgMonthlySearches ?? -1;
       } else if (sortColumn === 'intent') {
-        aVal = classifyKeywordIntent(a.keyword);
-        bVal = classifyKeywordIntent(b.keyword);
+        aVal = classifyKeywordIntent(a.keyword, keywordPages.get(a.keyword)?.[0]?.page, siteUrl);
+        bVal = classifyKeywordIntent(b.keyword, keywordPages.get(b.keyword)?.[0]?.page, siteUrl);
       } else {
         aVal = a[sortColumn];
         bVal = b[sortColumn];
@@ -720,51 +720,158 @@ function formatVolume(vol: number): string {
 
 /* ------------------------------------------------------------------ */
 /*  Keyword Intent Classification                                      */
+/*                                                                     */
+/*  Strategy: classify using BOTH keyword text patterns AND the        */
+/*  ranking page URL. If the ranking page is a product/tool page       */
+/*  (not a blog/guide), the keyword is likely Transactional even       */
+/*  if the keyword text doesn't contain "buy" or "price."             */
 /* ------------------------------------------------------------------ */
 
 export type KeywordIntent = 'Transactional' | 'Product' | 'Educational' | 'Navigational' | 'Local';
 
-const INTENT_PATTERNS: { intent: KeywordIntent; patterns: RegExp[] }[] = [
-  {
-    intent: 'Transactional',
-    patterns: [
-      /\b(buy|purchase|order|deal|deals|discount|coupon|price|pricing|cheap|cost|hire|book|subscribe|shop|for sale|free trial|sign up|signup|get started|quote|estimate|affordable)\b/i,
-    ],
-  },
-  {
-    intent: 'Product',
-    patterns: [
-      /\b(best|top|review|reviews|compare|comparison|vs|versus|alternative|alternatives|recommended|pros and cons|specs|features|rating|ratings|benchmark)\b/i,
-    ],
-  },
-  {
-    intent: 'Local',
-    patterns: [
-      /\b(near me|nearby|in my area|local|directions|hours|open now|closest)\b/i,
-      /\bin\s+[A-Z][a-z]+/,  // "in Miami", "in Chicago" etc.
-    ],
-  },
-  {
-    intent: 'Navigational',
-    patterns: [
-      /\b(login|log in|sign in|signin|website|official|app|download|contact|support|dashboard|portal|account)\b/i,
-    ],
-  },
-  {
-    intent: 'Educational',
-    patterns: [
-      /\b(how|what|why|when|where|who|which|guide|tutorial|tips|learn|example|examples|definition|meaning|explained|is|are|can you|does|do|should|ways to|steps|beginner|basics)\b/i,
-    ],
-  },
-];
+/**
+ * Classify keyword intent using a multi-signal approach:
+ * 1. Strong text patterns (high-confidence overrides)
+ * 2. Page-type inference from the ranking URL
+ * 3. Weaker text patterns for remaining keywords
+ *
+ * @param keyword     The search query
+ * @param rankingUrl  The top ranking page URL (optional — improves accuracy)
+ * @param siteUrl     The site's base URL (optional — used to detect brand terms)
+ */
+function classifyKeywordIntent(keyword: string, rankingUrl?: string, siteUrl?: string): KeywordIntent {
+  const kw = keyword.toLowerCase();
 
-function classifyKeywordIntent(keyword: string): KeywordIntent {
-  for (const { intent, patterns } of INTENT_PATTERNS) {
-    for (const pattern of patterns) {
-      if (pattern.test(keyword)) return intent;
+  // -----------------------------------------------------------
+  // 1. HIGH-CONFIDENCE TEXT PATTERNS (checked first)
+  // -----------------------------------------------------------
+
+  // Local — very specific signals
+  if (/\b(near me|nearby|in my area|directions|hours|open now|closest)\b/i.test(kw)) {
+    return 'Local';
+  }
+
+  // Navigational — brand/site-specific
+  if (/\b(login|log in|sign in|signin|website|official site|dashboard|portal|my account)\b/i.test(kw)) {
+    return 'Navigational';
+  }
+
+  // Is the keyword the site's brand name or contains it?
+  if (siteUrl) {
+    const brand = extractBrand(siteUrl);
+    if (brand && kw.includes(brand.toLowerCase()) && kw.split(/\s+/).length <= 3) {
+      return 'Navigational';
     }
   }
-  return 'Educational'; // Default — most long-tail keywords are informational
+
+  // Explicit transactional — user wants to act/purchase/use
+  if (/\b(buy|purchase|order|deal|deals|discount|coupon|pricing|price|cheap|cost|hire|book now|subscribe|shop|for sale|free trial|sign up|signup|get started|quote|try free|start free|demo|get a quote|affordable|monthly|yearly|per month|plans?)\b/i.test(kw)) {
+    return 'Transactional';
+  }
+
+  // Product/commercial investigation — comparing, evaluating
+  if (/\b(best|top \d|review|reviews|compare|comparison|vs\.?|versus|alternative|alternatives|pros and cons|features|rating|ratings|benchmark|worth it|better than)\b/i.test(kw)) {
+    return 'Product';
+  }
+
+  // -----------------------------------------------------------
+  // 2. PAGE-TYPE INFERENCE FROM RANKING URL
+  //    If the page that ranks is a tool/app/product page (not a
+  //    blog post or educational guide), the keyword is likely
+  //    Transactional — the user wants to USE the product.
+  // -----------------------------------------------------------
+
+  if (rankingUrl) {
+    const path = rankingUrl.toLowerCase();
+
+    // Product/tool pages — Transactional
+    if (isProductPage(path)) {
+      // But if the keyword itself is clearly educational, respect that
+      if (/\b(how to|what is|what are|why do|when to|guide|tutorial|learn|meaning|definition|explained)\b/i.test(kw)) {
+        return 'Educational';
+      }
+      return 'Transactional';
+    }
+
+    // Blog/educational pages
+    if (isBlogPage(path)) {
+      // Blog pages with product keywords still indicate Product intent
+      if (/\b(calculator|tool|software|app|platform|analyzer|estimator|generator|tracker|finder|checker|planner)\b/i.test(kw)) {
+        return 'Product';
+      }
+      return 'Educational';
+    }
+  }
+
+  // -----------------------------------------------------------
+  // 3. TOOL/PRODUCT KEYWORDS — these indicate Transactional
+  //    intent because the user wants to USE a tool
+  // -----------------------------------------------------------
+
+  if (/\b(calculator|tool|software|app|platform|analyzer|estimator|generator|planner|tracker|finder|checker|widget|spreadsheet|template)\b/i.test(kw)) {
+    // "how to use X calculator" = Educational, "X calculator" = Transactional
+    if (/\b(how|what|why|guide|tutorial|learn|tips)\b/i.test(kw)) {
+      return 'Educational';
+    }
+    return 'Transactional';
+  }
+
+  // -----------------------------------------------------------
+  // 4. WEAKER EDUCATIONAL PATTERNS (fallback)
+  // -----------------------------------------------------------
+
+  if (/\b(how to|what is|what are|why do|why does|when to|when should|where to|who is|which|guide|tutorial|tips|learn|examples?|definition|meaning|explained|basics|beginner|ways to|steps to|can you|should i|do i need)\b/i.test(kw)) {
+    return 'Educational';
+  }
+
+  // -----------------------------------------------------------
+  // 5. LOCAL — city/state patterns
+  // -----------------------------------------------------------
+  if (/\bin\s+[A-Z][a-z]+/.test(keyword)) {
+    return 'Local';
+  }
+
+  // -----------------------------------------------------------
+  // 6. DEFAULT — use page URL if available, otherwise Educational
+  // -----------------------------------------------------------
+
+  if (rankingUrl) {
+    const path = rankingUrl.toLowerCase();
+    if (isProductPage(path)) return 'Transactional';
+    if (isBlogPage(path)) return 'Educational';
+  }
+
+  return 'Educational';
+}
+
+/** Extract a likely brand name from a URL (e.g. "bnbcalc" from "https://bnbcalc.com") */
+function extractBrand(siteUrl: string): string | null {
+  try {
+    const host = new URL(siteUrl.replace(/\/$/, '')).hostname;
+    // Remove www. and TLD
+    const parts = host.replace('www.', '').split('.');
+    return parts[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Check if a URL path looks like a product/tool/app page */
+function isProductPage(path: string): boolean {
+  // Common product/tool page patterns
+  const productPatterns = [
+    /^\/?$/, // homepage is usually the product
+    /\/(calculator|tool|analyze|analysis|app|dashboard|estimate|report|pricing|plans|signup|register|demo|try)/,
+    /\/(product|features|solutions|platform)/,
+  ];
+  // Must NOT match blog patterns
+  if (isBlogPage(path)) return false;
+  return productPatterns.some((p) => p.test(path));
+}
+
+/** Check if a URL path looks like a blog/educational page */
+function isBlogPage(path: string): boolean {
+  return /\/(blog|article|post|news|guide|learn|resource|help|faq|wiki|knowledge|how-to|tips|insights|library|education|regulation|rules|laws)/.test(path);
 }
 
 const INTENT_COLORS: Record<KeywordIntent, { bg: string; text: string }> = {
@@ -854,7 +961,7 @@ function KeywordRow({
         </td>
         <td className="px-6 py-3.5">
           {(() => {
-            const intent = classifyKeywordIntent(keyword.keyword);
+            const intent = classifyKeywordIntent(keyword.keyword, pages[0]?.page, siteUrl);
             const colors = INTENT_COLORS[intent];
             return (
               <span className={`inline-block px-2 py-0.5 rounded-apple-pill text-apple-xs font-medium ${colors.bg} ${colors.text}`}>
