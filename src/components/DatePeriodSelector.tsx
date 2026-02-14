@@ -18,17 +18,23 @@ export default function DatePeriodSelector({
   onLoadData,
   hasLoadedOnce,
 }: DatePeriodSelectorProps) {
+  // Parse date string as local time (not UTC) to avoid off-by-one day bug
+  const parseLocalDate = (dateStr: string): Date => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
   const handleStartDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onDateRangeChange({
       ...dateRange,
-      startDate: new Date(e.target.value),
+      startDate: parseLocalDate(e.target.value),
     });
   };
 
   const handleEndDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onDateRangeChange({
       ...dateRange,
-      endDate: new Date(e.target.value),
+      endDate: parseLocalDate(e.target.value),
     });
   };
 
@@ -36,7 +42,7 @@ export default function DatePeriodSelector({
     if (compareDateRange) {
       onCompareDateRangeChange({
         ...compareDateRange,
-        startDate: new Date(e.target.value),
+        startDate: parseLocalDate(e.target.value),
       });
     }
   };
@@ -45,7 +51,7 @@ export default function DatePeriodSelector({
     if (compareDateRange) {
       onCompareDateRangeChange({
         ...compareDateRange,
-        endDate: new Date(e.target.value),
+        endDate: parseLocalDate(e.target.value),
       });
     }
   };
