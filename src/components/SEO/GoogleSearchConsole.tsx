@@ -54,6 +54,13 @@ export default function GoogleSearchConsole({
     competitionIndex: number | null;
   }>>(new Map());
   const [intentFilter, setIntentFilter] = useState<KeywordIntent | ''>('');
+  const [alertData, setAlertData] = useState<Map<string, {
+    period1?: { position: number };
+    period2?: { position: number };
+    period3?: { position: number };
+  }>>(new Map());
+  const [loadingAlerts, setLoadingAlerts] = useState(false);
+  const [activeAlert, setActiveAlert] = useState<'fire' | 'smoking' | 'hot' | ''>('');
 
   const itemsPerPage = 20;
 
@@ -115,6 +122,37 @@ export default function GoogleSearchConsole({
     fetchVolumes();
   }, [data]);
 
+  // Fetch alert data (positions across 3 time periods) after keyword data loads
+  useEffect(() => {
+    if (!data?.current?.keywords?.length || !siteUrl) return;
+
+    const fetchAlerts = async () => {
+      setLoadingAlerts(true);
+      try {
+        const response = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.keywordAlerts, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ siteUrl }),
+        });
+        if (response.ok) {
+          const result = await response.json();
+          if (result.alerts) {
+            const alertMap = new Map<string, any>();
+            for (const [kw, periods] of Object.entries(result.alerts)) {
+              alertMap.set(kw, periods as any);
+            }
+            setAlertData(alertMap);
+          }
+        }
+      } catch {
+        // Silently fail — alerts are optional
+      } finally {
+        setLoadingAlerts(false);
+      }
+    };
+    fetchAlerts();
+  }, [data, siteUrl]);
+
   if (loading) {
     return (
       <div className="card p-8">
@@ -144,6 +182,64 @@ export default function GoogleSearchConsole({
     );
   }
 
+  // Compute alert status for each keyword
+  const keywordAlerts = new Map<string, Set<'fire' | 'smoking' | 'hot'>>();
+  let fireCount = 0;
+  let smokingCount = 0;
+  let hotCount = 0;
+
+  if (alertData.size > 0) {
+    for (const kw of data.current.keywords) {
+      const kwName = kw.keyword;
+      const intent = classifyKeywordIntent(kwName, keywordPages.get(kwName)?.[0]?.page, siteUrl);
+      const isActionable = intent === 'Transactional' || intent === 'Product' || intent === 'Local';
+      if (!isActionable) continue;
+
+      const periods = alertData.get(kwName);
+      if (!periods) continue;
+
+      const currentPosition = kw.position ?? null;
+      if (currentPosition === null) continue;
+
+      const alerts = new Set<'fire' | 'smoking' | 'hot'>();
+
+      // Best historical position across all 3 periods
+      const historicalPositions = [
+        periods.period1?.position,
+        periods.period2?.position,
+        periods.period3?.position,
+      ].filter((p): p is number => p != null && p > 0);
+
+      const bestHistorical = historicalPositions.length > 0
+        ? Math.min(...historicalPositions)
+        : null;
+
+      // Fire: was in top 10 in the past year, now > 10
+      if (bestHistorical !== null && bestHistorical <= 10 && currentPosition > 10) {
+        alerts.add('fire');
+        fireCount++;
+      }
+
+      // Smoking: was in top 5 in the past year, now > 5
+      if (bestHistorical !== null && bestHistorical <= 5 && currentPosition > 5) {
+        alerts.add('smoking');
+        smokingCount++;
+      }
+
+      // Hot: position is worse than 3 months ago (period2 avg vs period3 avg)
+      const prev3mo = periods.period2?.position;
+      const recent3mo = periods.period3?.position;
+      if (prev3mo != null && recent3mo != null && recent3mo > prev3mo) {
+        alerts.add('hot');
+        hotCount++;
+      }
+
+      if (alerts.size > 0) {
+        keywordAlerts.set(kwName, alerts);
+      }
+    }
+  }
+
   // Filter keywords
   let filteredKeywords = data.current.keywords.filter((keyword: any) =>
     keyword.keyword.toLowerCase().includes(searchTerm.toLowerCase())
@@ -159,6 +255,13 @@ export default function GoogleSearchConsole({
   if (intentFilter) {
     filteredKeywords = filteredKeywords.filter(
       (keyword: any) => classifyKeywordIntent(keyword.keyword, keywordPages.get(keyword.keyword)?.[0]?.page, siteUrl) === intentFilter
+    );
+  }
+
+  // Alert filter
+  if (activeAlert) {
+    filteredKeywords = filteredKeywords.filter(
+      (keyword: any) => keywordAlerts.get(keyword.keyword)?.has(activeAlert)
     );
   }
 
@@ -221,6 +324,7 @@ export default function GoogleSearchConsole({
     setSelectedKeywords(new Set());
     setAppliedFilter(new Set());
     setIntentFilter('');
+    setActiveAlert('');
     setCurrentPage(1);
     setSortColumn(null);
     setSortDirection('asc');
@@ -479,6 +583,97 @@ export default function GoogleSearchConsole({
           <h3 className="text-apple-body font-semibold text-apple-text mb-4">
             Keyword Rankings
           </h3>
+
+          {/* Alerts Bar */}
+          {(fireCount > 0 || smokingCount > 0 || hotCount > 0 || loadingAlerts) && (
+            <div className="mb-4 rounded-apple-sm border border-apple-divider bg-white overflow-hidden">
+              <div className="px-4 py-3 flex items-center gap-2 border-b border-apple-divider bg-apple-fill-secondary">
+                <svg className="w-4 h-4 text-apple-red" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <span className="text-apple-xs font-semibold text-apple-text-secondary uppercase tracking-wider">
+                  Alerts
+                </span>
+                {loadingAlerts && (
+                  <div className="w-3 h-3 border-2 border-apple-blue border-t-transparent rounded-full animate-spin ml-1" />
+                )}
+                {activeAlert && (
+                  <button
+                    onClick={() => { setActiveAlert(''); setCurrentPage(1); }}
+                    className="ml-auto text-apple-xs text-apple-blue hover:underline"
+                  >
+                    Clear alert filter
+                  </button>
+                )}
+              </div>
+              <div className="px-4 py-3 flex items-center gap-3 flex-wrap">
+                {/* Fire */}
+                <button
+                  onClick={() => { setActiveAlert(activeAlert === 'fire' ? '' : 'fire'); setCurrentPage(1); }}
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-apple-sm border text-apple-sm font-medium transition-all duration-200 ${
+                    activeAlert === 'fire'
+                      ? 'bg-red-50 border-red-300 text-red-700 shadow-sm'
+                      : 'border-apple-divider text-apple-text-secondary hover:bg-red-50/50 hover:border-red-200'
+                  } ${fireCount === 0 ? 'opacity-40 cursor-default' : 'cursor-pointer'}`}
+                  disabled={fireCount === 0}
+                >
+                  <span className="text-base">🔥</span>
+                  <span>Fire</span>
+                  <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-apple-xs font-bold ${
+                    fireCount > 0 ? 'bg-red-100 text-red-700' : 'bg-apple-fill-secondary text-apple-text-tertiary'
+                  }`}>
+                    {fireCount}
+                  </span>
+                </button>
+
+                {/* Smoking */}
+                <button
+                  onClick={() => { setActiveAlert(activeAlert === 'smoking' ? '' : 'smoking'); setCurrentPage(1); }}
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-apple-sm border text-apple-sm font-medium transition-all duration-200 ${
+                    activeAlert === 'smoking'
+                      ? 'bg-orange-50 border-orange-300 text-orange-700 shadow-sm'
+                      : 'border-apple-divider text-apple-text-secondary hover:bg-orange-50/50 hover:border-orange-200'
+                  } ${smokingCount === 0 ? 'opacity-40 cursor-default' : 'cursor-pointer'}`}
+                  disabled={smokingCount === 0}
+                >
+                  <span className="text-base">💨</span>
+                  <span>Smoking</span>
+                  <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-apple-xs font-bold ${
+                    smokingCount > 0 ? 'bg-orange-100 text-orange-700' : 'bg-apple-fill-secondary text-apple-text-tertiary'
+                  }`}>
+                    {smokingCount}
+                  </span>
+                </button>
+
+                {/* Hot */}
+                <button
+                  onClick={() => { setActiveAlert(activeAlert === 'hot' ? '' : 'hot'); setCurrentPage(1); }}
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-apple-sm border text-apple-sm font-medium transition-all duration-200 ${
+                    activeAlert === 'hot'
+                      ? 'bg-amber-50 border-amber-300 text-amber-700 shadow-sm'
+                      : 'border-apple-divider text-apple-text-secondary hover:bg-amber-50/50 hover:border-amber-200'
+                  } ${hotCount === 0 ? 'opacity-40 cursor-default' : 'cursor-pointer'}`}
+                  disabled={hotCount === 0}
+                >
+                  <span className="text-base">🌡️</span>
+                  <span>Hot</span>
+                  <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-apple-xs font-bold ${
+                    hotCount > 0 ? 'bg-amber-100 text-amber-700' : 'bg-apple-fill-secondary text-apple-text-tertiary'
+                  }`}>
+                    {hotCount}
+                  </span>
+                </button>
+
+                {/* Legend */}
+                <div className="ml-auto text-apple-xs text-apple-text-tertiary hidden md:block">
+                  <span className="mr-3">🔥 Dropped from top 10</span>
+                  <span className="mr-3">💨 Dropped from top 5</span>
+                  <span>🌡️ Declining last 3 months</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-3 mb-4">
             <input
               type="text"
@@ -508,12 +703,12 @@ export default function GoogleSearchConsole({
                 Apply Filter ({selectedKeywords.size})
               </button>
             )}
-            {(appliedFilter.size > 0 || intentFilter) && (
+            {(appliedFilter.size > 0 || intentFilter || activeAlert) && (
               <button onClick={clearFilter} className="btn-danger text-apple-sm">
                 Clear Filters
               </button>
             )}
-            {searchTerm && appliedFilter.size === 0 && !intentFilter && (
+            {searchTerm && appliedFilter.size === 0 && !intentFilter && !activeAlert && (
               <button
                 onClick={() => {
                   setSearchTerm('');

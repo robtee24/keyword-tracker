@@ -30,6 +30,7 @@ export const API_ENDPOINTS = {
       sites: `${API_BASE_URL}/api/google/search-console/sites`,
       recommendations: `${API_BASE_URL}/api/google/search-console/recommendations`,
       keywordHistory: `${API_BASE_URL}/api/google/search-console/keyword-history`,
+      keywordAlerts: `${API_BASE_URL}/api/google/search-console/keyword-alerts`,
     },
     ads: {
       searchVolume: `${API_BASE_URL}/api/google/ads/search-volume`,
