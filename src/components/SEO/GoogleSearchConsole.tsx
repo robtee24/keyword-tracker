@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { format } from 'date-fns';
 import type { DateRange } from '../../types';
 import { fetchGoogleSearchConsole } from '../../services/googleSearchConsoleService';
@@ -61,6 +61,19 @@ export default function GoogleSearchConsole({
   }>>(new Map());
   const [loadingAlerts, setLoadingAlerts] = useState(false);
   const [activeAlert, setActiveAlert] = useState<'fire' | 'smoking' | 'hot' | ''>('');
+  const [intentStore, setIntentStore] = useState<IntentStore>(() => loadIntentStore(siteUrl));
+
+  // Reload intent store when siteUrl changes
+  useEffect(() => {
+    setIntentStore(loadIntentStore(siteUrl));
+  }, [siteUrl]);
+
+  const handleIntentOverride = (keyword: string, newIntent: KeywordIntent) => {
+    const allKws = data?.current?.keywords?.map((k: any) => k.keyword) || [];
+    const { store, affected } = learnIntentOverride(siteUrl, keyword, newIntent, allKws);
+    setIntentStore({ ...store });
+    // Force re-render by creating a new object reference
+  };
 
   const itemsPerPage = 20;
 
@@ -191,7 +204,7 @@ export default function GoogleSearchConsole({
   if (alertData.size > 0) {
     for (const kw of data.current.keywords) {
       const kwName = kw.keyword;
-      const intent = classifyKeywordIntent(kwName, keywordPages.get(kwName)?.[0]?.page, siteUrl);
+      const { intent } = getEffectiveIntent(kwName, intentStore, keywordPages.get(kwName)?.[0]?.page, siteUrl);
       const isActionable = intent === 'Transactional' || intent === 'Product' || intent === 'Local';
       if (!isActionable) continue;
 
@@ -254,7 +267,7 @@ export default function GoogleSearchConsole({
   // Intent filter
   if (intentFilter) {
     filteredKeywords = filteredKeywords.filter(
-      (keyword: any) => classifyKeywordIntent(keyword.keyword, keywordPages.get(keyword.keyword)?.[0]?.page, siteUrl) === intentFilter
+      (keyword: any) => getEffectiveIntent(keyword.keyword, intentStore, keywordPages.get(keyword.keyword)?.[0]?.page, siteUrl).intent === intentFilter
     );
   }
 
@@ -283,8 +296,8 @@ export default function GoogleSearchConsole({
         aVal = searchVolumes.get(a.keyword)?.avgMonthlySearches ?? -1;
         bVal = searchVolumes.get(b.keyword)?.avgMonthlySearches ?? -1;
       } else if (sortColumn === 'intent') {
-        aVal = classifyKeywordIntent(a.keyword, keywordPages.get(a.keyword)?.[0]?.page, siteUrl);
-        bVal = classifyKeywordIntent(b.keyword, keywordPages.get(b.keyword)?.[0]?.page, siteUrl);
+        aVal = getEffectiveIntent(a.keyword, intentStore, keywordPages.get(a.keyword)?.[0]?.page, siteUrl).intent;
+        bVal = getEffectiveIntent(b.keyword, intentStore, keywordPages.get(b.keyword)?.[0]?.page, siteUrl).intent;
       } else {
         aVal = a[sortColumn];
         bVal = b[sortColumn];
@@ -839,6 +852,8 @@ export default function GoogleSearchConsole({
                       loadingHistory={loadingHistory.has(keyword.keyword)}
                       siteUrl={siteUrl}
                       volume={searchVolumes.get(keyword.keyword) || null}
+                      intentStore={intentStore}
+                      onIntentOverride={handleIntentOverride}
                     />
                   );
                 })
@@ -1080,6 +1095,139 @@ const INTENT_COLORS: Record<KeywordIntent, { bg: string; text: string }> = {
 const ALL_INTENTS: KeywordIntent[] = ['Transactional', 'Product', 'Educational', 'Navigational', 'Local'];
 
 /* ------------------------------------------------------------------ */
+/*  Intent Learning Engine                                             */
+/*  Persists user overrides + learned patterns in localStorage.       */
+/*  When a keyword is reclassified, similar keywords get the same     */
+/*  intent via token-based pattern matching.                          */
+/* ------------------------------------------------------------------ */
+
+interface LearnedRule {
+  tokens: string[];      // keyword tokens that trigger this rule
+  intent: KeywordIntent;
+  source: string;        // the keyword the user explicitly reclassified
+}
+
+interface IntentStore {
+  exactOverrides: Record<string, KeywordIntent>;
+  learnedRules: LearnedRule[];
+}
+
+const STOP_WORDS = new Set([
+  'a', 'an', 'the', 'in', 'on', 'at', 'to', 'for', 'of', 'and', 'or', 'is',
+  'it', 'my', 'i', 'me', 'we', 'our', 'you', 'your', 'do', 'does', 'can',
+  'with', 'from', 'by', 'as', 'be', 'this', 'that', 'are', 'was', 'were',
+]);
+
+function getStoreKey(siteUrl: string): string {
+  return `intent-overrides:${siteUrl}`;
+}
+
+function loadIntentStore(siteUrl: string): IntentStore {
+  try {
+    const raw = localStorage.getItem(getStoreKey(siteUrl));
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return { exactOverrides: {}, learnedRules: [] };
+}
+
+function saveIntentStore(siteUrl: string, store: IntentStore): void {
+  try {
+    localStorage.setItem(getStoreKey(siteUrl), JSON.stringify(store));
+  } catch { /* ignore */ }
+}
+
+/** Extract significant tokens from a keyword (no stop words, 2+ chars) */
+function extractTokens(keyword: string): string[] {
+  return keyword
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 2 && !STOP_WORDS.has(t));
+}
+
+/**
+ * When a user reclassifies a keyword:
+ * 1. Save the exact override
+ * 2. Extract tokens and create a learned rule
+ * 3. Remove conflicting rules for those tokens
+ * 4. Return the set of other keywords that should be re-classified
+ */
+function learnIntentOverride(
+  siteUrl: string,
+  keyword: string,
+  newIntent: KeywordIntent,
+  allKeywords: string[]
+): { store: IntentStore; affected: Map<string, KeywordIntent> } {
+  const store = loadIntentStore(siteUrl);
+
+  // 1. Save exact override
+  store.exactOverrides[keyword] = newIntent;
+
+  // 2. Extract significant tokens
+  const tokens = extractTokens(keyword);
+
+  if (tokens.length > 0) {
+    // Remove any existing rule from this exact source keyword
+    store.learnedRules = store.learnedRules.filter((r) => r.source !== keyword);
+
+    // Add new learned rule
+    store.learnedRules.push({ tokens, intent: newIntent, source: keyword });
+  }
+
+  // 3. Find all similar keywords that match the learned tokens
+  const affected = new Map<string, KeywordIntent>();
+  if (tokens.length > 0) {
+    for (const kw of allKeywords) {
+      if (kw === keyword) continue;
+      if (store.exactOverrides[kw]) continue; // don't override explicit user choices
+
+      const kwTokens = extractTokens(kw);
+      // A keyword matches if it shares at least half the rule tokens (min 1)
+      const matchThreshold = Math.max(1, Math.ceil(tokens.length * 0.5));
+      const matchCount = tokens.filter((t) => kwTokens.includes(t)).length;
+
+      if (matchCount >= matchThreshold) {
+        store.exactOverrides[kw] = newIntent;
+        affected.set(kw, newIntent);
+      }
+    }
+  }
+
+  saveIntentStore(siteUrl, store);
+  return { store, affected };
+}
+
+/**
+ * Get the effective intent for a keyword, checking:
+ * 1. Exact user override
+ * 2. Learned rule match
+ * 3. Auto-classifier (fallback)
+ */
+function getEffectiveIntent(
+  keyword: string,
+  store: IntentStore,
+  rankingUrl?: string,
+  siteUrl?: string
+): { intent: KeywordIntent; source: 'override' | 'learned' | 'auto' } {
+  // 1. Exact override
+  if (store.exactOverrides[keyword]) {
+    return { intent: store.exactOverrides[keyword], source: 'override' };
+  }
+
+  // 2. Learned rule match
+  const kwTokens = extractTokens(keyword);
+  for (const rule of store.learnedRules) {
+    const matchThreshold = Math.max(1, Math.ceil(rule.tokens.length * 0.5));
+    const matchCount = rule.tokens.filter((t) => kwTokens.includes(t)).length;
+    if (matchCount >= matchThreshold) {
+      return { intent: rule.intent, source: 'learned' };
+    }
+  }
+
+  // 3. Auto-classifier
+  return { intent: classifyKeywordIntent(keyword, rankingUrl, siteUrl), source: 'auto' };
+}
+
+/* ------------------------------------------------------------------ */
 /*  KeywordRow sub-component (keeps main component cleaner)           */
 /* ------------------------------------------------------------------ */
 
@@ -1102,6 +1250,8 @@ function KeywordRow({
   loadingHistory,
   siteUrl,
   volume,
+  intentStore,
+  onIntentOverride,
 }: {
   keyword: any;
   compareKeyword: any;
@@ -1121,7 +1271,23 @@ function KeywordRow({
   loadingHistory: boolean;
   siteUrl: string;
   volume: { avgMonthlySearches: number | null; competition: string | null; competitionIndex: number | null } | null;
+  intentStore: IntentStore;
+  onIntentOverride: (keyword: string, intent: KeywordIntent) => void;
 }) {
+  const [showIntentPicker, setShowIntentPicker] = useState(false);
+  const intentPickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showIntentPicker) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (intentPickerRef.current && !intentPickerRef.current.contains(e.target as Node)) {
+        setShowIntentPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showIntentPicker]);
+
   return (
     <>
       <tr
@@ -1154,14 +1320,58 @@ function KeywordRow({
             </svg>
           </div>
         </td>
-        <td className="px-6 py-3.5">
+        <td className="px-6 py-3.5" onClick={(e) => e.stopPropagation()}>
           {(() => {
-            const intent = classifyKeywordIntent(keyword.keyword, pages[0]?.page, siteUrl);
+            const { intent, source } = getEffectiveIntent(keyword.keyword, intentStore, pages[0]?.page, siteUrl);
             const colors = INTENT_COLORS[intent];
             return (
-              <span className={`inline-block px-2 py-0.5 rounded-apple-pill text-apple-xs font-medium ${colors.bg} ${colors.text}`}>
-                {intent}
-              </span>
+              <div className="relative" ref={intentPickerRef}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowIntentPicker(!showIntentPicker);
+                  }}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-apple-pill text-apple-xs font-medium ${colors.bg} ${colors.text} hover:opacity-80 transition-opacity cursor-pointer`}
+                  title={source !== 'auto' ? `${source === 'override' ? 'Manually set' : 'Learned from similar keyword'} — click to change` : 'Click to reclassify'}
+                >
+                  {intent}
+                  {source !== 'auto' && (
+                    <svg className="w-2.5 h-2.5 opacity-60" fill="currentColor" viewBox="0 0 20 20">
+                      <circle cx="10" cy="10" r="4" />
+                    </svg>
+                  )}
+                  <svg className="w-2.5 h-2.5 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {showIntentPicker && (
+                  <div className="absolute z-50 mt-1 left-0 w-40 bg-white rounded-apple-sm border border-apple-divider shadow-lg overflow-hidden">
+                    {ALL_INTENTS.map((intentOption) => {
+                      const optColors = INTENT_COLORS[intentOption];
+                      const isActive = intentOption === intent;
+                      return (
+                        <button
+                          key={intentOption}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isActive) {
+                              onIntentOverride(keyword.keyword, intentOption);
+                            }
+                            setShowIntentPicker(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-apple-xs font-medium flex items-center gap-2 transition-colors ${
+                            isActive ? 'bg-apple-fill-secondary' : 'hover:bg-apple-fill-secondary'
+                          }`}
+                        >
+                          <span className={`inline-block w-2 h-2 rounded-full ${optColors.bg.replace('50', '400')}`} style={{ backgroundColor: intentOption === 'Transactional' ? '#15803d' : intentOption === 'Product' ? '#7e22ce' : intentOption === 'Educational' ? '#1d4ed8' : intentOption === 'Navigational' ? '#c2410c' : '#be123c' }} />
+                          {intentOption}
+                          {isActive && <span className="ml-auto text-apple-blue">✓</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })()}
         </td>
