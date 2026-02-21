@@ -11,6 +11,14 @@ import type { ScanResult } from './RecommendationsPanel';
 import KeywordInsightsPanel from './KeywordInsightsPanel';
 import type { MonthlyPosition } from './KeywordInsightsPanel';
 import ActivityLog from './ActivityLog';
+import GroupRecommendations from './GroupRecommendations';
+
+interface KeywordGroup {
+  id: number;
+  name: string;
+  keywords: string[];
+  createdAt: string;
+}
 
 interface GoogleSearchConsoleProps {
   dateRange: DateRange;
@@ -64,11 +72,108 @@ export default function GoogleSearchConsole({
   const [loadingAlerts, setLoadingAlerts] = useState(false);
   const [activeAlert, setActiveAlert] = useState<'fire' | 'smoking' | 'hot' | ''>('');
   const [intentStore, setIntentStore] = useState<IntentStore>(() => loadIntentStore(siteUrl));
+  const [groups, setGroups] = useState<KeywordGroup[]>([]);
+  const [activeGroup, setActiveGroup] = useState<KeywordGroup | null>(null);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [showGroupScan, setShowGroupScan] = useState(false);
+  const [addToGroupKeywords, setAddToGroupKeywords] = useState<Set<string>>(new Set());
+  const [showAddToGroup, setShowAddToGroup] = useState(false);
 
   // Reload intent store when siteUrl changes
   useEffect(() => {
     setIntentStore(loadIntentStore(siteUrl));
   }, [siteUrl]);
+
+  // Fetch keyword groups
+  useEffect(() => {
+    if (!siteUrl) return;
+    (async () => {
+      try {
+        const resp = await fetch(
+          `${API_ENDPOINTS.db.keywordGroups}?siteUrl=${encodeURIComponent(siteUrl)}`
+        );
+        if (resp.ok) {
+          const { groups: g } = await resp.json();
+          setGroups(g || []);
+        }
+      } catch { /* non-critical */ }
+    })();
+  }, [siteUrl]);
+
+  const createGroup = async (name: string) => {
+    try {
+      const resp = await fetch(API_ENDPOINTS.db.keywordGroups, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl, name }),
+      });
+      if (resp.ok) {
+        const { group } = await resp.json();
+        setGroups((prev) => [...prev, group]);
+        setShowCreateGroup(false);
+        setNewGroupName('');
+      }
+    } catch { /* ignore */ }
+  };
+
+  const deleteGroup = async (id: number) => {
+    try {
+      await fetch(API_ENDPOINTS.db.keywordGroups, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      setGroups((prev) => prev.filter((g) => g.id !== id));
+      if (activeGroup?.id === id) {
+        setActiveGroup(null);
+        setShowGroupScan(false);
+      }
+    } catch { /* ignore */ }
+  };
+
+  const addKeywordsToGroup = async (groupId: number, keywords: string[]) => {
+    try {
+      const resp = await fetch(API_ENDPOINTS.db.keywordGroupMembers, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupId, siteUrl, keywords }),
+      });
+      if (resp.ok) {
+        setGroups((prev) =>
+          prev.map((g) =>
+            g.id === groupId
+              ? { ...g, keywords: [...new Set([...g.keywords, ...keywords])] }
+              : g
+          )
+        );
+        setSelectedKeywords(new Set());
+        setShowAddToGroup(false);
+      }
+    } catch { /* ignore */ }
+  };
+
+  const removeKeywordFromGroup = async (groupId: number, keyword: string) => {
+    try {
+      await fetch(API_ENDPOINTS.db.keywordGroupMembers, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupId, keyword }),
+      });
+      setGroups((prev) =>
+        prev.map((g) =>
+          g.id === groupId
+            ? { ...g, keywords: g.keywords.filter((k) => k !== keyword) }
+            : g
+        )
+      );
+      if (activeGroup?.id === groupId) {
+        setActiveGroup((prev) =>
+          prev ? { ...prev, keywords: prev.keywords.filter((k) => k !== keyword) } : null
+        );
+      }
+    } catch { /* ignore */ }
+  };
 
   const handleIntentOverride = (keyword: string, newIntent: KeywordIntent) => {
     const allKws = data?.current?.keywords?.map((k: any) => k.keyword) || [];
@@ -286,6 +391,14 @@ export default function GoogleSearchConsole({
     );
   }
 
+  // Group filter
+  if (activeGroup) {
+    const groupSet = new Set(activeGroup.keywords);
+    filteredKeywords = filteredKeywords.filter(
+      (keyword: any) => groupSet.has(keyword.keyword)
+    );
+  }
+
   // Compare keywords map
   const compareKeywordsMap = new Map();
   if (data.compare?.keywords && Array.isArray(data.compare.keywords)) {
@@ -346,6 +459,8 @@ export default function GoogleSearchConsole({
     setAppliedFilter(new Set());
     setIntentFilter('');
     setActiveAlert('');
+    setActiveGroup(null);
+    setShowGroupScan(false);
     setCurrentPage(1);
     setSortColumn(null);
     setSortDirection('asc');
@@ -729,6 +844,183 @@ export default function GoogleSearchConsole({
             </div>
           )}
 
+          {/* Groups Bar */}
+          <div className="mb-4 rounded-apple-sm border border-apple-divider bg-white overflow-hidden">
+            <div className="px-4 py-3 flex items-center gap-2 border-b border-apple-divider bg-apple-fill-secondary">
+              <svg className="w-4 h-4 text-apple-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+              <span className="text-apple-xs font-semibold text-apple-text-secondary uppercase tracking-wider">
+                Groups
+              </span>
+              {activeGroup && (
+                <button
+                  onClick={() => { setActiveGroup(null); setShowGroupScan(false); setCurrentPage(1); }}
+                  className="ml-auto text-apple-xs text-apple-blue hover:underline"
+                >
+                  Clear group filter
+                </button>
+              )}
+            </div>
+            <div className="px-4 py-3 flex items-center gap-2 flex-wrap">
+              {groups.map((group) => (
+                <div key={group.id} className="relative group/grp inline-flex">
+                  <button
+                    onClick={() => {
+                      if (activeGroup?.id === group.id) {
+                        setActiveGroup(null);
+                        setShowGroupScan(false);
+                      } else {
+                        setActiveGroup(group);
+                        setShowGroupScan(false);
+                      }
+                      setCurrentPage(1);
+                    }}
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-apple-sm border text-apple-sm font-medium transition-all duration-200 ${
+                      activeGroup?.id === group.id
+                        ? 'bg-blue-50 border-blue-300 text-blue-700 shadow-sm'
+                        : 'border-apple-divider text-apple-text-secondary hover:bg-blue-50/50 hover:border-blue-200'
+                    }`}
+                  >
+                    <span>{group.name}</span>
+                    <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-apple-xs font-bold ${
+                      group.keywords.length > 0 ? 'bg-blue-100 text-blue-700' : 'bg-apple-fill-secondary text-apple-text-tertiary'
+                    }`}>
+                      {group.keywords.length}
+                    </span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm(`Delete group "${group.name}"?`)) deleteGroup(group.id);
+                    }}
+                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center opacity-0 group-hover/grp:opacity-100 transition-opacity hover:bg-red-600"
+                    title="Delete group"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+
+              {/* Create Group */}
+              {showCreateGroup ? (
+                <div className="inline-flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={newGroupName}
+                    onChange={(e) => setNewGroupName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newGroupName.trim()) createGroup(newGroupName.trim());
+                      if (e.key === 'Escape') { setShowCreateGroup(false); setNewGroupName(''); }
+                    }}
+                    placeholder="Group name..."
+                    className="px-3 py-1.5 text-apple-sm border border-apple-border rounded-apple-sm w-36 focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue"
+                    autoFocus
+                  />
+                  <button
+                    onClick={() => { if (newGroupName.trim()) createGroup(newGroupName.trim()); }}
+                    className="px-2 py-1.5 text-apple-sm font-medium text-apple-blue hover:bg-blue-50 rounded-apple-sm transition-colors"
+                  >
+                    Add
+                  </button>
+                  <button
+                    onClick={() => { setShowCreateGroup(false); setNewGroupName(''); }}
+                    className="px-2 py-1.5 text-apple-sm text-apple-text-tertiary hover:text-apple-text-secondary transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowCreateGroup(true)}
+                  className="inline-flex items-center gap-1 px-3 py-2 rounded-apple-sm border border-dashed border-apple-divider text-apple-xs font-medium text-apple-text-tertiary hover:border-apple-blue hover:text-apple-blue transition-all duration-200"
+                >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  New Group
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Group Overview & Scan */}
+          {activeGroup && (
+            <div className="mb-4 rounded-apple-sm border border-blue-200 bg-blue-50/30 overflow-hidden">
+              {/* Group Overview Stats */}
+              {(() => {
+                const groupKws = data.current.keywords.filter((k: any) =>
+                  activeGroup.keywords.includes(k.keyword)
+                );
+                const totalImpressions = groupKws.reduce((s: number, k: any) => s + (k.impressions || 0), 0);
+                const totalClicks = groupKws.reduce((s: number, k: any) => s + (k.clicks || 0), 0);
+                const validPositions = groupKws.filter((k: any) => k.position != null);
+                const avgPosition = validPositions.length > 0
+                  ? validPositions.reduce((s: number, k: any) => s + k.position, 0) / validPositions.length
+                  : null;
+
+                return (
+                  <div className="px-4 py-3 flex items-center gap-6 border-b border-blue-200">
+                    <div className="flex items-center gap-2">
+                      <span className="text-apple-xs font-semibold text-blue-700 uppercase tracking-wider">
+                        {activeGroup.name}
+                      </span>
+                      <span className="text-apple-xs text-blue-600">
+                        {groupKws.length} keywords
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-4 ml-auto">
+                      <div className="text-right">
+                        <div className="text-apple-xs text-apple-text-tertiary">Impressions</div>
+                        <div className="text-apple-sm font-semibold text-apple-text">{totalImpressions.toLocaleString()}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-apple-xs text-apple-text-tertiary">Clicks</div>
+                        <div className="text-apple-sm font-semibold text-apple-text">{totalClicks.toLocaleString()}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-apple-xs text-apple-text-tertiary">Avg. Position</div>
+                        <div className="text-apple-sm font-semibold text-apple-text">
+                          {avgPosition !== null ? avgPosition.toFixed(1) : '—'}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setShowGroupScan(!showGroupScan)}
+                        className={`ml-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-apple-pill text-apple-sm font-medium transition-all duration-200 ${
+                          showGroupScan
+                            ? 'bg-white border border-apple-blue text-apple-blue'
+                            : 'bg-apple-blue text-white hover:bg-apple-blue-hover shadow-sm'
+                        }`}
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                        </svg>
+                        {showGroupScan ? 'Hide Scan' : 'Scan Group'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Group Scan Panel */}
+              {showGroupScan && (
+                <div className="p-4">
+                  <GroupRecommendations
+                    groupName={activeGroup.name}
+                    keywords={activeGroup.keywords}
+                    siteUrl={siteUrl}
+                    keywordPages={keywordPages}
+                    cachedScanResults={scanResults}
+                    onScanResultsUpdate={(results) => {
+                      setScanResults(new Map([...scanResults, ...results]));
+                    }}
+                    searchVolumes={searchVolumes}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-3 mb-4">
             <input
               type="text"
@@ -753,17 +1045,45 @@ export default function GoogleSearchConsole({
                 <option key={intent} value={intent}>{intent}</option>
               ))}
             </select>
+            {/* Add to Group button — visible when keywords are selected */}
+            {selectedKeywords.size > 0 && groups.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowAddToGroup(!showAddToGroup)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-apple-sm font-medium rounded-apple-sm border border-apple-border text-apple-text-secondary hover:bg-apple-fill-secondary transition-all duration-200"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                  Add to Group
+                </button>
+                {showAddToGroup && (
+                  <div className="absolute z-50 mt-1 right-0 w-48 bg-white rounded-apple-sm border border-apple-divider shadow-lg overflow-hidden">
+                    {groups.map((group) => (
+                      <button
+                        key={group.id}
+                        onClick={() => addKeywordsToGroup(group.id, [...selectedKeywords])}
+                        className="w-full text-left px-4 py-2.5 text-apple-sm text-apple-text-secondary hover:bg-apple-fill-secondary transition-colors flex items-center justify-between"
+                      >
+                        <span>{group.name}</span>
+                        <span className="text-apple-xs text-apple-text-tertiary">{group.keywords.length}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             {selectedKeywords.size > 0 && appliedFilter.size === 0 && (
               <button onClick={applyFilter} className="btn-primary text-apple-sm">
                 Apply Filter ({selectedKeywords.size})
               </button>
             )}
-            {(appliedFilter.size > 0 || intentFilter || activeAlert) && (
+            {(appliedFilter.size > 0 || intentFilter || activeAlert || activeGroup) && (
               <button onClick={clearFilter} className="btn-danger text-apple-sm">
                 Clear Filters
               </button>
             )}
-            {searchTerm && appliedFilter.size === 0 && !intentFilter && !activeAlert && (
+            {searchTerm && appliedFilter.size === 0 && !intentFilter && !activeAlert && !activeGroup && (
               <button
                 onClick={() => {
                   setSearchTerm('');
