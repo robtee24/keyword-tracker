@@ -40,6 +40,10 @@ export const API_ENDPOINTS = {
     analyzeSite: `${API_BASE_URL}/api/ai/analyze-site`,
     classifyIntents: `${API_BASE_URL}/api/ai/classify-intents`,
   },
+  audit: {
+    sitemap: `${API_BASE_URL}/api/audit/sitemap`,
+    run: `${API_BASE_URL}/api/audit/run`,
+  },
   db: {
     completedTasks: `${API_BASE_URL}/api/db/completed-tasks`,
     recommendations: `${API_BASE_URL}/api/db/recommendations`,
@@ -48,5 +52,6 @@ export const API_ENDPOINTS = {
     keywords: `${API_BASE_URL}/api/db/keywords`,
     searchVolumes: `${API_BASE_URL}/api/db/search-volumes`,
     keywordIntents: `${API_BASE_URL}/api/db/keyword-intents`,
+    pageAudits: `${API_BASE_URL}/api/db/page-audits`,
   },
 };

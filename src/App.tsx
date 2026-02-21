@@ -9,6 +9,7 @@ import OverviewView from './components/OverviewView';
 import GoogleSearchConsole from './components/SEO/GoogleSearchConsole';
 import RecommendationsView from './components/RecommendationsView';
 import LostKeywordsView from './components/LostKeywordsView';
+import AuditView from './components/AuditView';
 import ActivityLogView from './components/ActivityLogView';
 import OAuthModal from './components/OAuthModal';
 import { isAuthenticated, clearTokens, authenticatedFetch } from './services/authService';
@@ -45,6 +46,9 @@ function App() {
   // Sites (for project creation dropdown)
   const [sites, setSites] = useState<SearchConsoleSite[]>([]);
   const [sitesLoading, setSitesLoading] = useState(false);
+
+  // Audit views that have been visited (stay mounted for background processing)
+  const [visitedAudits, setVisitedAudits] = useState<Set<string>>(new Set());
 
   // Date selection
   const [dateRange, setDateRange] = useState<DateRange>({
@@ -152,8 +156,12 @@ function App() {
       localStorage.removeItem('kt_active_view');
       setHasLoadedOnce(false);
       setLoadTrigger(0);
+      setVisitedAudits(new Set());
     } else {
       localStorage.setItem('kt_active_view', view);
+      if (['seo-audit', 'content-audit', 'aeo-audit', 'schema-audit'].includes(view)) {
+        setVisitedAudits((prev) => new Set(prev).add(view));
+      }
     }
   };
 
@@ -235,7 +243,14 @@ function App() {
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                     </svg>
                     <span className="text-apple-sm text-apple-text-tertiary capitalize">
-                      {currentView === 'activity-log' ? 'Activity Log' : currentView}
+                      {({
+                        'activity-log': 'Activity Log',
+                        'lost-keywords': 'Lost Keywords',
+                        'seo-audit': 'SEO Audit',
+                        'content-audit': 'Content Audit',
+                        'aeo-audit': 'AEO Audit',
+                        'schema-audit': 'Schema Audit',
+                      } as Record<string, string>)[currentView] || currentView}
                     </span>
                   </>
                 )}
@@ -397,6 +412,48 @@ function App() {
           {/* Lost Keywords */}
           {currentView === 'lost-keywords' && activeProject && (
             <LostKeywordsView siteUrl={activeProject.siteUrl} />
+          )}
+
+          {/* Audit Views — stay mounted once visited so audits continue in background */}
+          {activeProject && visitedAudits.has('seo-audit') && (
+            <div style={{ display: currentView === 'seo-audit' ? 'block' : 'none' }}>
+              <AuditView
+                siteUrl={activeProject.siteUrl}
+                auditType="seo"
+                title="SEO Audit"
+                description="Comprehensive technical SEO audit of every page in your sitemap. Analyzes title tags, meta descriptions, headings, internal links, images, and more."
+              />
+            </div>
+          )}
+          {activeProject && visitedAudits.has('content-audit') && (
+            <div style={{ display: currentView === 'content-audit' ? 'block' : 'none' }}>
+              <AuditView
+                siteUrl={activeProject.siteUrl}
+                auditType="content"
+                title="Content Audit"
+                description="Evaluates copy quality, conversion optimization, and marketing psychology across every page. Combines copywriting, CRO, and persuasion analysis."
+              />
+            </div>
+          )}
+          {activeProject && visitedAudits.has('aeo-audit') && (
+            <div style={{ display: currentView === 'aeo-audit' ? 'block' : 'none' }}>
+              <AuditView
+                siteUrl={activeProject.siteUrl}
+                auditType="aeo"
+                title="AEO Audit"
+                description="AI Engine Optimization audit — analyzes how well your pages would be cited by AI assistants like ChatGPT, Perplexity, and Google AI Overviews."
+              />
+            </div>
+          )}
+          {activeProject && visitedAudits.has('schema-audit') && (
+            <div style={{ display: currentView === 'schema-audit' ? 'block' : 'none' }}>
+              <AuditView
+                siteUrl={activeProject.siteUrl}
+                auditType="schema"
+                title="Schema Audit"
+                description="Validates existing schema markup and identifies missing structured data opportunities for rich snippets in Google search results."
+              />
+            </div>
           )}
 
           {/* Recommendations */}

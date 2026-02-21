@@ -9,6 +9,12 @@
     },
     "api/google/ads/search-volume.js": {
       "maxDuration": 60
+    },
+    "api/audit/run.js": {
+      "maxDuration": 60
+    },
+    "api/audit/sitemap.js": {
+      "maxDuration": 30
     }
   },
   "rewrites": [
