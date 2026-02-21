@@ -38,6 +38,7 @@ export const API_ENDPOINTS = {
   },
   ai: {
     analyzeSite: `${API_BASE_URL}/api/ai/analyze-site`,
+    classifyIntents: `${API_BASE_URL}/api/ai/classify-intents`,
   },
   db: {
     completedTasks: `${API_BASE_URL}/api/db/completed-tasks`,

@@ -389,6 +389,7 @@ function App() {
                 compareDateRange={committedCompareDateRange}
                 siteUrl={activeProject.siteUrl}
                 loadTrigger={loadTrigger}
+                projectId={activeProject.id}
               />
             </div>
           )}

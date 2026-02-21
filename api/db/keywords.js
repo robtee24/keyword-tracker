@@ -52,19 +52,26 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: fetchErr.message });
     }
 
-    const existingMap = new Map((existing || []).map((k) => [k.keyword, k.last_seen_at]));
-    const currentSet = new Set(keywords);
+    // Build a case-insensitive map so GSC casing variations don't cause false "new" tags
+    const existingMap = new Map(
+      (existing || []).map((k) => [k.keyword.toLowerCase(), k.last_seen_at])
+    );
+    const currentSet = new Set(keywords.map((kw) => kw.toLowerCase()));
 
     // 2. Identify new keywords — only if we already have stored keywords
     //    (first run seeds the DB; nothing is "new" on the initial setup)
     const isFirstRun = existingMap.size === 0;
-    const newKeywords = isFirstRun ? [] : keywords.filter((kw) => !existingMap.has(kw));
+    const newKeywords = isFirstRun
+      ? []
+      : keywords.filter((kw) => !existingMap.has(kw.toLowerCase()));
 
     // 3. Identify lost keywords (in DB but not in current GSC data)
     const lostKeywords = [];
-    for (const [kw, lastSeen] of existingMap) {
-      if (!currentSet.has(kw)) {
-        lostKeywords.push({ keyword: kw, lastSeenAt: lastSeen });
+    for (const [kwLower, lastSeen] of existingMap) {
+      if (!currentSet.has(kwLower)) {
+        // Use the original-case keyword from DB for display
+        const original = (existing || []).find((k) => k.keyword.toLowerCase() === kwLower);
+        lostKeywords.push({ keyword: original?.keyword || kwLower, lastSeenAt: lastSeen });
       }
     }
 
@@ -73,7 +80,7 @@ export default async function handler(req, res) {
       site_url: siteUrl,
       keyword: kw,
       last_seen_at: now,
-      ...(existingMap.has(kw) ? {} : { first_seen_at: now }),
+      ...(existingMap.has(kw.toLowerCase()) ? {} : { first_seen_at: now }),
     }));
 
     for (let i = 0; i < rows.length; i += 50) {

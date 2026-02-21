@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { format } from 'date-fns';
 import type { DateRange } from '../../types';
 import { fetchGoogleSearchConsole } from '../../services/googleSearchConsoleService';
@@ -25,6 +25,7 @@ interface GoogleSearchConsoleProps {
   compareDateRange: DateRange | null;
   siteUrl: string;
   loadTrigger: number;
+  projectId?: string;
 }
 
 export default function GoogleSearchConsole({
@@ -32,7 +33,41 @@ export default function GoogleSearchConsole({
   compareDateRange,
   siteUrl,
   loadTrigger,
+  projectId,
 }: GoogleSearchConsoleProps) {
+  const objectives = useMemo(() => {
+    if (!projectId) return null;
+    try {
+      const raw = localStorage.getItem(`kt_objectives_${projectId}`);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }, [projectId]);
+
+  const competitorBrands = useMemo(() => {
+    if (!objectives?.competitors) return [];
+    try {
+      const text: string = objectives.competitors;
+      return text
+        .split(/[\n,]+/)
+        .map((s: string) => s.trim().toLowerCase())
+        .filter((s: string) => s.length > 0)
+        .flatMap((entry: string) => {
+          try {
+            const host = new URL(entry.startsWith('http') ? entry : `https://${entry}`).hostname;
+            const brand = host.replace('www.', '').split('.')[0];
+            return brand ? [brand] : [];
+          } catch {
+            return [entry.replace(/[^a-z0-9]/g, '')];
+          }
+        })
+        .filter((b: string) => b.length > 1);
+    } catch {
+      return [];
+    }
+  }, [objectives]);
+
   const [data, setData] = useState<{
     current: any;
     compare: any | null;
@@ -81,6 +116,8 @@ export default function GoogleSearchConsole({
   const [showAddToGroup, setShowAddToGroup] = useState(false);
   const [newKeywords, setNewKeywords] = useState<Set<string>>(new Set());
   const [lostKeywords, setLostKeywords] = useState<Array<{ keyword: string; lastSeenAt: string }>>([]);
+  const [aiIntents, setAiIntents] = useState<Record<string, KeywordIntent>>({});
+  const [loadingAiIntents, setLoadingAiIntents] = useState(false);
 
   // Reload intent store when siteUrl changes
   useEffect(() => {
@@ -362,6 +399,35 @@ export default function GoogleSearchConsole({
     run();
   }, [data, siteUrl]);
 
+  // AI intent classification using objectives data
+  useEffect(() => {
+    if (!data?.current?.keywords?.length || !siteUrl) return;
+
+    const keywords: string[] = data.current.keywords.map((kw: any) => kw.keyword);
+    if (keywords.length === 0) return;
+
+    let cancelled = false;
+    setLoadingAiIntents(true);
+
+    fetch(API_ENDPOINTS.ai.classifyIntents, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ siteUrl, keywords, objectives: objectives || {} }),
+    })
+      .then((resp) => resp.ok ? resp.json() : null)
+      .then((result) => {
+        if (!cancelled && result?.intents) {
+          setAiIntents(result.intents);
+          console.log('[AI Intents] Classified:', Object.keys(result.intents).length,
+            result.fromCache ? '(all cached)' : `(${result.classified || 0} new)`);
+        }
+      })
+      .catch((err) => console.error('[AI Intents] Error:', err))
+      .finally(() => { if (!cancelled) setLoadingAiIntents(false); });
+
+    return () => { cancelled = true; };
+  }, [data, siteUrl, objectives]);
+
   // Fetch alert data (positions across 3 time periods) after keyword data loads
   useEffect(() => {
     if (!data?.current?.keywords?.length || !siteUrl) return;
@@ -434,8 +500,8 @@ export default function GoogleSearchConsole({
   if (alertData.size > 0) {
     for (const kw of data.current.keywords) {
       const kwName = kw.keyword;
-      const { intent } = getEffectiveIntent(kwName, intentStore, keywordPages.get(kwName)?.[0]?.page, siteUrl);
-      const isActionable = intent === 'Transactional' || intent === 'Product' || intent === 'Local';
+      const { intent } = getEffectiveIntent(kwName, intentStore, keywordPages.get(kwName)?.[0]?.page, siteUrl, competitorBrands, aiIntents);
+      const isActionable = intent === 'Transactional' || intent === 'Product' || intent === 'Local' || intent === 'Competitor Transactional';
       if (!isActionable) continue;
 
       const periods = alertData.get(kwName);
@@ -497,7 +563,7 @@ export default function GoogleSearchConsole({
   // Intent filter
   if (intentFilter) {
     filteredKeywords = filteredKeywords.filter(
-      (keyword: any) => getEffectiveIntent(keyword.keyword, intentStore, keywordPages.get(keyword.keyword)?.[0]?.page, siteUrl).intent === intentFilter
+      (keyword: any) => getEffectiveIntent(keyword.keyword, intentStore, keywordPages.get(keyword.keyword)?.[0]?.page, siteUrl, competitorBrands, aiIntents).intent === intentFilter
     );
   }
 
@@ -534,8 +600,8 @@ export default function GoogleSearchConsole({
         aVal = searchVolumes.get(a.keyword.toLowerCase())?.avgMonthlySearches ?? -1;
         bVal = searchVolumes.get(b.keyword.toLowerCase())?.avgMonthlySearches ?? -1;
       } else if (sortColumn === 'intent') {
-        aVal = getEffectiveIntent(a.keyword, intentStore, keywordPages.get(a.keyword)?.[0]?.page, siteUrl).intent;
-        bVal = getEffectiveIntent(b.keyword, intentStore, keywordPages.get(b.keyword)?.[0]?.page, siteUrl).intent;
+        aVal = getEffectiveIntent(a.keyword, intentStore, keywordPages.get(a.keyword)?.[0]?.page, siteUrl, competitorBrands, aiIntents).intent;
+        bVal = getEffectiveIntent(b.keyword, intentStore, keywordPages.get(b.keyword)?.[0]?.page, siteUrl, competitorBrands, aiIntents).intent;
       } else {
         aVal = a[sortColumn];
         bVal = b[sortColumn];
@@ -764,12 +830,13 @@ export default function GoogleSearchConsole({
       />
 
       {/* Loading Status Bar — visible while background data is still loading */}
-      {(loadingVolumes || loadingAlerts) && (
+      {(loadingVolumes || loadingAlerts || loadingAiIntents) && (
         <LoadingStatusBar
           steps={[
             { label: 'Keyword rankings', status: 'done' },
             { label: 'Search volumes', status: loadingVolumes ? 'loading' : 'done' },
             { label: 'Keyword alerts', status: loadingAlerts ? 'loading' : 'done' },
+            { label: 'AI intent classification', status: loadingAiIntents ? 'loading' : 'done' },
           ]}
         />
       )}
@@ -1538,7 +1605,7 @@ function formatVolume(vol: number): string {
 /*  if the keyword text doesn't contain "buy" or "price."             */
 /* ------------------------------------------------------------------ */
 
-export type KeywordIntent = 'Transactional' | 'Product' | 'Educational' | 'Navigational' | 'Local';
+export type KeywordIntent = 'Transactional' | 'Product' | 'Educational' | 'Navigational' | 'Local' | 'Branded' | 'Competitor Navigational' | 'Competitor Transactional';
 
 /**
  * Classify keyword intent using a multi-signal approach:
@@ -1546,11 +1613,12 @@ export type KeywordIntent = 'Transactional' | 'Product' | 'Educational' | 'Navig
  * 2. Page-type inference from the ranking URL
  * 3. Weaker text patterns for remaining keywords
  *
- * @param keyword     The search query
- * @param rankingUrl  The top ranking page URL (optional — improves accuracy)
- * @param siteUrl     The site's base URL (optional — used to detect brand terms)
+ * @param keyword          The search query
+ * @param rankingUrl       The top ranking page URL (optional — improves accuracy)
+ * @param siteUrl          The site's base URL (optional — used to detect brand terms)
+ * @param competitorBrands Lowercase brand names of known competitors (optional)
  */
-function classifyKeywordIntent(keyword: string, rankingUrl?: string, siteUrl?: string): KeywordIntent {
+function classifyKeywordIntent(keyword: string, rankingUrl?: string, siteUrl?: string, competitorBrands?: string[]): KeywordIntent {
   const kw = keyword.toLowerCase();
 
   // -----------------------------------------------------------
@@ -1562,17 +1630,28 @@ function classifyKeywordIntent(keyword: string, rankingUrl?: string, siteUrl?: s
     return 'Local';
   }
 
-  // Navigational — brand/site-specific
-  if (/\b(login|log in|sign in|signin|website|official site|dashboard|portal|my account)\b/i.test(kw)) {
-    return 'Navigational';
-  }
-
-  // Is the keyword the site's brand name or contains it?
+  // Branded — keyword contains the site's own brand name
   if (siteUrl) {
     const brand = extractBrand(siteUrl);
-    if (brand && kw.includes(brand.toLowerCase()) && kw.split(/\s+/).length <= 3) {
-      return 'Navigational';
+    if (brand && kw.includes(brand.toLowerCase())) {
+      return 'Branded';
     }
+  }
+
+  // Competitor — keyword contains a known competitor brand name
+  if (competitorBrands && competitorBrands.length > 0) {
+    const matchedCompetitor = competitorBrands.some((cb) => kw.includes(cb));
+    if (matchedCompetitor) {
+      if (/\b(buy|purchase|order|pricing|price|discount|coupon|subscribe|sign up|signup|free trial|demo|plans?|alternative|switch|cancel|vs\.?|versus)\b/i.test(kw)) {
+        return 'Competitor Transactional';
+      }
+      return 'Competitor Navigational';
+    }
+  }
+
+  // Navigational — generic site-specific navigation
+  if (/\b(login|log in|sign in|signin|website|official site|dashboard|portal|my account)\b/i.test(kw)) {
+    return 'Navigational';
   }
 
   // Explicit transactional — user wants to act/purchase/use
@@ -1691,9 +1770,15 @@ const INTENT_COLORS: Record<KeywordIntent, { bg: string; text: string }> = {
   Educational: { bg: 'bg-blue-50', text: 'text-blue-700' },
   Navigational: { bg: 'bg-orange-50', text: 'text-orange-700' },
   Local: { bg: 'bg-rose-50', text: 'text-rose-700' },
+  Branded: { bg: 'bg-indigo-50', text: 'text-indigo-700' },
+  'Competitor Navigational': { bg: 'bg-amber-50', text: 'text-amber-700' },
+  'Competitor Transactional': { bg: 'bg-teal-50', text: 'text-teal-700' },
 };
 
-const ALL_INTENTS: KeywordIntent[] = ['Transactional', 'Product', 'Educational', 'Navigational', 'Local'];
+const ALL_INTENTS: KeywordIntent[] = [
+  'Transactional', 'Product', 'Educational', 'Navigational', 'Local',
+  'Branded', 'Competitor Navigational', 'Competitor Transactional',
+];
 
 /* ------------------------------------------------------------------ */
 /*  Intent Learning Engine                                             */
@@ -1807,14 +1892,16 @@ function getEffectiveIntent(
   keyword: string,
   store: IntentStore,
   rankingUrl?: string,
-  siteUrl?: string
-): { intent: KeywordIntent; source: 'override' | 'learned' | 'auto' } {
-  // 1. Exact override
+  siteUrl?: string,
+  competitorBrands?: string[],
+  aiClassifications?: Record<string, KeywordIntent>
+): { intent: KeywordIntent; source: 'override' | 'learned' | 'ai' | 'auto' } {
+  // 1. Exact user override (always wins)
   if (store.exactOverrides[keyword]) {
     return { intent: store.exactOverrides[keyword], source: 'override' };
   }
 
-  // 2. Learned rule match
+  // 2. Learned rule match from user overrides
   const kwTokens = extractTokens(keyword);
   for (const rule of store.learnedRules) {
     const matchThreshold = Math.max(1, Math.ceil(rule.tokens.length * 0.5));
@@ -1824,8 +1911,16 @@ function getEffectiveIntent(
     }
   }
 
-  // 3. Auto-classifier
-  return { intent: classifyKeywordIntent(keyword, rankingUrl, siteUrl), source: 'auto' };
+  // 3. AI classification (uses business objectives context)
+  if (aiClassifications) {
+    const aiIntent = aiClassifications[keyword.toLowerCase()];
+    if (aiIntent) {
+      return { intent: aiIntent, source: 'ai' };
+    }
+  }
+
+  // 4. Regex-based fallback
+  return { intent: classifyKeywordIntent(keyword, rankingUrl, siteUrl, competitorBrands), source: 'auto' };
 }
 
 /* ------------------------------------------------------------------ */
@@ -1952,7 +2047,7 @@ function KeywordRow({
         </td>
         <td className="px-6 py-3.5" onClick={(e) => e.stopPropagation()}>
           {(() => {
-            const { intent, source } = getEffectiveIntent(keyword.keyword, intentStore, pages[0]?.page, siteUrl);
+            const { intent, source } = getEffectiveIntent(keyword.keyword, intentStore, pages[0]?.page, siteUrl, competitorBrands, aiIntents);
             const colors = INTENT_COLORS[intent];
             return (
               <div className="relative" ref={intentPickerRef}>
@@ -1962,10 +2057,20 @@ function KeywordRow({
                     setShowIntentPicker(!showIntentPicker);
                   }}
                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-apple-pill text-apple-xs font-medium ${colors.bg} ${colors.text} hover:opacity-80 transition-opacity cursor-pointer`}
-                  title={source !== 'auto' ? `${source === 'override' ? 'Manually set' : 'Learned from similar keyword'} — click to change` : 'Click to reclassify'}
+                  title={
+                    source === 'override' ? 'Manually set — click to change'
+                    : source === 'learned' ? 'Learned from similar keyword — click to change'
+                    : source === 'ai' ? 'Classified by AI using your objectives — click to change'
+                    : 'Auto-classified — click to change'
+                  }
                 >
                   {intent}
-                  {source !== 'auto' && (
+                  {source === 'ai' && (
+                    <svg className="w-2.5 h-2.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                    </svg>
+                  )}
+                  {(source === 'override' || source === 'learned') && (
                     <svg className="w-2.5 h-2.5 opacity-60" fill="currentColor" viewBox="0 0 20 20">
                       <circle cx="10" cy="10" r="4" />
                     </svg>
@@ -1993,7 +2098,11 @@ function KeywordRow({
                             isActive ? 'bg-apple-fill-secondary' : 'hover:bg-apple-fill-secondary'
                           }`}
                         >
-                          <span className={`inline-block w-2 h-2 rounded-full ${optColors.bg.replace('50', '400')}`} style={{ backgroundColor: intentOption === 'Transactional' ? '#15803d' : intentOption === 'Product' ? '#7e22ce' : intentOption === 'Educational' ? '#1d4ed8' : intentOption === 'Navigational' ? '#c2410c' : '#be123c' }} />
+                          <span className={`inline-block w-2 h-2 rounded-full`} style={{ backgroundColor: {
+                            Transactional: '#15803d', Product: '#7e22ce', Educational: '#1d4ed8',
+                            Navigational: '#c2410c', Local: '#be123c', Branded: '#4338ca',
+                            'Competitor Navigational': '#b45309', 'Competitor Transactional': '#0d9488',
+                          }[intentOption] || '#6b7280' }} />
                           {intentOption}
                           {isActive && <span className="ml-auto text-apple-blue">✓</span>}
                         </button>
