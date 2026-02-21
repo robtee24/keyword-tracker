@@ -1454,6 +1454,8 @@ export default function GoogleSearchConsole({
                       activeGroupId={activeGroup?.id || null}
                       onRemoveFromGroup={activeGroup ? (kw: string) => removeKeywordFromGroup(activeGroup.id, kw) : undefined}
                       isNew={newKeywords.has(keyword.keyword)}
+                      competitorBrands={competitorBrands}
+                      aiIntents={aiIntents}
                     />
                   );
                 })
@@ -1952,6 +1954,8 @@ function KeywordRow({
   activeGroupId,
   onRemoveFromGroup,
   isNew,
+  competitorBrands,
+  aiIntents,
 }: {
   keyword: any;
   compareKeyword: any;
@@ -1977,6 +1981,8 @@ function KeywordRow({
   activeGroupId: number | null;
   onRemoveFromGroup?: (keyword: string) => void;
   isNew: boolean;
+  competitorBrands: string[];
+  aiIntents: Record<string, KeywordIntent>;
 }) {
   const [showIntentPicker, setShowIntentPicker] = useState(false);
   const [taskToggleCounter, setTaskToggleCounter] = useState(0);
