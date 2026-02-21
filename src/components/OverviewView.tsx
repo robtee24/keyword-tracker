@@ -161,8 +161,8 @@ export default function OverviewView({ siteUrl, dateRange, compareDateRange }: O
 
         if (pageResp.ok) {
           const pageData = await pageResp.json();
-          const pages: PageData[] = (pageData.keywords || pageData.pages || []).map((p: any) => ({
-            page: p.keyword || p.page || p.keys?.[0] || '',
+          const pages: PageData[] = (pageData.pages || pageData.keywords || []).map((p: any) => ({
+            page: p.page || p.keyword || p.keys?.[0] || '',
             clicks: p.clicks || 0,
             impressions: p.impressions || 0,
             ctr: p.ctr || 0,

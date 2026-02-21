@@ -20,11 +20,15 @@ export default async function handler(req, res) {
       });
     }
 
-    const { startDate, endDate, siteUrl } = req.body;
+    const { startDate, endDate, siteUrl, dimension } = req.body;
 
     if (!siteUrl) {
       return res.status(400).json({ error: 'siteUrl is required' });
     }
+
+    // 'page' dimension is used by the overview page; default is 'query'
+    const gscDimension = dimension === 'page' ? 'page' : 'query';
+    const cacheType = gscDimension === 'page' ? 'pages' : 'keywords';
 
     // Check Supabase cache (valid for the current calendar day)
     const supabase = getSupabase();
@@ -36,7 +40,7 @@ export default async function handler(req, res) {
           .eq('site_url', siteUrl)
           .eq('start_date', startDate)
           .eq('end_date', endDate)
-          .eq('query_type', 'keywords')
+          .eq('query_type', cacheType)
           .eq('fetched_date', todayUTC())
           .maybeSingle();
 
@@ -48,7 +52,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // Fetch keywords with pagination
+    // Fetch data with pagination
     let allRows = [];
     let startRow = 0;
     const rowLimit = 25000;
@@ -66,7 +70,7 @@ export default async function handler(req, res) {
           body: JSON.stringify({
             startDate,
             endDate,
-            dimensions: ['query'],
+            dimensions: [gscDimension],
             rowLimit,
             startRow,
           }),
@@ -98,10 +102,11 @@ export default async function handler(req, res) {
       }
     }
 
-    // Parse keywords
-    const keywords = allRows.map((row, index) => ({
-      id: `kw-${index}`,
+    // Parse rows — field name depends on dimension
+    const parsed = allRows.map((row, index) => ({
+      id: `${gscDimension === 'page' ? 'pg' : 'kw'}-${index}`,
       keyword: row.keys[0],
+      ...(gscDimension === 'page' ? { page: row.keys[0] } : {}),
       clicks: row.clicks || 0,
       impressions: row.impressions || 0,
       ctr: (row.ctr || 0) * 100,
@@ -109,15 +114,16 @@ export default async function handler(req, res) {
     }));
 
     // Calculate totals
-    const totalClicks = keywords.reduce((sum, k) => sum + k.clicks, 0);
-    const totalImpressions = keywords.reduce((sum, k) => sum + k.impressions, 0);
+    const totalClicks = parsed.reduce((sum, k) => sum + k.clicks, 0);
+    const totalImpressions = parsed.reduce((sum, k) => sum + k.impressions, 0);
 
     const responseData = {
-      rows: keywords,
-      keywords,
+      rows: parsed,
+      keywords: parsed,
+      ...(gscDimension === 'page' ? { pages: parsed } : {}),
       totalClicks,
       totalImpressions,
-      totalKeywords: keywords.length,
+      totalKeywords: parsed.length,
     };
 
     // Save to cache (best-effort)
@@ -127,7 +133,7 @@ export default async function handler(req, res) {
           site_url: siteUrl,
           start_date: startDate,
           end_date: endDate,
-          query_type: 'keywords',
+          query_type: cacheType,
           fetched_date: todayUTC(),
           response_data: responseData,
           fetched_at: new Date().toISOString(),

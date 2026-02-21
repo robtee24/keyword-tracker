@@ -55,11 +55,12 @@ export default async function handler(req, res) {
     const existingMap = new Map((existing || []).map((k) => [k.keyword, k.last_seen_at]));
     const currentSet = new Set(keywords);
 
-    // 2. Identify new keywords (in current but not in DB)
-    const newKeywords = keywords.filter((kw) => !existingMap.has(kw));
+    // 2. Identify new keywords — only if we already have stored keywords
+    //    (first run seeds the DB; nothing is "new" on the initial setup)
+    const isFirstRun = existingMap.size === 0;
+    const newKeywords = isFirstRun ? [] : keywords.filter((kw) => !existingMap.has(kw));
 
-    // 3. Identify lost keywords (in DB with recent last_seen_at but not in current set)
-    //    "Lost" = was seen in the previous load but not in this one
+    // 3. Identify lost keywords (in DB but not in current GSC data)
     const lostKeywords = [];
     for (const [kw, lastSeen] of existingMap) {
       if (!currentSet.has(kw)) {

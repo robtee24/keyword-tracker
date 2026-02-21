@@ -105,12 +105,21 @@ export default async function handler(req, res) {
       batches.push(staleKeywords.slice(i, i + 20));
     }
 
-    for (const batch of batches) {
-      try {
-        const batchResult = await fetchHistoricalMetrics(accessToken, developerToken, customerId, batch);
-        Object.assign(freshVolumes, batchResult);
-      } catch (batchErr) {
-        console.error('Batch error:', batchErr.message);
+    // Run batches in parallel (up to 5 concurrent) to avoid sequential delays
+    const CONCURRENCY = 5;
+    for (let i = 0; i < batches.length; i += CONCURRENCY) {
+      const chunk = batches.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(
+        chunk.map((batch) =>
+          fetchHistoricalMetrics(accessToken, developerToken, customerId, batch)
+        )
+      );
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          Object.assign(freshVolumes, result.value);
+        } else {
+          console.error('Batch error:', result.reason?.message);
+        }
       }
     }
 

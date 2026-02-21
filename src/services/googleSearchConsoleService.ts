@@ -35,12 +35,22 @@ async function fetchSearchConsoleData(
   siteUrl: string
 ): Promise<GoogleSearchConsoleMetrics> {
   try {
-    // Fetch keyword data
-    const response = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.keywords, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ startDate, endDate, siteUrl }),
-    });
+    // Fetch keyword data and daily data in parallel
+    const [response, dailyResponse] = await Promise.all([
+      authenticatedFetch(API_ENDPOINTS.google.searchConsole.keywords, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startDate, endDate, siteUrl }),
+      }),
+      authenticatedFetch(API_ENDPOINTS.google.searchConsole.daily, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startDate, endDate, siteUrl }),
+      }).catch((err) => {
+        console.warn('Could not fetch daily data:', err);
+        return null;
+      }),
+    ]);
 
     if (!response.ok) {
       if (response.status === 401) {
@@ -50,22 +60,7 @@ async function fetchSearchConsoleData(
     }
 
     const data = await response.json();
-
-    // Fetch daily data for charts
-    let dailyData = null;
-    try {
-      const dailyResponse = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.daily, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ startDate, endDate, siteUrl }),
-      });
-
-      if (dailyResponse.ok) {
-        dailyData = await dailyResponse.json();
-      }
-    } catch (dailyError) {
-      console.warn('Could not fetch daily data:', dailyError);
-    }
+    const dailyData = dailyResponse?.ok ? await dailyResponse.json() : null;
 
     return parseSearchConsoleResponse(data, dailyData, startDate, endDate);
   } catch (error) {

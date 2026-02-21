@@ -81,6 +81,7 @@ export default function GoogleSearchConsole({
   const [showAddToGroup, setShowAddToGroup] = useState(false);
   const [newKeywords, setNewKeywords] = useState<Set<string>>(new Set());
   const [lostKeywords, setLostKeywords] = useState<Array<{ keyword: string; lastSeenAt: string }>>([]);
+  const [keywordTab, setKeywordTab] = useState<'active' | 'lost'>('active');
 
   // Reload intent store when siteUrl changes
   useEffect(() => {
@@ -229,6 +230,7 @@ export default function GoogleSearchConsole({
 
     const run = async () => {
       // 1. Store keywords and detect new/lost
+      let detectedNewKeywords: string[] = [];
       try {
         const storeResp = await fetch(API_ENDPOINTS.db.keywords, {
           method: 'POST',
@@ -238,7 +240,8 @@ export default function GoogleSearchConsole({
         if (storeResp.ok) {
           const storeResult = await storeResp.json();
           if (storeResult.newKeywords?.length > 0) {
-            setNewKeywords(new Set(storeResult.newKeywords));
+            detectedNewKeywords = storeResult.newKeywords;
+            setNewKeywords(new Set(detectedNewKeywords));
           }
           if (storeResult.lostKeywords?.length > 0) {
             setLostKeywords(storeResult.lostKeywords);
@@ -246,9 +249,8 @@ export default function GoogleSearchConsole({
         }
       } catch { /* non-critical */ }
 
-      // 2. Phase 1: Load cached volumes instantly (no Google Ads API call)
+      // 2. Load cached volumes for all keywords (no Google Ads API call)
       setLoadingVolumes(true);
-      let staleCount = 0;
       try {
         const cacheResp = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
           method: 'POST',
@@ -257,7 +259,6 @@ export default function GoogleSearchConsole({
         });
         if (cacheResp.ok) {
           const cacheResult = await cacheResp.json();
-          staleCount = cacheResult.staleCount || 0;
           if (cacheResult.volumes && Object.keys(cacheResult.volumes).length > 0) {
             const volumeMap = new Map<string, any>();
             for (const [kw, vol] of Object.entries(cacheResult.volumes)) {
@@ -265,31 +266,32 @@ export default function GoogleSearchConsole({
             }
             setSearchVolumes(volumeMap);
           }
-          if (staleCount === 0) {
-            setLoadingVolumes(false);
-            return;
-          }
         }
-      } catch { /* continue to full fetch */ }
+      } catch { /* continue */ }
 
-      // 3. Phase 2: Refresh stale/missing volumes from Google Ads API
-      try {
-        const fullResp = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keywords, siteUrl }),
-        });
-        if (fullResp.ok) {
-          const fullResult = await fullResp.json();
-          if (fullResult.volumes && Object.keys(fullResult.volumes).length > 0) {
-            const volumeMap = new Map<string, any>();
-            for (const [kw, vol] of Object.entries(fullResult.volumes)) {
-              volumeMap.set(kw, vol as any);
+      // 3. Only fetch volumes for genuinely new keywords (not all stale ones).
+      //    Existing keyword volumes refresh naturally after 30 days via the cache TTL.
+      if (detectedNewKeywords.length > 0) {
+        try {
+          const freshResp = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keywords: detectedNewKeywords, siteUrl }),
+          });
+          if (freshResp.ok) {
+            const freshResult = await freshResp.json();
+            if (freshResult.volumes && Object.keys(freshResult.volumes).length > 0) {
+              setSearchVolumes((prev) => {
+                const merged = new Map(prev);
+                for (const [kw, vol] of Object.entries(freshResult.volumes)) {
+                  merged.set(kw, vol as any);
+                }
+                return merged;
+              });
             }
-            setSearchVolumes(volumeMap);
           }
-        }
-      } catch { /* search volume is optional */ }
+        } catch { /* search volume is optional */ }
+      }
       setLoadingVolumes(false);
     };
     run();
@@ -800,10 +802,69 @@ export default function GoogleSearchConsole({
       {/* Keyword Table */}
       <div className="card p-6">
         <div className="mb-6">
-          <h3 className="text-apple-body font-semibold text-apple-text mb-4">
-            Keyword Rankings
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-apple-body font-semibold text-apple-text">
+              Keyword Rankings
+            </h3>
+            {lostKeywords.length > 0 && (
+              <div className="flex rounded-apple-sm border border-apple-divider overflow-hidden">
+                <button
+                  onClick={() => setKeywordTab('active')}
+                  className={`px-4 py-1.5 text-apple-sm font-medium transition-colors ${
+                    keywordTab === 'active'
+                      ? 'bg-apple-blue text-white'
+                      : 'bg-white text-apple-text-secondary hover:bg-apple-fill-secondary'
+                  }`}
+                >
+                  Active Keywords
+                </button>
+                <button
+                  onClick={() => setKeywordTab('lost')}
+                  className={`px-4 py-1.5 text-apple-sm font-medium transition-colors border-l border-apple-divider ${
+                    keywordTab === 'lost'
+                      ? 'bg-orange-500 text-white'
+                      : 'bg-white text-apple-text-secondary hover:bg-apple-fill-secondary'
+                  }`}
+                >
+                  Lost Keywords ({lostKeywords.length})
+                </button>
+              </div>
+            )}
+          </div>
 
+          {keywordTab === 'lost' && lostKeywords.length > 0 ? (
+            <div className="rounded-apple-sm border border-orange-200 bg-orange-50/30 overflow-hidden">
+              <div className="px-4 py-3 border-b border-orange-200 flex items-center gap-2">
+                <svg className="w-4 h-4 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <span className="text-apple-sm font-semibold text-orange-700">
+                  Keywords no longer found in Google Search Console data
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead>
+                    <tr className="border-b border-orange-200">
+                      <th className="px-6 py-3 text-left text-apple-xs font-semibold text-apple-text-secondary uppercase tracking-wider">Keyword</th>
+                      <th className="px-6 py-3 text-left text-apple-xs font-semibold text-apple-text-secondary uppercase tracking-wider">Last Seen</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lostKeywords.map((lk) => (
+                      <tr key={lk.keyword} className="border-b border-orange-100 hover:bg-orange-50/50 transition-colors">
+                        <td className="px-6 py-3 text-apple-sm text-apple-text">{lk.keyword}</td>
+                        <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">
+                          {new Date(lk.lastSeenAt).toLocaleDateString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+          <>
           {/* Alerts Bar */}
           {(fireCount > 0 || smokingCount > 0 || hotCount > 0 || loadingAlerts) && (
             <div className="mb-4 rounded-apple-sm border border-apple-divider bg-white overflow-hidden">
@@ -1347,37 +1408,6 @@ export default function GoogleSearchConsole({
           </div>
         )}
 
-        {/* Lost Keywords */}
-        {lostKeywords.length > 0 && (
-          <div className="mt-4 rounded-apple-sm border border-orange-200 bg-orange-50/40 overflow-hidden">
-            <div className="px-4 py-3 flex items-center gap-2 border-b border-orange-200">
-              <svg className="w-4 h-4 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-              </svg>
-              <span className="text-apple-sm font-semibold text-orange-700">
-                Lost Keywords ({lostKeywords.length})
-              </span>
-              <span className="text-apple-xs text-orange-600/70 ml-1">
-                Previously ranking but not found in current data
-              </span>
-            </div>
-            <div className="px-4 py-3 flex flex-wrap gap-2 max-h-40 overflow-y-auto">
-              {lostKeywords.map((lk) => (
-                <span
-                  key={lk.keyword}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-apple-pill text-apple-xs font-medium bg-orange-100 text-orange-700"
-                  title={`Last seen: ${new Date(lk.lastSeenAt).toLocaleDateString()}`}
-                >
-                  {lk.keyword}
-                  <span className="text-orange-500/60">
-                    · {new Date(lk.lastSeenAt).toLocaleDateString()}
-                  </span>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Selected keywords indicator */}
         {selectedKeywords.size > 0 && (
           <div className="mt-4 p-4 rounded-apple-sm bg-blue-50/50">
@@ -1396,6 +1426,8 @@ export default function GoogleSearchConsole({
             </div>
           </div>
         )}
+          </>
+          )}
       </div>
     </div>
   );

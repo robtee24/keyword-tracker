@@ -1,4 +1,9 @@
 import { API_CONFIG, getAccessTokenFromRequest } from '../../_config.js';
+import { getSupabase } from '../../db.js';
+
+function todayUTC() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 /**
  * Batch-fetch keyword positions across 3 time windows for alert detection.
@@ -24,6 +29,28 @@ export default async function handler(req, res) {
   const { siteUrl } = req.body || {};
   if (!siteUrl) {
     return res.status(400).json({ error: 'siteUrl is required' });
+  }
+
+  // Check Supabase cache (valid for the current calendar day)
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      const { data: cached } = await supabase
+        .from('gsc_cache')
+        .select('response_data')
+        .eq('site_url', siteUrl)
+        .eq('start_date', 'alerts')
+        .eq('end_date', 'alerts')
+        .eq('query_type', 'alerts')
+        .eq('fetched_date', todayUTC())
+        .maybeSingle();
+
+      if (cached?.response_data) {
+        return res.status(200).json({ ...cached.response_data, fromCache: true });
+      }
+    } catch (cacheErr) {
+      console.error('Alert cache read error (continuing):', cacheErr.message);
+    }
   }
 
   const fmt = (d) =>
@@ -88,7 +115,26 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({ alerts: results });
+    const responseData = { alerts: results };
+
+    // Save to cache (best-effort)
+    if (supabase) {
+      try {
+        await supabase.from('gsc_cache').upsert({
+          site_url: siteUrl,
+          start_date: 'alerts',
+          end_date: 'alerts',
+          query_type: 'alerts',
+          fetched_date: todayUTC(),
+          response_data: responseData,
+          fetched_at: new Date().toISOString(),
+        }, { onConflict: 'site_url,start_date,end_date,query_type' });
+      } catch (saveErr) {
+        console.error('Alert cache write error (non-fatal):', saveErr.message);
+      }
+    }
+
+    return res.status(200).json(responseData);
   } catch (error) {
     console.error('Keyword alerts API error:', error);
     return res.status(500).json({ error: 'Failed to fetch alert data' });
