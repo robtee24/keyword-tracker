@@ -65,11 +65,12 @@ export default async function handler(req, res) {
       ? []
       : keywords.filter((kw) => !existingMap.has(kw.toLowerCase()));
 
-    // 3. Identify lost keywords (in DB but not in current GSC data)
+    // 3. Identify lost keywords (not seen in current GSC data AND last seen > 30 days ago)
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - THIRTY_DAYS_MS;
     const lostKeywords = [];
     for (const [kwLower, lastSeen] of existingMap) {
-      if (!currentSet.has(kwLower)) {
-        // Use the original-case keyword from DB for display
+      if (!currentSet.has(kwLower) && new Date(lastSeen).getTime() < cutoff) {
         const original = (existing || []).find((k) => k.keyword.toLowerCase() === kwLower);
         lostKeywords.push({ keyword: original?.keyword || kwLower, lastSeenAt: lastSeen });
       }

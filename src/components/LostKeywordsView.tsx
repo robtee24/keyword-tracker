@@ -40,14 +40,12 @@ export default function LostKeywordsView({ siteUrl }: LostKeywordsViewProps) {
           return;
         }
 
-        const maxLastSeen = keywords.reduce(
-          (max: string, k: any) => (k.last_seen_at > max ? k.last_seen_at : max),
-          ''
-        );
+        const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+        const cutoff = Date.now() - THIRTY_DAYS_MS;
 
         setLostKeywords(
           keywords
-            .filter((k: any) => k.last_seen_at < maxLastSeen)
+            .filter((k: any) => new Date(k.last_seen_at).getTime() < cutoff)
             .map((k: any) => ({
               keyword: k.keyword,
               firstSeenAt: k.first_seen_at,
@@ -112,9 +110,8 @@ export default function LostKeywordsView({ siteUrl }: LostKeywordsViewProps) {
           />
         </svg>
         <div className="text-apple-sm text-amber-800">
-          <span className="font-semibold">Note:</span> Lost keywords require several months of
-          monitoring before they appear here. A keyword is marked as "lost" only when it is no
-          longer present in your Google Search Console data during a refresh. Short-term
+          <span className="font-semibold">Note:</span> A keyword is marked as "lost" only when it
+          has not appeared in your Google Search Console data for over 30 days. Short-term
           fluctuations are normal — keywords may temporarily disappear and return.
         </div>
       </div>
