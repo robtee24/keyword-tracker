@@ -1,4 +1,5 @@
 import { API_CONFIG } from '../../_config.js';
+import { getSupabase, VOLUME_CACHE_DAYS } from '../../db.js';
 
 const ADS_API_VERSION = 'v23';
 const ADS_BASE_URL = `https://googleads.googleapis.com/${ADS_API_VERSION}`;
@@ -7,13 +8,10 @@ const ADS_BASE_URL = `https://googleads.googleapis.com/${ADS_API_VERSION}`;
  * Fetch search volume data for a batch of keywords using the
  * Google Ads Keyword Planner API (GenerateKeywordHistoricalMetrics).
  *
- * Uses app-level credentials (not per-user) because search volume
- * is the same for everyone.
+ * Now with Supabase caching: volumes are cached and only refreshed
+ * when older than VOLUME_CACHE_DAYS (30 days).
  *
- * Required env vars:
- *   GOOGLE_ADS_DEVELOPER_TOKEN  – from Google Ads API Center
- *   GOOGLE_ADS_CUSTOMER_ID      – digits only (e.g. 1234567890)
- *   GOOGLE_ADS_REFRESH_TOKEN    – obtained with adwords scope
+ * Accepts optional `siteUrl` in body to key the cache per-site.
  */
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -21,44 +19,107 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { keywords } = req.body || {};
+  const { keywords, siteUrl } = req.body || {};
   if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
     return res.status(400).json({ error: 'keywords array is required' });
   }
 
+  const cacheKey = siteUrl || '__global__';
+  const supabase = getSupabase();
+
+  // 1. Check cache for fresh volumes
+  let cachedVolumes = {};
+  let staleKeywords = [...keywords];
+
+  if (supabase) {
+    try {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - VOLUME_CACHE_DAYS);
+
+      const { data: cached } = await supabase
+        .from('search_volumes')
+        .select('keyword, avg_monthly_searches, competition, competition_index, fetched_at')
+        .eq('site_url', cacheKey)
+        .in('keyword', keywords)
+        .gte('fetched_at', cutoff.toISOString());
+
+      if (cached && cached.length > 0) {
+        const freshSet = new Set();
+        for (const row of cached) {
+          cachedVolumes[row.keyword] = {
+            avgMonthlySearches: row.avg_monthly_searches,
+            competition: row.competition,
+            competitionIndex: row.competition_index,
+          };
+          freshSet.add(row.keyword);
+        }
+        staleKeywords = keywords.filter((kw) => !freshSet.has(kw));
+      }
+    } catch (cacheErr) {
+      console.error('Cache read error (continuing with API):', cacheErr.message);
+    }
+  }
+
+  // 2. If all keywords are cached and fresh, return immediately
+  if (staleKeywords.length === 0) {
+    return res.status(200).json({ volumes: cachedVolumes, fromCache: true });
+  }
+
+  // 3. Fetch uncached keywords from Google Ads API
   const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
   const customerId = (process.env.GOOGLE_ADS_CUSTOMER_ID || '').replace(/-/g, '');
   const refreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN;
 
   if (!developerToken || !customerId || !refreshToken) {
-    // Gracefully return empty — feature not configured
-    return res.status(200).json({ volumes: {} });
+    return res.status(200).json({ volumes: cachedVolumes });
   }
 
   try {
-    // 1. Get an access token from the refresh token
     const accessToken = await getAccessToken(refreshToken);
 
-    // 2. Call Keyword Planner in batches of 20
-    const allVolumes = {};
+    const freshVolumes = {};
     const batches = [];
-    for (let i = 0; i < keywords.length; i += 20) {
-      batches.push(keywords.slice(i, i + 20));
+    for (let i = 0; i < staleKeywords.length; i += 20) {
+      batches.push(staleKeywords.slice(i, i + 20));
     }
 
     for (const batch of batches) {
       try {
         const batchResult = await fetchHistoricalMetrics(accessToken, developerToken, customerId, batch);
-        Object.assign(allVolumes, batchResult);
+        Object.assign(freshVolumes, batchResult);
       } catch (batchErr) {
         console.error('Batch error:', batchErr.message);
-        // Continue with other batches
       }
     }
 
+    // 4. Save fresh volumes to cache
+    if (supabase && Object.keys(freshVolumes).length > 0) {
+      try {
+        const rows = Object.entries(freshVolumes).map(([kw, vol]) => ({
+          site_url: cacheKey,
+          keyword: kw,
+          avg_monthly_searches: vol.avgMonthlySearches,
+          competition: vol.competition,
+          competition_index: vol.competitionIndex,
+          fetched_at: new Date().toISOString(),
+        }));
+
+        await supabase
+          .from('search_volumes')
+          .upsert(rows, { onConflict: 'site_url,keyword' });
+      } catch (saveErr) {
+        console.error('Cache write error (non-fatal):', saveErr.message);
+      }
+    }
+
+    const allVolumes = { ...cachedVolumes, ...freshVolumes };
     return res.status(200).json({ volumes: allVolumes });
   } catch (error) {
     console.error('Search volume API error:', error);
+    // Still return cached results if we have any
+    if (Object.keys(cachedVolumes).length > 0) {
+      return res.status(200).json({ volumes: cachedVolumes, partial: true });
+    }
     return res.status(500).json({
       error: error.message || 'Failed to fetch search volume',
     });
@@ -106,10 +167,8 @@ async function fetchHistoricalMetrics(accessToken, developerToken, customerId, k
     },
     body: JSON.stringify({
       keywords,
-      // Geo target 2840 = USA. Can be made configurable later.
       geoTargetConstants: ['geoTargetConstants/2840'],
       keywordPlanNetwork: 'GOOGLE_SEARCH',
-      // Language 1000 = English
       language: 'languageConstants/1000',
     }),
   });

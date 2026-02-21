@@ -116,7 +116,7 @@ export default function GoogleSearchConsole({
         const response = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keywords }),
+          body: JSON.stringify({ keywords, siteUrl }),
         });
         if (response.ok) {
           const result = await response.json();
@@ -429,6 +429,23 @@ export default function GoogleSearchConsole({
 
     // Also fetch position history
     fetchKeywordHistory(keyword);
+
+    // Load saved recommendations from DB if not already loaded
+    if (!scanResults.has(keyword)) {
+      try {
+        const recResp = await fetch(
+          `${API_ENDPOINTS.db.recommendations}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(keyword)}`
+        );
+        if (recResp.ok) {
+          const recData = await recResp.json();
+          if (recData.recommendation?.scanResult) {
+            setScanResults((prev) => new Map(prev).set(keyword, recData.recommendation.scanResult));
+          }
+        }
+      } catch {
+        // Non-critical — user can still scan manually
+      }
+    }
   };
 
   const getSortIcon = (column: string) => {
@@ -1275,6 +1292,7 @@ function KeywordRow({
   onIntentOverride: (keyword: string, intent: KeywordIntent) => void;
 }) {
   const [showIntentPicker, setShowIntentPicker] = useState(false);
+  const [taskToggleCounter, setTaskToggleCounter] = useState(0);
   const intentPickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1447,6 +1465,8 @@ function KeywordRow({
                   loadingHistory={loadingHistory}
                   checklist={scanResult?.checklist || null}
                   searchVolume={volume?.avgMonthlySearches ?? null}
+                  siteUrl={siteUrl}
+                  taskToggleCounter={taskToggleCounter}
                 />
               </td>
             </tr>
@@ -1555,6 +1575,7 @@ function KeywordRow({
                     scanResult={scanResult}
                     keyword={keyword.keyword}
                     siteUrl={siteUrl}
+                    onTaskToggle={() => setTaskToggleCounter((c) => c + 1)}
                   />
                 )}
               </td>

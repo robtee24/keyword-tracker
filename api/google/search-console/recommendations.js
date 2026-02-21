@@ -1,4 +1,5 @@
 import { getAccessTokenFromRequest } from '../../_config.js';
+import { getSupabase } from '../../db.js';
 
 export const config = {
   maxDuration: 60,
@@ -64,11 +65,32 @@ export default async function handler(req, res) {
     const prompt = buildPrompt(keyword, siteUrl, pages, pageAnalyses);
     const aiResult = await callOpenAI(openaiKey, prompt);
 
-    return res.status(200).json({
+    const scanResult = {
       strategy: aiResult.strategy || { targetPage: pages[0]?.url, approach: 'boost-current', summary: '' },
       audit,
       checklist: aiResult.checklist || [],
-    });
+    };
+
+    // Persist to Supabase (non-blocking, best-effort)
+    const supabase = getSupabase();
+    if (supabase) {
+      supabase
+        .from('recommendations')
+        .upsert(
+          {
+            site_url: siteUrl,
+            keyword,
+            scan_result: scanResult,
+            scanned_at: new Date().toISOString(),
+          },
+          { onConflict: 'site_url,keyword' }
+        )
+        .then(({ error: dbErr }) => {
+          if (dbErr) console.error('Failed to save recommendation to DB:', dbErr.message);
+        });
+    }
+
+    return res.status(200).json(scanResult);
   } catch (error) {
     console.error('Recommendations API error:', error);
     return res.status(500).json({

@@ -36,4 +36,8 @@ export const API_ENDPOINTS = {
       searchVolume: `${API_BASE_URL}/api/google/ads/search-volume`,
     },
   },
+  db: {
+    completedTasks: `${API_BASE_URL}/api/db/completed-tasks`,
+    recommendations: `${API_BASE_URL}/api/db/recommendations`,
+  },
 };

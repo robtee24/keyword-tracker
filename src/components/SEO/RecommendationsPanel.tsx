@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import SEOAuditCard from './SEOAuditCard';
 import type { SEOAudit } from './SEOAuditCard';
+import { API_ENDPOINTS } from '../../config/api';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -31,6 +32,7 @@ interface RecommendationsPanelProps {
   scanResult: ScanResult;
   keyword: string;
   siteUrl: string;
+  onTaskToggle?: () => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -71,7 +73,7 @@ const PRIORITY_STYLES: Record<string, { bg: string; text: string }> = {
 };
 
 /* ------------------------------------------------------------------ */
-/*  localStorage helpers                                               */
+/*  localStorage helpers (kept as fast local fallback)                 */
 /* ------------------------------------------------------------------ */
 
 function storageKey(siteUrl: string, keyword: string): string {
@@ -92,6 +94,48 @@ function saveCompletedIds(siteUrl: string, keyword: string, ids: Set<string>) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  DB helpers                                                         */
+/* ------------------------------------------------------------------ */
+
+async function logCompletionToDb(
+  siteUrl: string,
+  keyword: string,
+  item: ChecklistItem
+): Promise<void> {
+  try {
+    await fetch(API_ENDPOINTS.db.completedTasks, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        siteUrl,
+        keyword,
+        taskId: item.id,
+        taskText: item.task,
+        category: item.category,
+      }),
+    });
+  } catch {
+    // Best-effort — localStorage is the primary store
+  }
+}
+
+async function removeCompletionFromDb(
+  siteUrl: string,
+  keyword: string,
+  taskId: string
+): Promise<void> {
+  try {
+    await fetch(API_ENDPOINTS.db.completedTasks, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ siteUrl, keyword, taskId }),
+    });
+  } catch {
+    // Best-effort
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -99,25 +143,63 @@ export default function RecommendationsPanel({
   scanResult,
   keyword,
   siteUrl,
+  onTaskToggle,
 }: RecommendationsPanelProps) {
   const { strategy, audit, checklist } = scanResult;
   const [completedIds, setCompletedIds] = useState<Set<string>>(() =>
     getCompletedIds(siteUrl, keyword)
   );
 
+  // Sync from DB on mount — merge with localStorage
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(
+          `${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(keyword)}`
+        );
+        if (!resp.ok || cancelled) return;
+        const { tasks } = await resp.json();
+        if (!tasks?.length || cancelled) return;
+
+        const dbIds = new Set<string>(tasks.map((t: any) => t.task_id));
+        setCompletedIds((prev) => {
+          const merged = new Set([...prev, ...dbIds]);
+          if (merged.size !== prev.size) {
+            saveCompletedIds(siteUrl, keyword, merged);
+          }
+          return merged;
+        });
+      } catch {
+        // Offline / DB not configured — localStorage suffices
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [siteUrl, keyword]);
+
   // Persist to localStorage whenever completedIds changes
   useEffect(() => {
     saveCompletedIds(siteUrl, keyword, completedIds);
   }, [completedIds, siteUrl, keyword]);
 
-  const toggleItem = useCallback((id: string) => {
-    setCompletedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const toggleItem = useCallback(
+    (id: string) => {
+      const item = checklist.find((c) => c.id === id);
+      setCompletedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) {
+          next.delete(id);
+          removeCompletionFromDb(siteUrl, keyword, id);
+        } else {
+          next.add(id);
+          if (item) logCompletionToDb(siteUrl, keyword, item);
+        }
+        return next;
+      });
+      onTaskToggle?.();
+    },
+    [checklist, siteUrl, keyword, onTaskToggle]
+  );
 
   // Group checklist by category
   const grouped: Record<string, ChecklistItem[]> = {};
@@ -127,7 +209,6 @@ export default function RecommendationsPanel({
     grouped[cat].push(item);
   });
   const sortedCategories = CATEGORY_ORDER.filter((c) => grouped[c]);
-  // Add any categories not in our predefined order
   Object.keys(grouped).forEach((c) => {
     if (!sortedCategories.includes(c)) sortedCategories.push(c);
   });

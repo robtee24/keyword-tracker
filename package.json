@@ -10,6 +10,7 @@
     "vercel-dev": "vercel dev"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.97.0",
     "date-fns": "^4.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
