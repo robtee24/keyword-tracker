@@ -851,13 +851,13 @@ export default function GoogleSearchConsole({
             <LineChart data={data.current.positionHistory} compareData={data.compare?.positionHistory} title="" yAxisLabel="Position" invertY />
           ) : (
             (() => {
-              const positions = data.current.keywords.filter((k) => k.position != null);
+              const positions = data.current.keywords.filter((k: any) => k.position != null);
               const avg = positions.length > 0
-                ? positions.reduce((s, k) => s + (k.position || 0), 0) / positions.length
+                ? positions.reduce((s: number, k: any) => s + (k.position || 0), 0) / positions.length
                 : null;
-              const comparePositions = data.compare?.keywords?.filter((k) => k.position != null);
+              const comparePositions = data.compare?.keywords?.filter((k: any) => k.position != null);
               const compareAvg = comparePositions && comparePositions.length > 0
-                ? comparePositions.reduce((s, k) => s + (k.position || 0), 0) / comparePositions.length
+                ? comparePositions.reduce((s: number, k: any) => s + (k.position || 0), 0) / comparePositions.length
                 : null;
               return (
                 <div>
