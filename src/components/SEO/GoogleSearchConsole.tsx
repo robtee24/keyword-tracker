@@ -221,7 +221,7 @@ export default function GoogleSearchConsole({
     loadData();
   }, [loadTrigger, dateRange, compareDateRange, siteUrl]);
 
-  // Store keywords + fetch search volumes (cache-first, then refresh stale)
+  // Store keywords + load search volumes from DB (no Google Ads on normal loads)
   useEffect(() => {
     if (!data?.current?.keywords?.length) return;
 
@@ -230,7 +230,6 @@ export default function GoogleSearchConsole({
 
     const run = async () => {
       // 1. Store keywords and detect new/lost
-      let detectedNewKeywords: string[] = [];
       try {
         const storeResp = await fetch(API_ENDPOINTS.db.keywords, {
           method: 'POST',
@@ -240,8 +239,7 @@ export default function GoogleSearchConsole({
         if (storeResp.ok) {
           const storeResult = await storeResp.json();
           if (storeResult.newKeywords?.length > 0) {
-            detectedNewKeywords = storeResult.newKeywords;
-            setNewKeywords(new Set(detectedNewKeywords));
+            setNewKeywords(new Set(storeResult.newKeywords));
           }
           if (storeResult.lostKeywords?.length > 0) {
             setLostKeywords(storeResult.lostKeywords);
@@ -249,49 +247,80 @@ export default function GoogleSearchConsole({
         }
       } catch { /* non-critical */ }
 
-      // 2. Load cached volumes for all keywords (no Google Ads API call)
+      // 2. Load ALL stored search volumes from DB (instant, no Google Ads API)
       setLoadingVolumes(true);
       try {
-        const cacheResp = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keywords, siteUrl, cacheOnly: true }),
-        });
-        if (cacheResp.ok) {
-          const cacheResult = await cacheResp.json();
-          if (cacheResult.volumes && Object.keys(cacheResult.volumes).length > 0) {
+        const volResp = await fetch(
+          `${API_ENDPOINTS.db.searchVolumes}?siteUrl=${encodeURIComponent(siteUrl)}`
+        );
+        if (volResp.ok) {
+          const volResult = await volResp.json();
+          if (volResult.volumes && Object.keys(volResult.volumes).length > 0) {
             const volumeMap = new Map<string, any>();
-            for (const [kw, vol] of Object.entries(cacheResult.volumes)) {
+            for (const [kw, vol] of Object.entries(volResult.volumes)) {
               volumeMap.set(kw, vol as any);
             }
             setSearchVolumes(volumeMap);
+
+            // 3. Find keywords with NO stored volume at all
+            const missing = keywords.filter((kw) => !volResult.volumes[kw]);
+            if (missing.length > 0 && missing.length <= 500) {
+              // Fetch volumes only for keywords that have NEVER been looked up
+              try {
+                const freshResp = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ keywords: missing, siteUrl }),
+                });
+                if (freshResp.ok) {
+                  const freshResult = await freshResp.json();
+                  if (freshResult.volumes && Object.keys(freshResult.volumes).length > 0) {
+                    // Save new volumes to DB for future instant loads
+                    fetch(API_ENDPOINTS.db.searchVolumes, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ siteUrl, volumes: freshResult.volumes }),
+                    }).catch(() => {});
+
+                    setSearchVolumes((prev) => {
+                      const merged = new Map(prev);
+                      for (const [kw, vol] of Object.entries(freshResult.volumes)) {
+                        merged.set(kw, vol as any);
+                      }
+                      return merged;
+                    });
+                  }
+                }
+              } catch { /* search volume is optional */ }
+            }
+          } else {
+            // No volumes stored yet — first-time fetch for all keywords
+            try {
+              const freshResp = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keywords, siteUrl }),
+              });
+              if (freshResp.ok) {
+                const freshResult = await freshResp.json();
+                if (freshResult.volumes && Object.keys(freshResult.volumes).length > 0) {
+                  fetch(API_ENDPOINTS.db.searchVolumes, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ siteUrl, volumes: freshResult.volumes }),
+                  }).catch(() => {});
+
+                  const volumeMap = new Map<string, any>();
+                  for (const [kw, vol] of Object.entries(freshResult.volumes)) {
+                    volumeMap.set(kw, vol as any);
+                  }
+                  setSearchVolumes(volumeMap);
+                }
+              }
+            } catch { /* search volume is optional */ }
           }
         }
-      } catch { /* continue */ }
-
-      // 3. Only fetch volumes for genuinely new keywords (not all stale ones).
-      //    Existing keyword volumes refresh naturally after 30 days via the cache TTL.
-      if (detectedNewKeywords.length > 0) {
-        try {
-          const freshResp = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ keywords: detectedNewKeywords, siteUrl }),
-          });
-          if (freshResp.ok) {
-            const freshResult = await freshResp.json();
-            if (freshResult.volumes && Object.keys(freshResult.volumes).length > 0) {
-              setSearchVolumes((prev) => {
-                const merged = new Map(prev);
-                for (const [kw, vol] of Object.entries(freshResult.volumes)) {
-                  merged.set(kw, vol as any);
-                }
-                return merged;
-              });
-            }
-          }
-        } catch { /* search volume is optional */ }
-      }
+      } catch { /* non-critical */ }
       setLoadingVolumes(false);
     };
     run();

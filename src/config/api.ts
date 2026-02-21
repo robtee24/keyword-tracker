@@ -45,5 +45,6 @@ export const API_ENDPOINTS = {
     keywordGroups: `${API_BASE_URL}/api/db/keyword-groups`,
     keywordGroupMembers: `${API_BASE_URL}/api/db/keyword-group-members`,
     keywords: `${API_BASE_URL}/api/db/keywords`,
+    searchVolumes: `${API_BASE_URL}/api/db/search-volumes`,
   },
 };
