@@ -131,10 +131,10 @@ export default function Sidebar({
       <div className="flex items-center gap-2 px-3 h-14 border-b border-apple-divider shrink-0">
         {collapsed ? (
           <button onClick={onToggleCollapse} className="mx-auto p-1 rounded-apple-sm hover:bg-apple-fill-secondary transition-colors" title="Expand">
-            <img src="/seauto-logo.png" alt="SEAUTO" className="h-6 object-contain" />
+            <img src="/seauto-logo.svg" alt="SEAUTO" className="h-6 object-contain" />
           </button>
         ) : (
-          <img src="/seauto-logo.png" alt="SEAUTO" className="h-8 object-contain" />
+          <img src="/seauto-logo.svg" alt="SEAUTO" className="h-8 object-contain" />
         )}
         <button
           onClick={onToggleCollapse}
