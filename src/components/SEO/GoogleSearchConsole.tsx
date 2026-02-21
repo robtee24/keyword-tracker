@@ -119,6 +119,10 @@ export default function GoogleSearchConsole({
   const [aiIntents, setAiIntents] = useState<Record<string, KeywordIntent>>({});
   const [loadingAiIntents, setLoadingAiIntents] = useState(false);
 
+  // Session guards — prevent re-fetching volumes / AI intents on every data change
+  const volumesSyncedForSite = useRef<string>('');
+  const aiIntentsSyncedForSite = useRef<string>('');
+
   // Reload intent store when siteUrl changes
   useEffect(() => {
     setIntentStore(loadIntentStore(siteUrl));
@@ -221,11 +225,34 @@ export default function GoogleSearchConsole({
     } catch { /* ignore */ }
   };
 
-  const handleIntentOverride = (keyword: string, newIntent: KeywordIntent) => {
+  const handleIntentOverride = async (keyword: string, newIntent: KeywordIntent) => {
     const allKws = data?.current?.keywords?.map((k: any) => k.keyword) || [];
     const { store, affected } = learnIntentOverride(siteUrl, keyword, newIntent, allKws);
     setIntentStore({ ...store });
-    // Force re-render by creating a new object reference
+
+    // Immediately update aiIntents state so UI reflects the change
+    setAiIntents((prev) => {
+      const next = { ...prev, [keyword.toLowerCase()]: newIntent };
+      for (const [kw, intent] of affected) {
+        next[kw.toLowerCase()] = intent;
+      }
+      return next;
+    });
+
+    // Persist overrides to Supabase (keyword_intents table)
+    const overrides: Record<string, string> = { [keyword]: newIntent };
+    for (const [kw, intent] of affected) {
+      overrides[kw] = intent;
+    }
+    try {
+      await fetch(API_ENDPOINTS.db.keywordIntents, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl, overrides }),
+      });
+    } catch (err) {
+      console.error('[IntentOverride] Failed to save to DB:', err);
+    }
   };
 
   const itemsPerPage = 20;
@@ -321,11 +348,11 @@ export default function GoogleSearchConsole({
     const toFetch = needsMonthlyRefresh ? keywords : missing;
 
     if (toFetch.length === 0) {
-      console.log('[SearchVolumes] All volumes cached, nothing to fetch');
+      console.log(`[SearchVolumes] All ${keywords.length} volumes cached in DB, skipping Google Ads API`);
       return;
     }
 
-    console.log('[SearchVolumes] Fetching from Google Ads:', toFetch.length, 'keywords',
+    console.log(`[SearchVolumes] ${storedCount} cached, ${missing.length} missing — fetching ${toFetch.length} from Google Ads`,
       needsMonthlyRefresh ? '(monthly refresh)' : '(new keywords)');
 
     // Step 3: Fetch from Google Ads
@@ -372,8 +399,8 @@ export default function GoogleSearchConsole({
     const keywords: string[] = data.current.keywords.map((kw: any) => kw.keyword);
     if (keywords.length === 0) return;
 
-    const run = async () => {
-      // 1. Store keywords and detect new/lost
+    // Always store keywords / detect new/lost (cheap DB call)
+    (async () => {
       try {
         const storeResp = await fetch(API_ENDPOINTS.db.keywords, {
           method: 'POST',
@@ -386,8 +413,13 @@ export default function GoogleSearchConsole({
           setLostKeywords(storeResult.lostKeywords || []);
         }
       } catch { /* non-critical */ }
+    })();
 
-      // 2. Load stored search volumes from DB, fetch missing from Google Ads
+    // Only sync search volumes once per siteUrl per session
+    if (volumesSyncedForSite.current === siteUrl) return;
+    volumesSyncedForSite.current = siteUrl;
+
+    (async () => {
       setLoadingVolumes(true);
       try {
         await loadAndSyncSearchVolumes(siteUrl, keywords);
@@ -395,13 +427,14 @@ export default function GoogleSearchConsole({
         console.error('[SearchVolumes] top-level error:', err);
       }
       setLoadingVolumes(false);
-    };
-    run();
+    })();
   }, [data, siteUrl]);
 
-  // AI intent classification using objectives data
+  // AI intent classification — load once per siteUrl per session
   useEffect(() => {
     if (!data?.current?.keywords?.length || !siteUrl) return;
+    if (aiIntentsSyncedForSite.current === siteUrl) return;
+    aiIntentsSyncedForSite.current = siteUrl;
 
     const keywords: string[] = data.current.keywords.map((kw: any) => kw.keyword);
     if (keywords.length === 0) return;
