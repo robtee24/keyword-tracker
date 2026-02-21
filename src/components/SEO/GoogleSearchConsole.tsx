@@ -1607,7 +1607,7 @@ function formatVolume(vol: number): string {
 /*  if the keyword text doesn't contain "buy" or "price."             */
 /* ------------------------------------------------------------------ */
 
-export type KeywordIntent = 'Transactional' | 'Product' | 'Educational' | 'Navigational' | 'Local' | 'Branded' | 'Competitor Navigational' | 'Competitor Transactional';
+export type KeywordIntent = 'Transactional' | 'Product' | 'Educational' | 'Navigational' | 'Local' | 'Branded' | 'Competitor' | 'Competitor Navigational' | 'Competitor Transactional';
 
 /**
  * Classify keyword intent using a multi-signal approach:
@@ -1647,7 +1647,10 @@ function classifyKeywordIntent(keyword: string, rankingUrl?: string, siteUrl?: s
       if (/\b(buy|purchase|order|pricing|price|discount|coupon|subscribe|sign up|signup|free trial|demo|plans?|alternative|switch|cancel|vs\.?|versus)\b/i.test(kw)) {
         return 'Competitor Transactional';
       }
-      return 'Competitor Navigational';
+      if (/\b(login|log in|sign in|signin|website|official site|dashboard|portal|my account|support|help|contact)\b/i.test(kw)) {
+        return 'Competitor Navigational';
+      }
+      return 'Competitor';
     }
   }
 
@@ -1773,13 +1776,14 @@ const INTENT_COLORS: Record<KeywordIntent, { bg: string; text: string }> = {
   Navigational: { bg: 'bg-orange-50', text: 'text-orange-700' },
   Local: { bg: 'bg-rose-50', text: 'text-rose-700' },
   Branded: { bg: 'bg-indigo-50', text: 'text-indigo-700' },
+  Competitor: { bg: 'bg-red-50', text: 'text-red-700' },
   'Competitor Navigational': { bg: 'bg-amber-50', text: 'text-amber-700' },
   'Competitor Transactional': { bg: 'bg-teal-50', text: 'text-teal-700' },
 };
 
 const ALL_INTENTS: KeywordIntent[] = [
   'Transactional', 'Product', 'Educational', 'Navigational', 'Local',
-  'Branded', 'Competitor Navigational', 'Competitor Transactional',
+  'Branded', 'Competitor', 'Competitor Navigational', 'Competitor Transactional',
 ];
 
 /* ------------------------------------------------------------------ */
@@ -2107,7 +2111,7 @@ function KeywordRow({
                           <span className={`inline-block w-2 h-2 rounded-full`} style={{ backgroundColor: {
                             Transactional: '#15803d', Product: '#7e22ce', Educational: '#1d4ed8',
                             Navigational: '#c2410c', Local: '#be123c', Branded: '#4338ca',
-                            'Competitor Navigational': '#b45309', 'Competitor Transactional': '#0d9488',
+                            Competitor: '#dc2626', 'Competitor Navigational': '#b45309', 'Competitor Transactional': '#0d9488',
                           }[intentOption] || '#6b7280' }} />
                           {intentOption}
                           {isActive && <span className="ml-auto text-apple-blue">✓</span>}

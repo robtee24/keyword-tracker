@@ -64,6 +64,7 @@ export default async function handler(req, res) {
     'Navigational',
     'Local',
     'Branded',
+    'Competitor',
     'Competitor Navigational',
     'Competitor Transactional',
   ];
@@ -145,13 +146,14 @@ INTENT TYPES (pick exactly one per keyword):
 - Navigational: The searcher is looking for a specific website or page (not this business's brand)
 - Local: The searcher is looking for something nearby or location-specific
 - Branded: The keyword contains this business's own brand name
-- Competitor Navigational: The keyword references a competitor — the user is looking for that competitor's site
-- Competitor Transactional: The keyword references a competitor but with purchase/comparison intent — these users are still open to alternatives
+- Competitor: The keyword references a competitor brand — general mention without specific navigational or transactional signals
+- Competitor Navigational: The keyword references a competitor and the user is specifically looking for that competitor's site (login, support, dashboard, etc.)
+- Competitor Transactional: The keyword references a competitor with purchase/comparison intent (pricing, alternative, vs, buy, etc.) — these users are still open to alternatives
 
 IMPORTANT RULES:
 - A keyword like "what is [product category]" is Educational even if this business sells that product
 - A keyword like "[product category] software" is Transactional if this business IS that software
-- Keywords containing competitor brand names should be Competitor Navigational or Competitor Transactional
+- Keywords containing competitor brand names should be Competitor, Competitor Navigational, or Competitor Transactional depending on the surrounding context
 - Keywords directly about this business's core offerings (matching their key terms) lean Transactional
 - Generic industry terms without action words are usually Educational
 - "best [category]" or "[x] vs [y]" are Product intent (comparison shopping)
