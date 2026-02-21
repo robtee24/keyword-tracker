@@ -424,7 +424,7 @@ function RankingTable({ title, items, loading, isUrl }: {
               </span>
               <div className="flex-1 min-w-0">
                 <div className={`text-apple-sm font-medium text-apple-text truncate ${isUrl ? 'font-mono text-apple-xs' : ''}`}>
-                  {isUrl ? new URL(item.label, 'https://x').pathname : item.label}
+                  {isUrl ? decodeURIComponent(new URL(item.label, 'https://x').pathname) : item.label}
                 </div>
                 <div className="text-apple-xs text-apple-text-tertiary">{item.secondary}</div>
               </div>
