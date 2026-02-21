@@ -79,6 +79,8 @@ export default function GoogleSearchConsole({
   const [showGroupScan, setShowGroupScan] = useState(false);
   const [addToGroupKeywords, setAddToGroupKeywords] = useState<Set<string>>(new Set());
   const [showAddToGroup, setShowAddToGroup] = useState(false);
+  const [newKeywords, setNewKeywords] = useState<Set<string>>(new Set());
+  const [lostKeywords, setLostKeywords] = useState<Array<{ keyword: string; lastSeenAt: string }>>([]);
 
   // Reload intent store when siteUrl changes
   useEffect(() => {
@@ -218,39 +220,80 @@ export default function GoogleSearchConsole({
     loadData();
   }, [loadTrigger, dateRange, compareDateRange, siteUrl]);
 
-  // Fetch search volumes after keyword data loads
+  // Store keywords + fetch search volumes (cache-first, then refresh stale)
   useEffect(() => {
     if (!data?.current?.keywords?.length) return;
 
-    const keywords = data.current.keywords.map((kw: any) => kw.keyword);
+    const keywords: string[] = data.current.keywords.map((kw: any) => kw.keyword);
     if (keywords.length === 0) return;
 
-    const fetchVolumes = async () => {
-      setLoadingVolumes(true);
+    const run = async () => {
+      // 1. Store keywords and detect new/lost
       try {
-        const response = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
+        const storeResp = await fetch(API_ENDPOINTS.db.keywords, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ siteUrl, keywords }),
+        });
+        if (storeResp.ok) {
+          const storeResult = await storeResp.json();
+          if (storeResult.newKeywords?.length > 0) {
+            setNewKeywords(new Set(storeResult.newKeywords));
+          }
+          if (storeResult.lostKeywords?.length > 0) {
+            setLostKeywords(storeResult.lostKeywords);
+          }
+        }
+      } catch { /* non-critical */ }
+
+      // 2. Phase 1: Load cached volumes instantly (no Google Ads API call)
+      setLoadingVolumes(true);
+      let staleCount = 0;
+      try {
+        const cacheResp = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keywords, siteUrl, cacheOnly: true }),
+        });
+        if (cacheResp.ok) {
+          const cacheResult = await cacheResp.json();
+          staleCount = cacheResult.staleCount || 0;
+          if (cacheResult.volumes && Object.keys(cacheResult.volumes).length > 0) {
+            const volumeMap = new Map<string, any>();
+            for (const [kw, vol] of Object.entries(cacheResult.volumes)) {
+              volumeMap.set(kw, vol as any);
+            }
+            setSearchVolumes(volumeMap);
+          }
+          if (staleCount === 0) {
+            setLoadingVolumes(false);
+            return;
+          }
+        }
+      } catch { /* continue to full fetch */ }
+
+      // 3. Phase 2: Refresh stale/missing volumes from Google Ads API
+      try {
+        const fullResp = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ keywords, siteUrl }),
         });
-        if (response.ok) {
-          const result = await response.json();
-          if (result.volumes && Object.keys(result.volumes).length > 0) {
+        if (fullResp.ok) {
+          const fullResult = await fullResp.json();
+          if (fullResult.volumes && Object.keys(fullResult.volumes).length > 0) {
             const volumeMap = new Map<string, any>();
-            for (const [kw, vol] of Object.entries(result.volumes)) {
+            for (const [kw, vol] of Object.entries(fullResult.volumes)) {
               volumeMap.set(kw, vol as any);
             }
             setSearchVolumes(volumeMap);
           }
         }
-      } catch {
-        // Silently fail — search volume is optional
-      } finally {
-        setLoadingVolumes(false);
-      }
+      } catch { /* search volume is optional */ }
+      setLoadingVolumes(false);
     };
-    fetchVolumes();
-  }, [data]);
+    run();
+  }, [data, siteUrl]);
 
   // Fetch alert data (positions across 3 time periods) after keyword data loads
   useEffect(() => {
@@ -1262,6 +1305,7 @@ export default function GoogleSearchConsole({
                       onIntentOverride={handleIntentOverride}
                       activeGroupId={activeGroup?.id || null}
                       onRemoveFromGroup={activeGroup ? (kw: string) => removeKeywordFromGroup(activeGroup.id, kw) : undefined}
+                      isNew={newKeywords.has(keyword.keyword)}
                     />
                   );
                 })
@@ -1299,6 +1343,37 @@ export default function GoogleSearchConsole({
               >
                 Next
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Lost Keywords */}
+        {lostKeywords.length > 0 && (
+          <div className="mt-4 rounded-apple-sm border border-orange-200 bg-orange-50/40 overflow-hidden">
+            <div className="px-4 py-3 flex items-center gap-2 border-b border-orange-200">
+              <svg className="w-4 h-4 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+              <span className="text-apple-sm font-semibold text-orange-700">
+                Lost Keywords ({lostKeywords.length})
+              </span>
+              <span className="text-apple-xs text-orange-600/70 ml-1">
+                Previously ranking but not found in current data
+              </span>
+            </div>
+            <div className="px-4 py-3 flex flex-wrap gap-2 max-h-40 overflow-y-auto">
+              {lostKeywords.map((lk) => (
+                <span
+                  key={lk.keyword}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-apple-pill text-apple-xs font-medium bg-orange-100 text-orange-700"
+                  title={`Last seen: ${new Date(lk.lastSeenAt).toLocaleDateString()}`}
+                >
+                  {lk.keyword}
+                  <span className="text-orange-500/60">
+                    · {new Date(lk.lastSeenAt).toLocaleDateString()}
+                  </span>
+                </span>
+              ))}
             </div>
           </div>
         )}
@@ -1731,6 +1806,7 @@ function KeywordRow({
   onIntentOverride,
   activeGroupId,
   onRemoveFromGroup,
+  isNew,
 }: {
   keyword: any;
   compareKeyword: any;
@@ -1755,6 +1831,7 @@ function KeywordRow({
   onIntentOverride: (keyword: string, intent: KeywordIntent) => void;
   activeGroupId: number | null;
   onRemoveFromGroup?: (keyword: string) => void;
+  isNew: boolean;
 }) {
   const [showIntentPicker, setShowIntentPicker] = useState(false);
   const [taskToggleCounter, setTaskToggleCounter] = useState(0);
@@ -1794,6 +1871,11 @@ function KeywordRow({
         <td className="px-6 py-3.5 text-apple-sm font-medium text-apple-text">
           <div className="flex items-center gap-2">
             {keyword.keyword}
+            {isNew && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-apple-pill text-[10px] font-bold uppercase tracking-wide bg-green-100 text-green-700">
+                New
+              </span>
+            )}
             {activeGroupId && onRemoveFromGroup && (
               <button
                 onClick={(e) => {

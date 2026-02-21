@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { keywords, siteUrl } = req.body || {};
+  const { keywords, siteUrl, cacheOnly } = req.body || {};
   if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
     return res.status(400).json({ error: 'keywords array is required' });
   }
@@ -76,6 +76,15 @@ export default async function handler(req, res) {
   // 2. If all keywords are cached and fresh, return immediately
   if (staleKeywords.length === 0) {
     return res.status(200).json({ volumes: cachedVolumes, fromCache: true });
+  }
+
+  // 2b. If cacheOnly mode, return what we have without calling Google Ads
+  if (cacheOnly) {
+    return res.status(200).json({
+      volumes: cachedVolumes,
+      fromCache: true,
+      staleCount: staleKeywords.length,
+    });
   }
 
   // 3. Fetch uncached keywords from Google Ads API

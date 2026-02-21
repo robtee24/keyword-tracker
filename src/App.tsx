@@ -1,70 +1,166 @@
 import { useState, useEffect } from 'react';
-import DatePeriodSelector from './components/DatePeriodSelector';
+import { format } from 'date-fns';
+import Sidebar from './components/Sidebar';
+import type { View } from './components/Sidebar';
+import ProjectsView from './components/ProjectsView';
+import type { Project } from './components/ProjectsView';
 import GoogleSearchConsole from './components/SEO/GoogleSearchConsole';
-import PropertySelector from './components/PropertySelector';
 import OAuthModal from './components/OAuthModal';
-import { isAuthenticated, clearTokens } from './services/authService';
-import type { DateRange } from './types';
+import { isAuthenticated, clearTokens, authenticatedFetch } from './services/authService';
+import { API_ENDPOINTS } from './config/api';
+import type { DateRange, SearchConsoleSite } from './types';
 
 type AppState = 'loading' | 'unauthenticated' | 'authenticated';
 
+const PROJECTS_KEY = 'kt_projects';
+
+function loadProjects(): Project[] {
+  try {
+    return JSON.parse(localStorage.getItem(PROJECTS_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveProjects(projects: Project[]) {
+  localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+}
+
 function App() {
   const [appState, setAppState] = useState<AppState>('loading');
-  const [selectedSite, setSelectedSite] = useState<string | null>(null);
 
-  // Live editing state
+  // Navigation
+  const [currentView, setCurrentView] = useState<View>('projects');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Projects
+  const [projects, setProjects] = useState<Project[]>(loadProjects);
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
+
+  // Sites (for project creation dropdown)
+  const [sites, setSites] = useState<SearchConsoleSite[]>([]);
+  const [sitesLoading, setSitesLoading] = useState(false);
+
+  // Date selection (lives in header now)
   const [dateRange, setDateRange] = useState<DateRange>({
     startDate: new Date(new Date().setDate(new Date().getDate() - 30)),
     endDate: new Date(),
   });
   const [compareDateRange, setCompareDateRange] = useState<DateRange | null>(null);
-
-  // Committed state (only updates on Load Data)
   const [committedDateRange, setCommittedDateRange] = useState<DateRange | null>(null);
   const [committedCompareDateRange, setCommittedCompareDateRange] = useState<DateRange | null>(null);
-
   const [loadTrigger, setLoadTrigger] = useState(0);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   useEffect(() => {
-    // Check auth on mount
     if (isAuthenticated()) {
       setAppState('authenticated');
-      // Restore selected site
-      const stored = localStorage.getItem('gsc_selected_site');
-      if (stored) setSelectedSite(stored);
     } else {
       setAppState('unauthenticated');
     }
   }, []);
+
+  // Fetch sites when authenticated
+  useEffect(() => {
+    if (appState !== 'authenticated') return;
+    setSitesLoading(true);
+    authenticatedFetch(API_ENDPOINTS.google.searchConsole.sites)
+      .then((r) => r.json())
+      .then((data) => setSites(data.sites || []))
+      .catch(() => {})
+      .finally(() => setSitesLoading(false));
+  }, [appState]);
+
+  // Restore last active project
+  useEffect(() => {
+    const lastId = localStorage.getItem('kt_active_project');
+    if (lastId) {
+      const p = projects.find((pr) => pr.id === lastId);
+      if (p) {
+        setActiveProject(p);
+        setCurrentView('project-detail');
+      }
+    }
+  }, []);
+
+  const parseLocalDate = (dateStr: string): Date => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
 
   const handleLoadData = () => {
     setCommittedDateRange({ ...dateRange });
     setCommittedCompareDateRange(compareDateRange ? { ...compareDateRange } : null);
     setLoadTrigger((prev) => prev + 1);
     setHasLoadedOnce(true);
+    setShowDatePicker(false);
   };
 
   const handleSignOut = () => {
     clearTokens();
     setAppState('unauthenticated');
-    setSelectedSite(null);
+    setActiveProject(null);
     setHasLoadedOnce(false);
     setLoadTrigger(0);
   };
 
-  const handleAuthenticated = () => {
-    setAppState('authenticated');
+  const handleCreateProject = (name: string, siteUrl: string) => {
+    const newProject: Project = {
+      id: crypto.randomUUID(),
+      name,
+      siteUrl,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [...projects, newProject];
+    setProjects(updated);
+    saveProjects(updated);
   };
 
-  const handleSiteChange = (siteUrl: string) => {
-    setSelectedSite(siteUrl);
-    // Reset data when site changes
+  const handleDeleteProject = (id: string) => {
+    const updated = projects.filter((p) => p.id !== id);
+    setProjects(updated);
+    saveProjects(updated);
+    if (activeProject?.id === id) {
+      setActiveProject(null);
+      setCurrentView('projects');
+      localStorage.removeItem('kt_active_project');
+    }
+  };
+
+  const handleSelectProject = (project: Project) => {
+    setActiveProject(project);
+    setCurrentView('project-detail');
+    localStorage.setItem('kt_active_project', project.id);
     setHasLoadedOnce(false);
     setLoadTrigger(0);
   };
 
-  // Loading state
+  const handleNavigate = (view: View) => {
+    setCurrentView(view);
+    if (view === 'projects') {
+      setActiveProject(null);
+      localStorage.removeItem('kt_active_project');
+      setHasLoadedOnce(false);
+      setLoadTrigger(0);
+    }
+  };
+
+  const toggleCompare = () => {
+    if (compareDateRange) {
+      setCompareDateRange(null);
+    } else {
+      const daysDiff = Math.ceil(
+        (dateRange.endDate.getTime() - dateRange.startDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      const compareStart = new Date(dateRange.startDate);
+      compareStart.setDate(compareStart.getDate() - daysDiff - 1);
+      const compareEnd = new Date(dateRange.startDate);
+      compareEnd.setDate(compareEnd.getDate() - 1);
+      setCompareDateRange({ startDate: compareStart, endDate: compareEnd });
+    }
+  };
+
   if (appState === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -73,78 +169,187 @@ function App() {
     );
   }
 
-  // Sign-in screen
   if (appState === 'unauthenticated') {
-    return <OAuthModal onAuthenticated={handleAuthenticated} />;
+    return <OAuthModal onAuthenticated={() => setAppState('authenticated')} />;
   }
 
-  // Authenticated -- main app
   return (
-    <div className="min-h-screen bg-apple-bg">
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-apple-large-title font-bold text-apple-text tracking-tight">
-              Keyword Tracker
-            </h1>
-            <p className="text-apple-base text-apple-text-secondary mt-1">
-              Google Search Console keyword rankings and performance
-            </p>
-          </div>
-          <button
-            onClick={handleSignOut}
-            className="text-apple-sm text-apple-text-secondary hover:text-apple-text transition-colors"
-          >
-            Sign Out
-          </button>
-        </div>
+    <div className="flex h-screen bg-apple-bg overflow-hidden">
+      {/* Sidebar */}
+      <Sidebar
+        currentView={currentView}
+        onNavigate={handleNavigate}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        onSignOut={handleSignOut}
+      />
 
-        {/* Property Selector */}
-        <PropertySelector selectedSite={selectedSite} onSiteChange={handleSiteChange} />
-
-        {/* Main content -- only show when a site is selected */}
-        {selectedSite ? (
-          <>
-            <DatePeriodSelector
-              dateRange={dateRange}
-              compareDateRange={compareDateRange}
-              onDateRangeChange={setDateRange}
-              onCompareDateRangeChange={setCompareDateRange}
-              onLoadData={handleLoadData}
-              hasLoadedOnce={hasLoadedOnce}
-            />
-
-            {!hasLoadedOnce || !committedDateRange ? (
-              <div className="card p-16 text-center">
-                <div className="text-5xl mb-5 opacity-30">📊</div>
-                <h3 className="text-apple-title3 font-semibold text-apple-text mb-2">
-                  Ready to Load Data
-                </h3>
-                <p className="text-apple-base text-apple-text-secondary max-w-md mx-auto">
-                  Select your date range above, then click "Load Data" to fetch keyword rankings.
-                </p>
-              </div>
-            ) : (
-              <GoogleSearchConsole
-                dateRange={committedDateRange}
-                compareDateRange={committedCompareDateRange}
-                siteUrl={selectedSite}
-                loadTrigger={loadTrigger}
-              />
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="h-14 shrink-0 bg-white/80 backdrop-blur-xl border-b border-apple-divider flex items-center px-6 gap-4">
+          {/* Breadcrumb */}
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              onClick={() => handleNavigate('projects')}
+              className="text-apple-sm text-apple-text-secondary hover:text-apple-blue transition-colors shrink-0"
+            >
+              Projects
+            </button>
+            {activeProject && (
+              <>
+                <svg className="w-3 h-3 text-apple-text-tertiary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+                <span className="text-apple-sm font-medium text-apple-text truncate">
+                  {activeProject.name}
+                </span>
+              </>
             )}
-          </>
-        ) : (
-          <div className="card p-16 text-center">
-            <div className="text-5xl mb-5 opacity-30">🌐</div>
-            <h3 className="text-apple-title3 font-semibold text-apple-text mb-2">
-              Select a Property
-            </h3>
-            <p className="text-apple-base text-apple-text-secondary max-w-md mx-auto">
-              Choose a Search Console property from the dropdown above to get started.
-            </p>
+          </div>
+
+          <div className="flex-1" />
+
+          {/* Date controls (only in project detail) */}
+          {activeProject && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowDatePicker(!showDatePicker)}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-apple-sm border border-apple-border text-apple-sm text-apple-text-secondary hover:bg-apple-fill-secondary transition-all duration-150"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span>
+                  {format(dateRange.startDate, 'MMM d')} – {format(dateRange.endDate, 'MMM d, yyyy')}
+                </span>
+                {compareDateRange && (
+                  <span className="text-apple-text-tertiary">vs prior</span>
+                )}
+                <svg className={`w-3 h-3 transition-transform ${showDatePicker ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              <button
+                onClick={handleLoadData}
+                className="px-3 py-1.5 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors"
+              >
+                {hasLoadedOnce ? 'Refresh' : 'Load Data'}
+              </button>
+            </div>
+          )}
+        </header>
+
+        {/* Date Picker Dropdown */}
+        {showDatePicker && activeProject && (
+          <div className="bg-white border-b border-apple-divider shadow-sm px-6 py-4">
+            <div className="max-w-3xl flex flex-wrap gap-6 items-end">
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1.5 uppercase tracking-wider">
+                  Date Range
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={format(dateRange.startDate, 'yyyy-MM-dd')}
+                    onChange={(e) => setDateRange({ ...dateRange, startDate: parseLocalDate(e.target.value) })}
+                    className="input text-apple-sm"
+                  />
+                  <span className="text-apple-text-tertiary text-apple-xs">to</span>
+                  <input
+                    type="date"
+                    value={format(dateRange.endDate, 'yyyy-MM-dd')}
+                    onChange={(e) => setDateRange({ ...dateRange, endDate: parseLocalDate(e.target.value) })}
+                    className="input text-apple-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="flex-1 min-w-[200px]">
+                <div className="flex items-center gap-3 mb-1.5">
+                  <label className="block text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider">
+                    Compare Period
+                  </label>
+                  <button
+                    onClick={toggleCompare}
+                    className={`px-2.5 py-0.5 text-apple-xs rounded-apple-pill transition-all duration-200 ${
+                      compareDateRange
+                        ? 'bg-red-50 text-apple-red hover:bg-red-100'
+                        : 'bg-apple-fill-secondary text-apple-text-secondary hover:bg-gray-200'
+                    }`}
+                  >
+                    {compareDateRange ? 'Disable' : 'Enable'}
+                  </button>
+                </div>
+                {compareDateRange && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={format(compareDateRange.startDate, 'yyyy-MM-dd')}
+                      onChange={(e) => setCompareDateRange({ ...compareDateRange, startDate: parseLocalDate(e.target.value) })}
+                      className="input text-apple-sm"
+                    />
+                    <span className="text-apple-text-tertiary text-apple-xs">to</span>
+                    <input
+                      type="date"
+                      value={format(compareDateRange.endDate, 'yyyy-MM-dd')}
+                      onChange={(e) => setCompareDateRange({ ...compareDateRange, endDate: parseLocalDate(e.target.value) })}
+                      className="input text-apple-sm"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
+
+        {/* Scrollable Content Area */}
+        <main className="flex-1 overflow-y-auto p-6">
+          {currentView === 'projects' && (
+            <ProjectsView
+              projects={projects}
+              sites={sites}
+              sitesLoading={sitesLoading}
+              onCreateProject={handleCreateProject}
+              onDeleteProject={handleDeleteProject}
+              onSelectProject={handleSelectProject}
+            />
+          )}
+
+          {currentView === 'project-detail' && activeProject && (
+            <>
+              {!hasLoadedOnce || !committedDateRange ? (
+                <div className="max-w-5xl mx-auto">
+                  <div className="card p-16 text-center">
+                    <div className="w-16 h-16 rounded-full bg-blue-50 mx-auto mb-4 flex items-center justify-center">
+                      <svg className="w-8 h-8 text-apple-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-apple-title3 font-semibold text-apple-text mb-2">
+                      Ready to Load Data
+                    </h3>
+                    <p className="text-apple-base text-apple-text-secondary max-w-md mx-auto mb-6">
+                      Click "Load Data" in the header to fetch keyword rankings for{' '}
+                      <span className="font-medium text-apple-text">{activeProject.name}</span>.
+                    </p>
+                    <button onClick={handleLoadData} className="btn-primary">
+                      Load Data
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <GoogleSearchConsole
+                  dateRange={committedDateRange}
+                  compareDateRange={committedCompareDateRange}
+                  siteUrl={activeProject.siteUrl}
+                  loadTrigger={loadTrigger}
+                />
+              )}
+            </>
+          )}
+        </main>
       </div>
     </div>
   );
