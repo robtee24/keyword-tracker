@@ -90,11 +90,82 @@ RICH SNIPPET OPPORTUNITIES:
 - Priority of implementation (high/medium/low impact)
 
 SCORING: Rate 0-100 based on schema completeness and correctness.`,
+
+  compliance: `You are an expert web compliance auditor specializing in privacy law, accessibility standards, and regulatory requirements. Analyze this page for ALL applicable compliance frameworks.
+
+EVALUATE PRIVACY & DATA PROTECTION:
+- GDPR (EU General Data Protection Regulation):
+  - Cookie consent banner present and functional (opt-in before tracking)
+  - Privacy policy linked and accessible from every page
+  - Right to erasure / data deletion mechanism
+  - Data processing disclosure (what data is collected, why, how long stored)
+  - Third-party data sharing disclosure
+  - Lawful basis for processing stated
+  - DPO (Data Protection Officer) contact info if required
+  - Cross-border data transfer disclosures (EU to non-EU)
+- CCPA / CPRA (California Consumer Privacy Act):
+  - "Do Not Sell or Share My Personal Information" link present
+  - Privacy policy includes CCPA-required disclosures
+  - Categories of personal information collected listed
+  - Right to know, delete, and opt-out mechanisms
+  - Financial incentive disclosures (if applicable)
+  - Authorized agent request process
+- Other US State Privacy Laws:
+  - Virginia VCDPA, Colorado CPA, Connecticut CTDPA, Utah UCPA, Texas TDPSA, Oregon OCPA compliance signals
+  - Universal opt-out mechanism support (Global Privacy Control)
+- PIPEDA (Canada), LGPD (Brazil), POPIA (South Africa) signals
+- ePrivacy Directive (EU cookie law) compliance
+
+EVALUATE ACCESSIBILITY (ADA / WCAG):
+- ADA (Americans with Disabilities Act) / Section 508 compliance:
+  - WCAG 2.1 Level AA conformance signals
+  - Alt text on all images (present, descriptive, not redundant)
+  - Color contrast ratios (text vs background meets 4.5:1 minimum)
+  - Keyboard navigation (can all interactive elements be reached via Tab?)
+  - Form labels and error messages (associated with inputs, descriptive)
+  - ARIA landmarks and roles (proper use of nav, main, banner, etc.)
+  - Skip navigation link present
+  - Focus indicators visible on interactive elements
+  - Video captions / audio descriptions (if media present)
+  - Readable font sizes (minimum 16px body text)
+  - Touch target sizes (minimum 44x44px for mobile)
+  - Page language declared in HTML lang attribute
+  - Heading hierarchy logical (no skipped levels)
+  - Link text descriptive (no "click here" or "read more" without context)
+  - Tables have proper headers and scope
+  - No content that flashes more than 3 times per second
+
+EVALUATE LEGAL COMPLIANCE:
+- Terms of Service / Terms of Use linked
+- Cookie policy (separate from privacy policy, detailing cookie types)
+- Copyright notice present and current year
+- DMCA notice / takedown procedure (if user-generated content)
+- CAN-SPAM compliance (if email signup exists: unsubscribe mechanism, physical address)
+- FTC disclosure requirements (affiliate links, sponsored content, endorsements clearly labeled)
+- COPPA (Children's Online Privacy Protection Act) — age gate if content targets minors
+- PCI DSS signals (if payment processing: HTTPS, no card data in URLs)
+
+EVALUATE SECURITY COMPLIANCE:
+- HTTPS enforced (no mixed content)
+- Security headers present (Content-Security-Policy, X-Frame-Options, X-Content-Type-Options, Strict-Transport-Security, Referrer-Policy, Permissions-Policy)
+- No inline scripts without nonces (CSP violations)
+- Third-party scripts inventory (how many, from where, privacy implications)
+- Form submissions over HTTPS
+- No sensitive data exposed in page source or URLs
+
+EVALUATE INDUSTRY-SPECIFIC (if applicable):
+- HIPAA signals (health-related content: PHI handling, BAA mentions)
+- SOX compliance signals (financial data handling)
+- FERPA signals (educational records)
+- GLBA signals (financial services)
+- EU Digital Services Act signals
+
+SCORING: Rate 0-100 based on overall compliance posture. Score severely for missing cookie consent, no privacy policy, or critical accessibility failures. A score of 100 means fully compliant across all detected frameworks.`,
 };
 
 /**
  * POST /api/audit/run
- * { siteUrl, pageUrl, auditType: 'seo' | 'content' | 'aeo' | 'schema' }
+ * { siteUrl, pageUrl, auditType: 'seo' | 'content' | 'aeo' | 'schema' | 'compliance' }
  *
  * Fetches a page, extracts content, runs an AI audit, saves results to Supabase.
  */

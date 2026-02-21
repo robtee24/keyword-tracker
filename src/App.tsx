@@ -160,7 +160,7 @@ function App() {
       setVisitedAudits(new Set());
     } else {
       localStorage.setItem('kt_active_view', view);
-      if (['seo-audit', 'content-audit', 'aeo-audit', 'schema-audit'].includes(view)) {
+      if (['seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit'].includes(view)) {
         setVisitedAudits((prev) => new Set(prev).add(view));
       }
     }
@@ -251,6 +251,7 @@ function App() {
                         'content-audit': 'Content Audit',
                         'aeo-audit': 'AEO Audit',
                         'schema-audit': 'Schema Audit',
+                        'compliance-audit': 'Compliance Audit',
                         'advertising': 'Advertising',
                         'tasklist': 'Tasklist',
                       } as Record<string, string>)[currentView] || currentView}
@@ -455,6 +456,16 @@ function App() {
                 auditType="schema"
                 title="Schema Audit"
                 description="Validates existing schema markup and identifies missing structured data opportunities for rich snippets in Google search results."
+              />
+            </div>
+          )}
+          {activeProject && visitedAudits.has('compliance-audit') && (
+            <div style={{ display: currentView === 'compliance-audit' ? 'block' : 'none' }}>
+              <AuditView
+                siteUrl={activeProject.siteUrl}
+                auditType="compliance"
+                title="Compliance Audit"
+                description="Audits every page for GDPR, CCPA, ADA/WCAG accessibility, privacy policies, security headers, cookie consent, and all applicable legal and regulatory compliance requirements."
               />
             </div>
           )}

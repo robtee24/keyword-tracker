@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type View = 'projects' | 'objectives' | 'overview' | 'keywords' | 'lost-keywords' | 'seo-audit' | 'content-audit' | 'aeo-audit' | 'schema-audit' | 'advertising' | 'tasklist' | 'activity-log';
+export type View = 'projects' | 'objectives' | 'overview' | 'keywords' | 'lost-keywords' | 'seo-audit' | 'content-audit' | 'aeo-audit' | 'schema-audit' | 'compliance-audit' | 'advertising' | 'tasklist' | 'activity-log';
 
 interface SidebarProps {
   currentView: View;
@@ -81,6 +81,15 @@ const projectNavItems: Array<{ id: View; label: string; icon: ReactNode }> = [
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
+      </svg>
+    ),
+  },
+  {
+    id: 'compliance-audit',
+    label: 'Compliance',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
       </svg>
     ),
   },
