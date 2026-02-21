@@ -4,7 +4,11 @@ import Sidebar from './components/Sidebar';
 import type { View } from './components/Sidebar';
 import ProjectsView from './components/ProjectsView';
 import type { Project } from './components/ProjectsView';
+import ObjectivesView from './components/ObjectivesView';
+import OverviewView from './components/OverviewView';
 import GoogleSearchConsole from './components/SEO/GoogleSearchConsole';
+import RecommendationsView from './components/RecommendationsView';
+import ActivityLogView from './components/ActivityLogView';
 import OAuthModal from './components/OAuthModal';
 import { isAuthenticated, clearTokens, authenticatedFetch } from './services/authService';
 import { API_ENDPOINTS } from './config/api';
@@ -41,7 +45,7 @@ function App() {
   const [sites, setSites] = useState<SearchConsoleSite[]>([]);
   const [sitesLoading, setSitesLoading] = useState(false);
 
-  // Date selection (lives in header now)
+  // Date selection
   const [dateRange, setDateRange] = useState<DateRange>({
     startDate: new Date(new Date().setDate(new Date().getDate() - 30)),
     endDate: new Date(),
@@ -72,14 +76,15 @@ function App() {
       .finally(() => setSitesLoading(false));
   }, [appState]);
 
-  // Restore last active project
+  // Restore last active project and view
   useEffect(() => {
     const lastId = localStorage.getItem('kt_active_project');
+    const lastView = localStorage.getItem('kt_active_view') as View | null;
     if (lastId) {
       const p = projects.find((pr) => pr.id === lastId);
       if (p) {
         setActiveProject(p);
-        setCurrentView('project-detail');
+        setCurrentView(lastView && lastView !== 'projects' ? lastView : 'overview');
       }
     }
   }, []);
@@ -125,13 +130,15 @@ function App() {
       setActiveProject(null);
       setCurrentView('projects');
       localStorage.removeItem('kt_active_project');
+      localStorage.removeItem('kt_active_view');
     }
   };
 
   const handleSelectProject = (project: Project) => {
     setActiveProject(project);
-    setCurrentView('project-detail');
+    setCurrentView('objectives');
     localStorage.setItem('kt_active_project', project.id);
+    localStorage.setItem('kt_active_view', 'objectives');
     setHasLoadedOnce(false);
     setLoadTrigger(0);
   };
@@ -141,8 +148,11 @@ function App() {
     if (view === 'projects') {
       setActiveProject(null);
       localStorage.removeItem('kt_active_project');
+      localStorage.removeItem('kt_active_view');
       setHasLoadedOnce(false);
       setLoadTrigger(0);
+    } else {
+      localStorage.setItem('kt_active_view', view);
     }
   };
 
@@ -160,6 +170,12 @@ function App() {
       setCompareDateRange({ startDate: compareStart, endDate: compareEnd });
     }
   };
+
+  // Views that need the date picker in the header
+  const showsDateControls = activeProject && (currentView === 'overview' || currentView === 'keywords');
+
+  // Views that need data to be loaded
+  const needsDataLoad = currentView === 'keywords';
 
   if (appState === 'loading') {
     return (
@@ -182,6 +198,7 @@ function App() {
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         onSignOut={handleSignOut}
+        hasActiveProject={!!activeProject}
       />
 
       {/* Main Content */}
@@ -204,14 +221,24 @@ function App() {
                 <span className="text-apple-sm font-medium text-apple-text truncate">
                   {activeProject.name}
                 </span>
+                {currentView !== 'projects' && (
+                  <>
+                    <svg className="w-3 h-3 text-apple-text-tertiary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                    <span className="text-apple-sm text-apple-text-tertiary capitalize">
+                      {currentView === 'activity-log' ? 'Activity Log' : currentView}
+                    </span>
+                  </>
+                )}
               </>
             )}
           </div>
 
           <div className="flex-1" />
 
-          {/* Date controls (only in project detail) */}
-          {activeProject && (
+          {/* Date controls */}
+          {showsDateControls && (
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowDatePicker(!showDatePicker)}
@@ -231,18 +258,20 @@ function App() {
                 </svg>
               </button>
 
-              <button
-                onClick={handleLoadData}
-                className="px-3 py-1.5 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors"
-              >
-                {hasLoadedOnce ? 'Refresh' : 'Load Data'}
-              </button>
+              {needsDataLoad && (
+                <button
+                  onClick={handleLoadData}
+                  className="px-3 py-1.5 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors"
+                >
+                  {hasLoadedOnce ? 'Refresh' : 'Load Data'}
+                </button>
+              )}
             </div>
           )}
         </header>
 
         {/* Date Picker Dropdown */}
-        {showDatePicker && activeProject && (
+        {showDatePicker && showsDateControls && (
           <div className="bg-white border-b border-apple-divider shadow-sm px-6 py-4">
             <div className="max-w-3xl flex flex-wrap gap-6 items-end">
               <div className="flex-1 min-w-[200px]">
@@ -300,12 +329,23 @@ function App() {
                   </div>
                 )}
               </div>
+
+              {/* Load Data button in dropdown for keywords view */}
+              {needsDataLoad && (
+                <button
+                  onClick={handleLoadData}
+                  className="btn-primary text-apple-sm"
+                >
+                  {hasLoadedOnce ? 'Refresh Data' : 'Load Data'}
+                </button>
+              )}
             </div>
           </div>
         )}
 
         {/* Scrollable Content Area */}
         <main className="flex-1 overflow-y-auto p-6">
+          {/* Projects List */}
           {currentView === 'projects' && (
             <ProjectsView
               projects={projects}
@@ -317,22 +357,36 @@ function App() {
             />
           )}
 
-          {currentView === 'project-detail' && activeProject && (
+          {/* Website Objectives */}
+          {currentView === 'objectives' && activeProject && (
+            <ObjectivesView projectId={activeProject.id} projectName={activeProject.name} />
+          )}
+
+          {/* Overview Dashboard */}
+          {currentView === 'overview' && activeProject && (
+            <OverviewView
+              siteUrl={activeProject.siteUrl}
+              dateRange={dateRange}
+              compareDateRange={compareDateRange}
+            />
+          )}
+
+          {/* Keywords (existing GoogleSearchConsole component) */}
+          {currentView === 'keywords' && activeProject && (
             <>
               {!hasLoadedOnce || !committedDateRange ? (
                 <div className="max-w-5xl mx-auto">
                   <div className="card p-16 text-center">
                     <div className="w-16 h-16 rounded-full bg-blue-50 mx-auto mb-4 flex items-center justify-center">
                       <svg className="w-8 h-8 text-apple-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
                       </svg>
                     </div>
                     <h3 className="text-apple-title3 font-semibold text-apple-text mb-2">
-                      Ready to Load Data
+                      Ready to Load Keywords
                     </h3>
                     <p className="text-apple-base text-apple-text-secondary max-w-md mx-auto mb-6">
-                      Click "Load Data" in the header to fetch keyword rankings for{' '}
-                      <span className="font-medium text-apple-text">{activeProject.name}</span>.
+                      Select your date range and click "Load Data" to fetch keyword rankings.
                     </p>
                     <button onClick={handleLoadData} className="btn-primary">
                       Load Data
@@ -348,6 +402,16 @@ function App() {
                 />
               )}
             </>
+          )}
+
+          {/* Recommendations */}
+          {currentView === 'recommendations' && activeProject && (
+            <RecommendationsView siteUrl={activeProject.siteUrl} />
+          )}
+
+          {/* Activity Log */}
+          {currentView === 'activity-log' && activeProject && (
+            <ActivityLogView siteUrl={activeProject.siteUrl} />
           )}
         </main>
       </div>
