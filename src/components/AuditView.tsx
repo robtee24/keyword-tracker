@@ -166,7 +166,7 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
       });
       if (resp.ok) {
         const data = await resp.json();
-        const pages = (data.rows || []).map((r: any) => r.keys?.[1] || '').filter(Boolean);
+        const pages: string[] = (data.rows || []).map((r: any) => r.keys?.[1] || '').filter(Boolean);
         setKeywordPages([...new Set(pages)]);
       }
     } catch { /* ignore */ }
