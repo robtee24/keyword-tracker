@@ -369,23 +369,27 @@ function App() {
             <ObjectivesView projectId={activeProject.id} projectName={activeProject.name} siteUrl={activeProject.siteUrl} />
           )}
 
-          {/* Overview Dashboard */}
-          {currentView === 'overview' && activeProject && (
-            <OverviewView
-              siteUrl={activeProject.siteUrl}
-              dateRange={dateRange}
-              compareDateRange={compareDateRange}
-            />
+          {/* Overview Dashboard — kept mounted so it doesn't refetch on every view switch */}
+          {activeProject && (
+            <div style={{ display: currentView === 'overview' ? 'block' : 'none' }}>
+              <OverviewView
+                siteUrl={activeProject.siteUrl}
+                dateRange={dateRange}
+                compareDateRange={compareDateRange}
+              />
+            </div>
           )}
 
-          {/* Keywords (existing GoogleSearchConsole component) */}
-          {currentView === 'keywords' && activeProject && committedDateRange && (
-            <GoogleSearchConsole
-              dateRange={committedDateRange}
-              compareDateRange={committedCompareDateRange}
-              siteUrl={activeProject.siteUrl}
-              loadTrigger={loadTrigger}
-            />
+          {/* Keywords — kept mounted so it doesn't refetch on every view switch */}
+          {activeProject && committedDateRange && (
+            <div style={{ display: currentView === 'keywords' ? 'block' : 'none' }}>
+              <GoogleSearchConsole
+                dateRange={committedDateRange}
+                compareDateRange={committedCompareDateRange}
+                siteUrl={activeProject.siteUrl}
+                loadTrigger={loadTrigger}
+              />
+            </div>
           )}
 
           {/* Recommendations */}
