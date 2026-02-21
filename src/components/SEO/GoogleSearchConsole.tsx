@@ -832,39 +832,42 @@ export default function GoogleSearchConsole({
             )}
           </div>
 
-          {keywordTab === 'lost' && lostKeywords.length > 0 ? (
-            <div className="rounded-apple-sm border border-orange-200 bg-orange-50/30 overflow-hidden">
-              <div className="px-4 py-3 border-b border-orange-200 flex items-center gap-2">
-                <svg className="w-4 h-4 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                </svg>
-                <span className="text-apple-sm font-semibold text-orange-700">
-                  Keywords no longer found in Google Search Console data
-                </span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full">
-                  <thead>
-                    <tr className="border-b border-orange-200">
-                      <th className="px-6 py-3 text-left text-apple-xs font-semibold text-apple-text-secondary uppercase tracking-wider">Keyword</th>
-                      <th className="px-6 py-3 text-left text-apple-xs font-semibold text-apple-text-secondary uppercase tracking-wider">Last Seen</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lostKeywords.map((lk) => (
-                      <tr key={lk.keyword} className="border-b border-orange-100 hover:bg-orange-50/50 transition-colors">
-                        <td className="px-6 py-3 text-apple-sm text-apple-text">{lk.keyword}</td>
-                        <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">
-                          {new Date(lk.lastSeenAt).toLocaleDateString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+        </div>
+
+        {keywordTab === 'lost' && lostKeywords.length > 0 ? (
+          <div className="rounded-apple-sm border border-orange-200 bg-orange-50/30 overflow-hidden">
+            <div className="px-4 py-3 border-b border-orange-200 flex items-center gap-2">
+              <svg className="w-4 h-4 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+              <span className="text-apple-sm font-semibold text-orange-700">
+                Keywords no longer found in Google Search Console data
+              </span>
             </div>
-          ) : (
-          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead>
+                  <tr className="border-b border-orange-200">
+                    <th className="px-6 py-3 text-left text-apple-xs font-semibold text-apple-text-secondary uppercase tracking-wider">Keyword</th>
+                    <th className="px-6 py-3 text-left text-apple-xs font-semibold text-apple-text-secondary uppercase tracking-wider">Last Seen</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lostKeywords.map((lk) => (
+                    <tr key={lk.keyword} className="border-b border-orange-100 hover:bg-orange-50/50 transition-colors">
+                      <td className="px-6 py-3 text-apple-sm text-apple-text">{lk.keyword}</td>
+                      <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">
+                        {new Date(lk.lastSeenAt).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+        <>
+        <div className="mb-6">
           {/* Alerts Bar */}
           {(fireCount > 0 || smokingCount > 0 || hotCount > 0 || loadingAlerts) && (
             <div className="mb-4 rounded-apple-sm border border-apple-divider bg-white overflow-hidden">
