@@ -359,7 +359,7 @@ function App() {
 
           {/* Website Objectives */}
           {currentView === 'objectives' && activeProject && (
-            <ObjectivesView projectId={activeProject.id} projectName={activeProject.name} />
+            <ObjectivesView projectId={activeProject.id} projectName={activeProject.name} siteUrl={activeProject.siteUrl} />
           )}
 
           {/* Overview Dashboard */}

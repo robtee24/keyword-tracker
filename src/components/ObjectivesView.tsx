@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
+import { API_ENDPOINTS } from '../config/api';
 
 export interface SiteObjectives {
   siteType: string;
   primaryObjective: string;
   secondaryObjectives: string[];
-  coreOfferings: Array<{ name: string; description: string }>;
+  coreOfferings: Array<{ name: string; description: string; topKeyword: string }>;
   targetAudience: string;
   geographicFocus: string;
   competitors: string;
@@ -57,6 +58,7 @@ const GEO_OPTIONS = [
 interface ObjectivesViewProps {
   projectId: string;
   projectName: string;
+  siteUrl: string;
 }
 
 const STORAGE_KEY = (id: string) => `kt_objectives_${id}`;
@@ -66,7 +68,7 @@ function getDefaults(): SiteObjectives {
     siteType: '',
     primaryObjective: '',
     secondaryObjectives: [],
-    coreOfferings: [{ name: '', description: '' }],
+    coreOfferings: [{ name: '', description: '', topKeyword: '' }],
     targetAudience: '',
     geographicFocus: '',
     competitors: '',
@@ -76,16 +78,26 @@ function getDefaults(): SiteObjectives {
   };
 }
 
-export default function ObjectivesView({ projectId, projectName }: ObjectivesViewProps) {
+export default function ObjectivesView({ projectId, projectName, siteUrl }: ObjectivesViewProps) {
   const [data, setData] = useState<SiteObjectives>(getDefaults);
   const [saved, setSaved] = useState(false);
   const [hasExisting, setHasExisting] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY(projectId));
       if (stored) {
-        setData(JSON.parse(stored));
+        const parsed = JSON.parse(stored);
+        // Migrate offerings that don't have topKeyword
+        if (parsed.coreOfferings) {
+          parsed.coreOfferings = parsed.coreOfferings.map((o: any) => ({
+            ...o,
+            topKeyword: o.topKeyword || '',
+          }));
+        }
+        setData(parsed);
         setHasExisting(true);
       } else {
         setData(getDefaults());
@@ -95,6 +107,7 @@ export default function ObjectivesView({ projectId, projectName }: ObjectivesVie
       setData(getDefaults());
     }
     setSaved(false);
+    setAiError(null);
   }, [projectId]);
 
   const save = () => {
@@ -122,7 +135,7 @@ export default function ObjectivesView({ projectId, projectName }: ObjectivesVie
   const addOffering = () => {
     setData((prev) => ({
       ...prev,
-      coreOfferings: [...prev.coreOfferings, { name: '', description: '' }],
+      coreOfferings: [...prev.coreOfferings, { name: '', description: '', topKeyword: '' }],
     }));
   };
 
@@ -133,7 +146,7 @@ export default function ObjectivesView({ projectId, projectName }: ObjectivesVie
     }));
   };
 
-  const updateOffering = (index: number, field: 'name' | 'description', value: string) => {
+  const updateOffering = (index: number, field: 'name' | 'description' | 'topKeyword', value: string) => {
     setData((prev) => ({
       ...prev,
       coreOfferings: prev.coreOfferings.map((o, i) => (i === index ? { ...o, [field]: value } : o)),
@@ -141,9 +154,51 @@ export default function ObjectivesView({ projectId, projectName }: ObjectivesVie
     setSaved(false);
   };
 
+  const handleCompleteWithAI = async () => {
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const resp = await fetch(API_ENDPOINTS.ai.analyzeSite, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${resp.status}`);
+      }
+
+      const { objectives } = await resp.json();
+      if (objectives) {
+        setData({
+          siteType: objectives.siteType || '',
+          primaryObjective: objectives.primaryObjective || '',
+          secondaryObjectives: objectives.secondaryObjectives || [],
+          coreOfferings: (objectives.coreOfferings || []).map((o: any) => ({
+            name: o.name || '',
+            description: o.description || '',
+            topKeyword: o.topKeyword || '',
+          })),
+          targetAudience: objectives.targetAudience || '',
+          geographicFocus: objectives.geographicFocus || '',
+          competitors: objectives.competitors || '',
+          uniqueValue: objectives.uniqueValue || '',
+          conversionGoals: objectives.conversionGoals || '',
+          contentStrategy: objectives.contentStrategy || '',
+        });
+        setSaved(false);
+      }
+    } catch (err: any) {
+      setAiError(err.message || 'Failed to analyze site');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   const completionPct = (() => {
     let filled = 0;
-    let total = 7;
+    const total = 7;
     if (data.siteType) filled++;
     if (data.primaryObjective) filled++;
     if (data.coreOfferings.some((o) => o.name.trim())) filled++;
@@ -166,7 +221,6 @@ export default function ObjectivesView({ projectId, projectName }: ObjectivesVie
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {/* Completion indicator */}
           <div className="flex items-center gap-2">
             <div className="w-24 h-1.5 rounded-full bg-apple-fill-secondary overflow-hidden">
               <div
@@ -180,6 +234,53 @@ export default function ObjectivesView({ projectId, projectName }: ObjectivesVie
             {saved ? '✓ Saved' : 'Save'}
           </button>
         </div>
+      </div>
+
+      {/* Complete with AI */}
+      <div className="mb-6 card p-5 bg-gradient-to-r from-indigo-50/80 to-blue-50/80 border border-indigo-100">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 rounded-apple-sm bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center shrink-0">
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-apple-base font-semibold text-apple-text">Complete with AI</h3>
+            <p className="text-apple-sm text-apple-text-secondary mt-0.5">
+              Automatically crawl your site and fill out all objectives using AI analysis
+            </p>
+          </div>
+          <button
+            onClick={handleCompleteWithAI}
+            disabled={aiLoading}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-apple-sm bg-gradient-to-r from-indigo-500 to-blue-600 text-white text-apple-sm font-medium hover:from-indigo-600 hover:to-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+          >
+            {aiLoading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Analyzing...
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Complete with AI
+              </>
+            )}
+          </button>
+        </div>
+        {aiLoading && (
+          <div className="mt-3 flex items-center gap-2 text-apple-sm text-indigo-600">
+            <div className="w-full bg-indigo-100 rounded-full h-1 overflow-hidden">
+              <div className="h-full bg-indigo-500 rounded-full animate-pulse" style={{ width: '60%' }} />
+            </div>
+            <span className="shrink-0">Crawling site & analyzing...</span>
+          </div>
+        )}
+        {aiError && (
+          <div className="mt-3 text-apple-sm text-apple-red">{aiError}</div>
+        )}
       </div>
 
       <div className="space-y-6">
@@ -241,16 +342,31 @@ export default function ObjectivesView({ projectId, projectName }: ObjectivesVie
         </Section>
 
         {/* Core Offerings */}
-        <Section title="What are your core offerings?" number={4} subtitle="Products, services, or content categories that define your business">
-          <div className="space-y-3">
+        <Section title="What are your core offerings?" number={4} subtitle="Products, services, or content categories — and the most important keyword for each">
+          <div className="space-y-4">
             {data.coreOfferings.map((offering, i) => (
-              <div key={i} className="flex gap-3 items-start">
-                <div className="flex-1 space-y-2">
+              <div key={i} className="rounded-apple-sm border border-apple-divider p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-apple-xs font-semibold text-apple-text-tertiary uppercase tracking-wider">
+                    Offering {i + 1}
+                  </span>
+                  {data.coreOfferings.length > 1 && (
+                    <button
+                      onClick={() => removeOffering(i)}
+                      className="p-1 rounded-apple-sm text-apple-text-tertiary hover:text-apple-red hover:bg-red-50 transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2">
                   <input
                     type="text"
                     value={offering.name}
                     onChange={(e) => updateOffering(i, 'name', e.target.value)}
-                    placeholder={`Offering ${i + 1} name`}
+                    placeholder="Offering name"
                     className="input w-full"
                   />
                   <textarea
@@ -260,17 +376,21 @@ export default function ObjectivesView({ projectId, projectName }: ObjectivesVie
                     rows={2}
                     className="input w-full resize-none"
                   />
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none">
+                      <svg className="w-3.5 h-3.5 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </div>
+                    <input
+                      type="text"
+                      value={offering.topKeyword}
+                      onChange={(e) => updateOffering(i, 'topKeyword', e.target.value)}
+                      placeholder="Most important keyword (e.g. 'plumber near me')"
+                      className="input w-full pl-9 font-medium text-apple-blue"
+                    />
+                  </div>
                 </div>
-                {data.coreOfferings.length > 1 && (
-                  <button
-                    onClick={() => removeOffering(i)}
-                    className="p-1.5 rounded-apple-sm text-apple-text-tertiary hover:text-apple-red hover:bg-red-50 transition-colors mt-1"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                )}
               </div>
             ))}
             <button
