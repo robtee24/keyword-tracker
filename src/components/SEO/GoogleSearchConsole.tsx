@@ -1753,7 +1753,7 @@ function KeywordRow({
   volume: { avgMonthlySearches: number | null; competition: string | null; competitionIndex: number | null } | null;
   intentStore: IntentStore;
   onIntentOverride: (keyword: string, intent: KeywordIntent) => void;
-  activeGroupId: string | null;
+  activeGroupId: number | null;
   onRemoveFromGroup?: (keyword: string) => void;
 }) {
   const [showIntentPicker, setShowIntentPicker] = useState(false);
