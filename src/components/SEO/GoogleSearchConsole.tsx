@@ -1240,7 +1240,7 @@ export default function GoogleSearchConsole({
             >
               <option value="">All Intents</option>
               {ALL_INTENTS.map((intent) => (
-                <option key={intent} value={intent}>{intent}</option>
+                <option key={intent} value={intent}>{INTENT_LABEL[intent]}</option>
               ))}
             </select>
             {/* Add to Group — selected keywords or all filtered results */}
@@ -1786,6 +1786,18 @@ const ALL_INTENTS: KeywordIntent[] = [
   'Branded', 'Competitor', 'Competitor Navigational', 'Competitor Transactional',
 ];
 
+const INTENT_LABEL: Record<KeywordIntent, string> = {
+  Transactional: 'Transactional',
+  Product: 'Product',
+  Educational: 'Educational',
+  Navigational: 'Navigational',
+  Local: 'Local',
+  Branded: 'Branded',
+  Competitor: 'Competitor',
+  'Competitor Navigational': 'Comp. Nav.',
+  'Competitor Transactional': 'Comp. Trans.',
+};
+
 /* ------------------------------------------------------------------ */
 /*  Intent Learning Engine                                             */
 /*  Persists user overrides + learned patterns in localStorage.       */
@@ -2074,7 +2086,7 @@ function KeywordRow({
                     : 'Auto-classified — click to change'
                   }
                 >
-                  {intent}
+                  {INTENT_LABEL[intent]}
                   {source === 'ai' && (
                     <svg className="w-2.5 h-2.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
@@ -2113,7 +2125,7 @@ function KeywordRow({
                             Navigational: '#c2410c', Local: '#be123c', Branded: '#4338ca',
                             Competitor: '#dc2626', 'Competitor Navigational': '#b45309', 'Competitor Transactional': '#0d9488',
                           }[intentOption] || '#6b7280' }} />
-                          {intentOption}
+                          {INTENT_LABEL[intentOption]}
                           {isActive && <span className="ml-auto text-apple-blue">✓</span>}
                         </button>
                       );
