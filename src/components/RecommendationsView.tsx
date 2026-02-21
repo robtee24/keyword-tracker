@@ -3,7 +3,7 @@ import { API_ENDPOINTS } from '../config/api';
 
 type TasklistTab = 'current' | 'completed' | 'rejected';
 
-interface TaskItem {
+interface DbTask {
   id: string;
   keyword: string;
   taskId: string;
@@ -12,12 +12,6 @@ interface TaskItem {
   status: string;
   completedAt: string;
   source: 'keyword' | 'audit';
-  priority?: string;
-  impact?: string;
-}
-
-interface RecommendationsViewProps {
-  siteUrl: string;
 }
 
 interface RankedItem {
@@ -29,18 +23,17 @@ interface RankedItem {
   scannedAt: string;
 }
 
+interface RecommendationsViewProps {
+  siteUrl: string;
+}
+
 const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
 export default function RecommendationsView({ siteUrl }: RecommendationsViewProps) {
   const [activeTab, setActiveTab] = useState<TasklistTab>('current');
   const [loading, setLoading] = useState(true);
-
-  // Keyword-based recommendations (from scans)
   const [keywordItems, setKeywordItems] = useState<RankedItem[]>([]);
-
-  // All tasks from DB (completed + rejected, both keyword and audit)
-  const [dbTasks, setDbTasks] = useState<TaskItem[]>([]);
-
+  const [dbTasks, setDbTasks] = useState<DbTask[]>([]);
   const [filterPriority, setFilterPriority] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
 
@@ -56,7 +49,7 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
       if (tasksResp.ok) {
         const tasksData = await tasksResp.json();
         setDbTasks((tasksData.tasks || []).map((t: any) => ({
-          id: t.id,
+          id: t.id || '',
           keyword: t.keyword || '',
           taskId: t.task_id || '',
           taskText: t.task_text || t.task_description || '',
@@ -64,8 +57,6 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
           status: t.status || 'completed',
           completedAt: t.completed_at || '',
           source: (t.keyword || '').startsWith('audit:') ? 'audit' as const : 'keyword' as const,
-          priority: undefined,
-          impact: undefined,
         })));
       }
 
@@ -96,35 +87,39 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Build task key sets for quick lookup
-  const completedKeys = new Set(dbTasks.filter((t) => t.status === 'completed').map((t) => `${t.keyword}::${t.taskId || t.taskText}`));
-  const rejectedKeys = new Set(dbTasks.filter((t) => t.status === 'rejected').map((t) => `${t.keyword}::${t.taskId || t.taskText}`));
+  // Keyword tasks keyed for lookup
+  const keywordTaskKeys = new Set(
+    dbTasks.filter((t) => t.source === 'keyword').map((t) => `${t.keyword}::${t.taskId || t.taskText}`)
+  );
 
-  // Current keyword tasks: not completed and not rejected
+  // CURRENT items:
+  // 1. Keyword scan tasks NOT in DB (not completed, not rejected)
   const currentKeywordTasks = keywordItems.filter((item) => {
     const key = `${item.keyword}::${item.task}`;
-    return !completedKeys.has(key) && !rejectedKeys.has(key);
+    return !keywordTaskKeys.has(key);
   });
+  // 2. DB tasks with status='pending' (audit tasks added to tasklist)
+  const pendingDbTasks = dbTasks.filter((t) => t.status === 'pending');
 
-  // Audit tasks that are in "current" state (in DB but status is neither completed nor rejected — these are "added to tasklist")
-  // For audit tasks, "current" means they exist in DB with no special status (they were added via "Add to Tasklist")
-  // Actually, the flow is: audit recs are added to DB when user clicks "Add to Tasklist" with status='completed'.
-  // Let me re-think: the DB stores completed and rejected. "Current" keyword tasks are those NOT in DB.
-  // For audit tasks added to tasklist, they go in as 'completed'. So we show them under completed.
-
+  // COMPLETED: DB tasks with status='completed'
   const completedTasks = dbTasks.filter((t) => t.status === 'completed');
+
+  // REJECTED: DB tasks with status='rejected'
   const rejectedTasks = dbTasks.filter((t) => t.status === 'rejected');
 
-  // All categories from all sources
   const allCategories = [...new Set([
     ...keywordItems.map((i) => i.category),
     ...dbTasks.map((t) => t.category),
   ])].filter(Boolean).sort();
 
-  // Filter current tasks
-  const filteredCurrent = currentKeywordTasks.filter((item) => {
+  const filteredCurrentKeyword = currentKeywordTasks.filter((item) => {
     if (filterPriority && item.priority !== filterPriority) return false;
     if (filterCategory && item.category !== filterCategory) return false;
+    return true;
+  });
+
+  const filteredPendingDb = pendingDbTasks.filter((t) => {
+    if (filterCategory && t.category !== filterCategory) return false;
     return true;
   });
 
@@ -138,33 +133,54 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
     return true;
   });
 
-  const markComplete = useCallback(async (keyword: string, taskId: string, taskText: string, category: string) => {
-    setDbTasks((prev) => [...prev, { id: '', keyword, taskId, taskText, category, status: 'completed', completedAt: new Date().toISOString(), source: keyword.startsWith('audit:') ? 'audit' : 'keyword' }]);
+  const currentCount = currentKeywordTasks.length + pendingDbTasks.length;
+
+  const updateTaskStatus = useCallback(async (task: DbTask, newStatus: string) => {
+    setDbTasks((prev) => prev.map((t) =>
+      t.keyword === task.keyword && t.taskId === task.taskId ? { ...t, status: newStatus, completedAt: new Date().toISOString() } : t
+    ));
     try {
-      await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword, taskId, taskText, category, status: 'completed' }) });
+      await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl, keyword: task.keyword, taskId: task.taskId || task.taskText, taskText: task.taskText, category: task.category, status: newStatus }) });
     } catch { /* */ }
   }, [siteUrl]);
 
-  const rejectTask = useCallback(async (keyword: string, taskId: string, taskText: string, category: string) => {
-    setDbTasks((prev) => {
-      const existing = prev.find((t) => t.keyword === keyword && (t.taskId === taskId || t.taskText === taskText));
-      if (existing) return prev.map((t) => t === existing ? { ...t, status: 'rejected' } : t);
-      return [...prev, { id: '', keyword, taskId, taskText, category, status: 'rejected', completedAt: new Date().toISOString(), source: keyword.startsWith('audit:') ? 'audit' : 'keyword' }];
-    });
+  const markKeywordComplete = useCallback(async (item: RankedItem) => {
+    const newTask: DbTask = { id: '', keyword: item.keyword, taskId: item.task, taskText: item.task, category: item.category, status: 'completed', completedAt: new Date().toISOString(), source: 'keyword' };
+    setDbTasks((prev) => [...prev, newTask]);
     try {
-      await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword, taskId: taskId || taskText, taskText, category, status: 'rejected' }) });
+      await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl, keyword: item.keyword, taskId: item.task, taskText: item.task, category: item.category, status: 'completed' }) });
     } catch { /* */ }
   }, [siteUrl]);
 
-  const restoreTask = useCallback(async (task: TaskItem) => {
+  const rejectKeywordTask = useCallback(async (item: RankedItem) => {
+    const newTask: DbTask = { id: '', keyword: item.keyword, taskId: item.task, taskText: item.task, category: item.category, status: 'rejected', completedAt: new Date().toISOString(), source: 'keyword' };
+    setDbTasks((prev) => [...prev, newTask]);
+    try {
+      await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl, keyword: item.keyword, taskId: item.task, taskText: item.task, category: item.category, status: 'rejected' }) });
+    } catch { /* */ }
+  }, [siteUrl]);
+
+  const restoreTask = useCallback(async (task: DbTask) => {
     setDbTasks((prev) => prev.filter((t) => !(t.keyword === task.keyword && t.taskId === task.taskId)));
     try {
-      await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: task.keyword, taskId: task.taskId || task.taskText }) });
+      await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl, keyword: task.keyword, taskId: task.taskId || task.taskText }) });
     } catch { /* */ }
   }, [siteUrl]);
 
+  const formatSource = (task: DbTask) => {
+    if (task.source === 'audit') {
+      const type = task.keyword.replace('audit:', '');
+      return `${type.toUpperCase()} Audit`;
+    }
+    return task.keyword;
+  };
+
   const tabs: { id: TasklistTab; label: string; count: number }[] = [
-    { id: 'current', label: 'Current', count: currentKeywordTasks.length },
+    { id: 'current', label: 'Current', count: currentCount },
     { id: 'completed', label: 'Completed', count: completedTasks.length },
     { id: 'rejected', label: 'Rejected', count: rejectedTasks.length },
   ];
@@ -176,7 +192,6 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
         <p className="text-apple-sm text-apple-text-secondary mt-1">All recommendations from keyword scans and page audits</p>
       </div>
 
-      {/* Tabs */}
       <div className="flex border-b border-apple-divider mb-6">
         {tabs.map((tab) => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
@@ -193,7 +208,6 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
         </div>
       ) : (
         <>
-          {/* Filters */}
           <div className="flex items-center gap-3 mb-4">
             {activeTab === 'current' && (
               <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)}
@@ -213,7 +227,7 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
 
           {/* ─── Current Tab ─── */}
           {activeTab === 'current' && (
-            filteredCurrent.length === 0 ? (
+            (filteredCurrentKeyword.length === 0 && filteredPendingDb.length === 0) ? (
               <div className="card p-12 text-center">
                 <div className="w-14 h-14 rounded-full bg-green-50 mx-auto mb-3 flex items-center justify-center">
                   <svg className="w-7 h-7 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -224,11 +238,35 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
             ) : (
               <div className="card overflow-hidden">
                 <div className="divide-y divide-apple-divider">
-                  {filteredCurrent.map((item, i) => (
-                    <div key={`${item.keyword}-${i}`} className="px-5 py-4 flex items-start gap-3 group">
-                      <button onClick={() => markComplete(item.keyword, item.task, item.task, item.category)}
-                        className="mt-0.5 w-5 h-5 rounded border-2 border-apple-border shrink-0 hover:border-green-500 hover:bg-green-50 transition-colors flex items-center justify-center">
-                      </button>
+                  {/* Audit tasks on tasklist (pending) */}
+                  {filteredPendingDb.map((task, i) => (
+                    <div key={`db-${task.taskId}-${i}`} className="px-5 py-4 flex items-start gap-3 group">
+                      <button onClick={() => updateTaskStatus(task, 'completed')}
+                        className="mt-0.5 w-5 h-5 rounded border-2 border-apple-border shrink-0 hover:border-green-500 hover:bg-green-50 transition-colors flex items-center justify-center" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-apple-sm font-medium text-apple-text">{task.taskText}</p>
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          <span className="inline-flex px-2 py-0.5 rounded-apple-pill text-[10px] font-bold uppercase bg-blue-100 text-blue-700">
+                            {task.source === 'audit' ? 'Audit' : 'Keyword'}
+                          </span>
+                          {task.category && <span className="text-apple-xs text-apple-text-tertiary">{task.category}</span>}
+                          <span className="text-apple-xs text-apple-text-tertiary">·</span>
+                          <span className="text-apple-xs text-apple-text-tertiary">{formatSource(task)}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => updateTaskStatus(task, 'rejected')} title="Reject"
+                          className="p-1.5 rounded hover:bg-red-50 text-apple-text-tertiary hover:text-red-500 transition-colors">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {/* Keyword scan tasks */}
+                  {filteredCurrentKeyword.map((item, i) => (
+                    <div key={`kw-${item.keyword}-${i}`} className="px-5 py-4 flex items-start gap-3 group">
+                      <button onClick={() => markKeywordComplete(item)}
+                        className="mt-0.5 w-5 h-5 rounded border-2 border-apple-border shrink-0 hover:border-green-500 hover:bg-green-50 transition-colors flex items-center justify-center" />
                       <div className="flex-1 min-w-0">
                         <p className="text-apple-sm font-medium text-apple-text">{item.task}</p>
                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
@@ -243,7 +281,7 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => rejectTask(item.keyword, item.task, item.task, item.category)} title="Reject"
+                        <button onClick={() => rejectKeywordTask(item)} title="Reject"
                           className="p-1.5 rounded hover:bg-red-50 text-apple-text-tertiary hover:text-red-500 transition-colors">
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
                         </button>
@@ -258,9 +296,7 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
           {/* ─── Completed Tab ─── */}
           {activeTab === 'completed' && (
             filteredCompleted.length === 0 ? (
-              <div className="card p-12 text-center">
-                <p className="text-apple-sm text-apple-text-tertiary">No completed tasks yet.</p>
-              </div>
+              <div className="card p-12 text-center"><p className="text-apple-sm text-apple-text-tertiary">No completed tasks yet.</p></div>
             ) : (
               <div className="card overflow-hidden">
                 <div className="divide-y divide-apple-divider">
@@ -272,9 +308,12 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
                       <div className="flex-1 min-w-0">
                         <p className="text-apple-sm text-apple-text-secondary line-through">{task.taskText}</p>
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <span className="inline-flex px-2 py-0.5 rounded-apple-pill text-[10px] font-bold uppercase bg-gray-100 text-gray-600">
+                            {task.source === 'audit' ? 'Audit' : 'Keyword'}
+                          </span>
                           {task.category && <span className="text-apple-xs text-apple-text-tertiary">{task.category}</span>}
                           <span className="text-apple-xs text-apple-text-tertiary">·</span>
-                          <span className="text-apple-xs text-apple-text-tertiary">{task.source === 'audit' ? task.keyword.replace('audit:', '') + ' audit' : task.keyword}</span>
+                          <span className="text-apple-xs text-apple-text-tertiary">{formatSource(task)}</span>
                           {task.completedAt && (
                             <><span className="text-apple-xs text-apple-text-tertiary">·</span><span className="text-apple-xs text-apple-text-tertiary">{new Date(task.completedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span></>
                           )}
@@ -293,9 +332,7 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
           {/* ─── Rejected Tab ─── */}
           {activeTab === 'rejected' && (
             filteredRejected.length === 0 ? (
-              <div className="card p-12 text-center">
-                <p className="text-apple-sm text-apple-text-tertiary">No rejected tasks.</p>
-              </div>
+              <div className="card p-12 text-center"><p className="text-apple-sm text-apple-text-tertiary">No rejected tasks.</p></div>
             ) : (
               <div className="card overflow-hidden">
                 <div className="divide-y divide-apple-divider">
@@ -307,9 +344,12 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
                       <div className="flex-1 min-w-0">
                         <p className="text-apple-sm text-apple-text-tertiary">{task.taskText}</p>
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <span className="inline-flex px-2 py-0.5 rounded-apple-pill text-[10px] font-bold uppercase bg-gray-100 text-gray-600">
+                            {task.source === 'audit' ? 'Audit' : 'Keyword'}
+                          </span>
                           {task.category && <span className="text-apple-xs text-apple-text-tertiary">{task.category}</span>}
                           <span className="text-apple-xs text-apple-text-tertiary">·</span>
-                          <span className="text-apple-xs text-apple-text-tertiary">{task.source === 'audit' ? task.keyword.replace('audit:', '') + ' audit' : task.keyword}</span>
+                          <span className="text-apple-xs text-apple-text-tertiary">{formatSource(task)}</span>
                         </div>
                       </div>
                       <button onClick={() => restoreTask(task)} title="Restore" className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-apple-fill-secondary text-apple-text-tertiary hover:text-apple-text transition-all shrink-0">

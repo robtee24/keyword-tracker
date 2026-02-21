@@ -46,25 +46,37 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'siteUrl, keyword, taskId, and taskText are required' });
     }
 
-    const { data, error } = await supabase
+    const row = {
+      site_url: siteUrl,
+      keyword,
+      task_id: taskId,
+      task_text: taskText,
+      category: category || null,
+      status: status || 'pending',
+      completed_at: new Date().toISOString(),
+    };
+
+    // Try upsert first, fallback to delete+insert
+    let { data, error } = await supabase
       .from('completed_tasks')
-      .upsert(
-        {
-          site_url: siteUrl,
-          keyword,
-          task_id: taskId,
-          task_text: taskText,
-          category: category || null,
-          status: status || 'completed',
-          completed_at: new Date().toISOString(),
-        },
-        { onConflict: 'site_url,keyword,task_id' }
-      )
+      .upsert(row, { onConflict: 'site_url,keyword,task_id' })
       .select()
       .single();
 
     if (error) {
-      console.error('DB error saving task:', error);
+      console.error('Upsert failed, trying delete+insert:', error.message);
+      await supabase.from('completed_tasks')
+        .delete()
+        .eq('site_url', siteUrl)
+        .eq('keyword', keyword)
+        .eq('task_id', taskId);
+      const result = await supabase.from('completed_tasks').insert(row).select().single();
+      data = result.data;
+      error = result.error;
+    }
+
+    if (error) {
+      console.error('DB error saving task:', error.message);
       return res.status(500).json({ error: error.message });
     }
 

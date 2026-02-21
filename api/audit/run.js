@@ -147,22 +147,35 @@ export default async function handler(req, res) {
   // 3. Save to Supabase
   const supabase = getSupabase();
   if (supabase) {
+    const row = {
+      site_url: siteUrl,
+      page_url: pageUrl,
+      audit_type: auditType,
+      score: auditResult.score,
+      recommendations: auditResult.recommendations,
+      strengths: auditResult.strengths,
+      summary: auditResult.summary || '',
+      audited_at: new Date().toISOString(),
+    };
     try {
-      await supabase.from('page_audits').upsert(
-        {
-          site_url: siteUrl,
-          page_url: pageUrl,
-          audit_type: auditType,
-          score: auditResult.score,
-          recommendations: auditResult.recommendations,
-          strengths: auditResult.strengths,
-          summary: auditResult.summary || '',
-          audited_at: new Date().toISOString(),
-        },
-        { onConflict: 'site_url,page_url,audit_type' }
-      );
+      // Try upsert first (requires unique constraint)
+      const { error: upsertErr } = await supabase
+        .from('page_audits')
+        .upsert(row, { onConflict: 'site_url,page_url,audit_type' });
+
+      if (upsertErr) {
+        console.error('[Audit] Upsert failed, trying delete+insert:', upsertErr.message);
+        // Fallback: delete existing then insert
+        await supabase.from('page_audits')
+          .delete()
+          .eq('site_url', siteUrl)
+          .eq('page_url', pageUrl)
+          .eq('audit_type', auditType);
+        const { error: insertErr } = await supabase.from('page_audits').insert(row);
+        if (insertErr) console.error('[Audit] Insert also failed:', insertErr.message);
+      }
     } catch (err) {
-      console.error('[Audit] DB save error:', err.message);
+      console.error('[Audit] DB save exception:', err.message);
     }
   }
 

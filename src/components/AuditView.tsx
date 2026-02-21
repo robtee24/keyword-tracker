@@ -98,7 +98,8 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
   const [recsPage, setRecsPage] = useState(1);
   const [summaryExpanded, setSummaryExpanded] = useState(true);
 
-  // Completed + rejected recommendations tracking
+  // Task status tracking: pending (on tasklist), completed, rejected
+  const [pendingRecs, setPendingRecs] = useState<Set<string>>(new Set());
   const [completedRecs, setCompletedRecs] = useState<Set<string>>(new Set());
   const [rejectedRecs, setRejectedRecs] = useState<Set<string>>(new Set());
   const [selectedForTasklist, setSelectedForTasklist] = useState<Set<string>>(new Set());
@@ -121,19 +122,22 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
       .finally(() => setLoadingResults(false));
   }, [siteUrl, auditType]);
 
-  // Load completed and rejected tasks for this audit type
+  // Load all task statuses for this audit type
   useEffect(() => {
     if (!siteUrl) return;
     fetch(`${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(`audit:${auditType}`)}`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data?.tasks) {
+          const pending = new Set<string>();
           const done = new Set<string>();
           const rejected = new Set<string>();
           for (const t of data.tasks) {
             if (t.status === 'rejected') rejected.add(t.task_id);
-            else done.add(t.task_id);
+            else if (t.status === 'completed') done.add(t.task_id);
+            else pending.add(t.task_id);
           }
+          setPendingRecs(pending);
           setCompletedRecs(done);
           setRejectedRecs(rejected);
         }
@@ -290,13 +294,21 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
   const toggleRecDone = useCallback(async (key: string, taskText: string) => {
     const isDone = completedRecs.has(key);
     if (isDone) {
+      // Uncomplete: if it was on tasklist, go back to pending; otherwise remove entirely
+      const wasPending = pendingRecs.has(key);
       setCompletedRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
-      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key }) }); } catch { /* */ }
+      if (wasPending) {
+        setPendingRecs((prev) => new Set(prev).add(key));
+        try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'pending' }) }); } catch { /* */ }
+      } else {
+        try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key }) }); } catch { /* */ }
+      }
     } else {
       setCompletedRecs((prev) => new Set(prev).add(key));
+      setPendingRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
       try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'completed' }) }); } catch { /* */ }
     }
-  }, [siteUrl, auditType, completedRecs]);
+  }, [siteUrl, auditType, completedRecs, pendingRecs]);
 
   const rejectRec = useCallback(async (key: string, taskText: string) => {
     const isRejected = rejectedRecs.has(key);
@@ -306,6 +318,7 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
     } else {
       setRejectedRecs((prev) => new Set(prev).add(key));
       setCompletedRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
+      setPendingRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
       try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'rejected' }) }); } catch { /* */ }
     }
   }, [siteUrl, auditType, rejectedRecs]);
@@ -314,19 +327,20 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
     if (selectedForTasklist.size === 0) return;
     setAddingToTasklist(true);
     for (const key of selectedForTasklist) {
-      if (completedRecs.has(key)) continue;
+      if (completedRecs.has(key) || pendingRecs.has(key)) continue;
       const [pageUrl, idxStr] = key.split('::');
       const idx = parseInt(idxStr, 10);
       const page = results.find((r) => r.page_url === pageUrl);
       const rec = page?.recommendations[idx];
       if (!rec) continue;
+      setPendingRecs((prev) => new Set(prev).add(key));
       try {
-        await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText: `[${AUDIT_TYPE_LABELS[auditType]}] ${rec.issue} — ${rec.recommendation}`, category: rec.category }) });
+        await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText: `[${AUDIT_TYPE_LABELS[auditType]}] ${rec.issue} — ${rec.recommendation}`, category: rec.category, status: 'pending' }) });
       } catch { /* */ }
     }
     setSelectedForTasklist(new Set());
     setAddingToTasklist(false);
-  }, [selectedForTasklist, completedRecs, results, siteUrl, auditType]);
+  }, [selectedForTasklist, completedRecs, pendingRecs, results, siteUrl, auditType]);
 
   const toggleRecExpanded = (key: string) => setExpandedRecs((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
 
@@ -756,18 +770,22 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
                   const pc = PRIORITY_COLORS[rec.priority] || PRIORITY_COLORS.low;
                   const key = recKey(rec.page_url, rec.recIdx);
                   const isDone = completedRecs.has(key);
+                  const isPending = pendingRecs.has(key);
                   const isExp = expandedRecs.has(key);
                   const isSelected = selectedForTasklist.has(key);
+                  const isActioned = isDone || isPending;
                   return (
                     <div key={key} className={`${isDone ? 'opacity-50' : ''}`}>
                       <div className="p-4 flex items-start gap-2">
-                        <input type="checkbox" checked={isSelected || isDone} disabled={isDone}
-                          onChange={() => { if (isDone) return; setSelectedForTasklist((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; }); }}
+                        <input type="checkbox" checked={isSelected || isActioned} disabled={isActioned}
+                          onChange={() => { if (isActioned) return; setSelectedForTasklist((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; }); }}
                           className="mt-1 shrink-0 rounded" />
                         <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleRecExpanded(key)}>
                           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                             <span className={`text-apple-xs font-bold uppercase ${pc.text}`}>{rec.priority}</span>
                             <span className="text-apple-xs font-medium text-apple-text-secondary">{rec.category}</span>
+                            {isPending && <span className="px-1.5 py-0.5 rounded-apple-pill text-[10px] font-bold bg-blue-100 text-blue-700">On Tasklist</span>}
+                            {isDone && <span className="px-1.5 py-0.5 rounded-apple-pill text-[10px] font-bold bg-green-100 text-green-700">Done</span>}
                             <span className="text-apple-xs text-apple-text-tertiary">·</span>
                             <a href={rec.page_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-apple-xs text-apple-blue hover:underline truncate">{rec.page_url.replace(/^https?:\/\/[^/]+/, '') || '/'}</a>
                           </div>
