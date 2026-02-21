@@ -66,9 +66,12 @@ export default function AdvertisingView({ siteUrl, projectId }: AdvertisingViewP
     if (!siteUrl) return;
     setLoading(true);
     fetch(`${API_ENDPOINTS.db.adKeywords}?siteUrl=${encodeURIComponent(siteUrl)}`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => { if (d?.broad) setData(d); })
-      .catch(() => {})
+      .then((r) => {
+        if (!r.ok) return null;
+        return r.json();
+      })
+      .then((d) => { if (d && d.broad) setData(d); })
+      .catch((err) => { console.error('[Advertising] Load error:', err); })
       .finally(() => setLoading(false));
   }, [siteUrl]);
 
@@ -87,12 +90,14 @@ export default function AdvertisingView({ siteUrl, projectId }: AdvertisingViewP
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ siteUrl, objectives }),
       });
+      const body = await resp.json().catch(() => null);
       if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(err.error || 'Generation failed');
+        throw new Error(body?.error || `Server error (${resp.status})`);
       }
-      const result = await resp.json();
-      setData(result);
+      if (!body || (!body.broad && !body.phrase && !body.exact)) {
+        throw new Error('Server returned empty results. Check that your site has tracked keywords.');
+      }
+      setData(body);
     } catch (err: any) {
       setError(err.message);
     } finally {

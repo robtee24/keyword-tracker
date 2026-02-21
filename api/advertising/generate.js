@@ -36,14 +36,16 @@ export default async function handler(req, res) {
     intentMap[i.keyword.toLowerCase()] = i.intent;
   }
 
-  // Build keyword context for AI (limit to top 500 by volume for token efficiency)
+  console.log(`[Advertising] Found ${keywords.length} keywords, ${Object.keys(volumeMap).length} volumes, ${Object.keys(intentMap).length} intents for ${siteUrl}`);
+
+  // Build keyword context for AI (limit to top 200 by volume for token efficiency)
   const enriched = keywords.map((kw) => {
     const vol = volumeMap[kw.toLowerCase()];
     const intent = intentMap[kw.toLowerCase()];
     return { keyword: kw, volume: vol?.volume ?? null, competition: vol?.competition ?? null, competitionIndex: vol?.competitionIndex ?? null, intent: intent || null };
   });
   enriched.sort((a, b) => (b.volume || 0) - (a.volume || 0));
-  const topKeywords = enriched.slice(0, 500);
+  const topKeywords = enriched.slice(0, 200);
 
   const objectivesContext = objectives
     ? `
@@ -64,105 +66,41 @@ SITE OBJECTIVES:
     .map((k) => `${k.keyword} | vol:${k.volume ?? '?'} | comp:${k.competition ?? '?'} | intent:${k.intent ?? '?'}`)
     .join('\n');
 
-  const prompt = `You are an expert performance marketer and Google Ads keyword strategist. You apply professional paid advertising best practices, audience targeting methodology, and marketing psychology to build high-converting keyword lists.
+  const prompt = `You are an expert Google Ads keyword strategist applying paid advertising best practices and marketing psychology.
 
 ${objectivesContext}
 
-CURRENT RANKING KEYWORDS (keyword | monthly volume | competition | intent):
+RANKING KEYWORDS (keyword | volume | competition | intent):
 ${keywordTable}
 
-═══ GOOGLE ADS KEYWORD MATCH TYPE BEST PRACTICES ═══
+MATCH TYPE RULES:
+- BROAD: 30-50 high-volume terms for Smart Bidding discovery. Include brand, product, and category terms. Mix ranking + suggested.
+- PHRASE: 40-70 multi-word phrases with commercial/transactional intent. For comparison shoppers and solution-aware searches. Mix ranking + suggested.
+- EXACT: 25-40 highest-converting terms. Brand protection, competitor names, bottom-funnel purchase-ready queries. Mix ranking + suggested.
 
-BROAD MATCH STRATEGY:
-- Use with Smart Bidding (Target CPA/ROAS) — broad match relies on Google's algorithm to find relevant searches
-- Best for: high-volume discovery, finding new converting queries you haven't thought of
-- Layer with audience signals (in-market, remarketing lists for search ads) for precision
-- Always pair broad match campaigns with robust negative keyword lists
-- Include brand terms, core product terms, and high-intent category terms
-- Add audience layering in "observation" mode first to analyze performance, then "targeting" for top performers
+NEGATIVE KEYWORD RULES (generate 100-150, organized by category):
+Categories: Universal (free, cheap, DIY, tutorial, template, salary, jobs, careers, hiring, reddit, wiki, definition), Informational (what is, how does, explain, guide, meaning), Competitor Brand (brands advertiser shouldn't bid on), Complaints (scam, refund, cancel, lawsuit, broken, worst), Job Seekers (jobs, careers, hiring, salary, interview), Irrelevant (wrong industry/vertical terms), Wrong Product (wrong models/sizes/versions), Geographic (wrong locations if geo-focused).
 
-PHRASE MATCH STRATEGY:
-- Triggers when the meaning of the phrase is included in the search query
-- Best for: balancing reach with precision — moderate volume, moderate control
-- Include multi-word phrases with clear commercial or transactional intent
-- Use for product category + modifier combinations (e.g., "best [product] for [use case]")
-- Ideal for capturing comparison shoppers and solution-aware searchers
+CONVERSION SCORING (1-10):
+10: purchase-ready (buy, pricing, quote, demo, trial, sign up)
+8-9: urgency (near me, today, fast) or high commercial intent
+6-7: comparison (best, vs, alternative, review, top)
+4-5: problem-aware (how to fix, solve, improve)
+1-3: informational (what is, definition, types of, history)
+Boost score for keywords aligned with site's core offering and conversion goals.
 
-EXACT MATCH STRATEGY:
-- Most precise — triggers only for searches with the same meaning
-- Best for: highest-converting terms, brand terms, competitor terms, high-CPA keywords
-- Include your most valuable converting terms — these justify higher bids
-- Use for bottom-of-funnel, decision-stage queries
-- Protect brand terms with exact match to prevent competitor poaching
-
-═══ NEGATIVE KEYWORD BEST PRACTICES ═══
-
-MUST-HAVE NEGATIVE CATEGORIES:
-1. Universal negatives: free, cheap, DIY, how to, tutorial, template, sample, example, course, class, training, certification, salary, jobs, careers, hiring, interview, reddit, quora, wiki, definition, meaning
-2. Competitor brand names the advertiser does NOT want to bid on (unless running competitor campaigns)
-3. Irrelevant industries or verticals that share terminology with the site
-4. Informational-only modifiers: what is, how does, explain, guide, vs, review, comparison (unless these are intentional campaigns)
-5. Wrong geographic signals if there's a geo focus
-6. Wrong product modifiers (wrong sizes, models, versions the site doesn't offer)
-7. Refund/complaint/problem terms: complaint, lawsuit, scam, refund, cancel, problem, broken, worst
-
-═══ CONVERSION PSYCHOLOGY FOR KEYWORD SELECTION ═══
-
-Apply these principles when scoring conversion likelihood:
-- Keywords indicating URGENCY (near me, today, fast, urgent, emergency) score higher — the searcher needs a solution NOW
-- Keywords indicating PURCHASE READINESS (buy, order, pricing, quote, demo, trial, sign up, get started) score highest
-- Keywords where the user is COMPARING OPTIONS (best, top, vs, alternative, compared, review) score moderately — they're close to deciding
-- Keywords showing PROBLEM AWARENESS (how to fix, solve, prevent, improve) score moderately — they know the pain, may convert with the right offer
-- Keywords that are purely INFORMATIONAL (what is, definition, meaning, history, types of) score lowest — early funnel, rarely convert on first click
-- Apply JOBS TO BE DONE thinking: what job is the searcher hiring a solution for? Keywords aligned with the site's core job-to-be-done convert better
-- Consider LOSS AVERSION: keywords framed around avoiding losses or problems ("stop losing", "prevent", "don't miss") signal higher urgency than gain-framed terms
-- Factor in SOCIAL PROOF keywords: searches including "popular", "most used", "trusted", "recommended" indicate a buyer looking for validation
-
-═══ AUDIENCE & INTENT ALIGNMENT ═══
-
-- Prioritize TRANSACTIONAL keywords that directly align with the site's conversion goals
-- Include COMPETITOR TRANSACTIONAL keywords — people searching for competitor products who aren't yet customers are valuable targets
-- Include BRANDED NAVIGATIONAL keywords to protect brand traffic
-- For suggested keywords, focus on terms the site SHOULD rank for based on its offerings but doesn't yet
-- Consider LONG-TAIL variations that have lower competition but strong conversion signals
-- Suggest keywords that target each stage of the buyer funnel (awareness → consideration → decision) but weight heavily toward decision stage
-
-═══ CAMPAIGN STRUCTURE RECOMMENDATION ═══
-
-The keyword lists should support this structure:
-- BRAND campaign (exact match brand terms)
-- NON-BRAND campaign (phrase/exact high-intent terms grouped by theme)
-- COMPETITOR campaign (competitor brand + product terms)
-- DISCOVERY campaign (broad match with smart bidding and audience layering)
-
-INSTRUCTIONS:
-
-1. **Broad Match**: Select 30-60 keywords. Include high-volume terms suitable for broad match with smart bidding. Mix ranking keywords AND suggested terms the site should target. Weight toward terms where Google's broad match algorithm can find valuable related queries.
-
-2. **Phrase Match**: Select 40-80 keywords. Multi-word phrases with commercial/transactional intent. Include both ranking and suggested terms. Focus on phrases that capture solution-aware and comparison shoppers.
-
-3. **Exact Match**: Select 30-50 keywords. The highest-converting, most specific terms. Include brand terms, competitor product names, and bottom-funnel terms with strong purchase signals. Both ranking and suggested.
-
-4. **Negative Keywords**: Generate 100-200 negative keywords organized by category. Be thorough and expansive. Cover ALL the must-have categories listed above. Think about what searches would waste money for this specific site/industry.
-
-For each keyword (except negatives), include:
-- keyword: The keyword text
-- source: "ranking" (already ranks in organic search) or "suggested" (AI-recommended)
-- volume: Estimated monthly search volume (use exact data for ranking keywords, estimate for suggested)
-- conversionScore: 1-10 based on the conversion psychology principles above (10 = highest likelihood)
-
-For negative keywords, include:
-- keyword: The keyword text
-- category: The category (Informational, Job Seekers, DIY/Free, Irrelevant, Competitor Brand, Complaints, Geographic, Wrong Product, Universal)
+For each keyword mark source as "ranking" (already ranks organically) or "suggested" (AI-recommended new term).
 
 Respond with ONLY valid JSON:
 {
-  "broad": [{ "keyword": "", "source": "ranking"|"suggested", "volume": 0, "conversionScore": 0 }],
-  "phrase": [{ "keyword": "", "source": "ranking"|"suggested", "volume": 0, "conversionScore": 0 }],
-  "exact": [{ "keyword": "", "source": "ranking"|"suggested", "volume": 0, "conversionScore": 0 }],
-  "negative": [{ "keyword": "", "category": "" }],
-  "summary": "<2-3 sentence strategy overview covering the recommended campaign approach, key opportunities, and primary conversion drivers>"
+  "broad": [{"keyword":"","source":"ranking","volume":0,"conversionScore":0}],
+  "phrase": [{"keyword":"","source":"ranking","volume":0,"conversionScore":0}],
+  "exact": [{"keyword":"","source":"ranking","volume":0,"conversionScore":0}],
+  "negative": [{"keyword":"","category":""}],
+  "summary": "2-3 sentence strategy overview"
 }`;
+
+  console.log(`[Advertising] Sending prompt with ${topKeywords.length} keywords to OpenAI...`);
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -175,19 +113,52 @@ Respond with ONLY valid JSON:
           { role: 'user', content: `Generate the Google Ads keyword lists for site: ${siteUrl}` },
         ],
         temperature: 0.3,
-        max_tokens: 12000,
+        max_tokens: 8000,
       }),
     });
 
     if (!response.ok) {
       const detail = await response.text().catch(() => 'unknown');
-      throw new Error(`OpenAI error (${response.status}): ${detail}`);
+      console.error(`[Advertising] OpenAI error: ${response.status}`, detail.substring(0, 500));
+      throw new Error(`OpenAI error (${response.status}): ${detail.substring(0, 200)}`);
     }
 
     const json = await response.json();
     const raw = json.choices?.[0]?.message?.content || '';
-    const cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-    const parsed = JSON.parse(cleaned);
+    console.log(`[Advertising] Got response, length=${raw.length}, finish_reason=${json.choices?.[0]?.finish_reason}`);
+
+    if (!raw) {
+      throw new Error('OpenAI returned empty response');
+    }
+
+    // Handle potential truncation (finish_reason: 'length')
+    let cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+
+    // If JSON is truncated, try to repair by closing open structures
+    let parsed;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (parseErr) {
+      console.warn('[Advertising] JSON parse failed, attempting repair...');
+      // Try to close any open arrays/objects
+      let repaired = cleaned;
+      const openBraces = (repaired.match(/{/g) || []).length;
+      const closeBraces = (repaired.match(/}/g) || []).length;
+      const openBrackets = (repaired.match(/\[/g) || []).length;
+      const closeBrackets = (repaired.match(/\]/g) || []).length;
+      // Remove trailing comma if present
+      repaired = repaired.replace(/,\s*$/, '');
+      // Close any unclosed structures
+      for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += ']';
+      for (let i = 0; i < openBraces - closeBraces; i++) repaired += '}';
+      try {
+        parsed = JSON.parse(repaired);
+        console.log('[Advertising] JSON repair succeeded');
+      } catch {
+        console.error('[Advertising] JSON repair failed. Raw response:', cleaned.substring(0, 500));
+        throw new Error('Failed to parse AI response. The response may have been truncated.');
+      }
+    }
 
     const result = {
       broad: Array.isArray(parsed.broad) ? parsed.broad : [],
@@ -198,14 +169,18 @@ Respond with ONLY valid JSON:
       generatedAt: new Date().toISOString(),
     };
 
+    console.log(`[Advertising] Generated: ${result.broad.length} broad, ${result.phrase.length} phrase, ${result.exact.length} exact, ${result.negative.length} negative`);
+
     // Save to Supabase
     try {
-      await supabase.from('ad_keywords').upsert(
+      const { error: dbErr } = await supabase.from('ad_keywords').upsert(
         { site_url: siteUrl, data: result, generated_at: result.generatedAt },
         { onConflict: 'site_url' }
       );
+      if (dbErr) console.error('[Advertising] DB save error:', dbErr.message);
+      else console.log('[Advertising] Saved to DB');
     } catch (err) {
-      console.error('[Advertising] DB save error:', err.message);
+      console.error('[Advertising] DB save exception:', err.message);
     }
 
     return res.status(200).json(result);
