@@ -262,20 +262,31 @@ export default function GoogleSearchConsole({
             }
             setSearchVolumes(volumeMap);
 
-            // 3. Find keywords with NO stored volume at all
+            // 3. Determine which keywords need a Google Ads API call:
+            //    a) keywords with NO stored volume (never fetched)
+            //    b) if the oldest stored volume is > 30 days, refresh ALL
             const missing = keywords.filter((kw) => !volResult.volumes[kw]);
-            if (missing.length > 0 && missing.length <= 500) {
-              // Fetch volumes only for keywords that have NEVER been looked up
+            const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+            let oldestFetch = Infinity;
+            for (const vol of Object.values(volResult.volumes) as any[]) {
+              if (vol.fetchedAt) {
+                const t = new Date(vol.fetchedAt).getTime();
+                if (t < oldestFetch) oldestFetch = t;
+              }
+            }
+            const needsMonthlyRefresh = oldestFetch < Date.now() - THIRTY_DAYS;
+            const toFetch = needsMonthlyRefresh ? keywords : missing;
+
+            if (toFetch.length > 0) {
               try {
                 const freshResp = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ keywords: missing, siteUrl }),
+                  body: JSON.stringify({ keywords: toFetch, siteUrl }),
                 });
                 if (freshResp.ok) {
                   const freshResult = await freshResp.json();
                   if (freshResult.volumes && Object.keys(freshResult.volumes).length > 0) {
-                    // Save new volumes to DB for future instant loads
                     fetch(API_ENDPOINTS.db.searchVolumes, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
