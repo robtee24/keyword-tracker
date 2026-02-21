@@ -23,7 +23,7 @@ export default async function handler(req, res) {
 
     const { data, error } = await supabase
       .from('page_audits')
-      .select('page_url, audit_type, score, summary, recommendations, audited_at')
+      .select('page_url, audit_type, score, summary, strengths, recommendations, audited_at')
       .eq('site_url', siteUrl)
       .eq('audit_type', auditType)
       .order('score', { ascending: true });

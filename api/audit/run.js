@@ -155,6 +155,7 @@ export default async function handler(req, res) {
           audit_type: auditType,
           score: auditResult.score,
           recommendations: auditResult.recommendations,
+          strengths: auditResult.strengths,
           summary: auditResult.summary || '',
           audited_at: new Date().toISOString(),
         },
@@ -170,6 +171,7 @@ export default async function handler(req, res) {
     auditType,
     score: auditResult.score,
     summary: auditResult.summary,
+    strengths: auditResult.strengths,
     recommendations: auditResult.recommendations,
   });
 }
@@ -251,7 +253,8 @@ SCHEMA MARKUP: ${content.schemaMarkup || '(none found)'}`;
 Respond with ONLY valid JSON in this format:
 {
   "score": <number 0-100>,
-  "summary": "<one-sentence summary of the page's performance>",
+  "summary": "<2-3 sentence overview of the page's overall status>",
+  "strengths": ["<what the page does well — 3-5 bullet points>"],
   "recommendations": [
     {
       "priority": "high" | "medium" | "low",
@@ -263,7 +266,8 @@ Respond with ONLY valid JSON in this format:
   ]
 }
 
-Return 5-15 recommendations sorted by priority (high first). Be specific and actionable.`,
+Return 5-15 recommendations sorted by priority (high first). Be specific and actionable.
+Return 3-5 strengths — things the page already does correctly.`,
         },
         { role: 'user', content: pageContext },
       ],
@@ -290,11 +294,12 @@ Return 5-15 recommendations sorted by priority (high first). Be specific and act
     return {
       score: typeof parsed.score === 'number' ? Math.min(100, Math.max(0, parsed.score)) : 0,
       summary: parsed.summary || '',
+      strengths: Array.isArray(parsed.strengths) ? parsed.strengths : [],
       recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [],
     };
   } catch {
     console.error('[Audit] Failed to parse AI response:', cleaned.substring(0, 300));
-    return { score: 0, summary: 'Failed to parse audit results', recommendations: [] };
+    return { score: 0, summary: 'Failed to parse audit results', strengths: [], recommendations: [] };
   }
 }
 
