@@ -60,6 +60,7 @@ export default function GoogleSearchConsole({
     period2?: { position: number };
     period3?: { position: number };
   }>>(new Map());
+  const [loadingVolumes, setLoadingVolumes] = useState(false);
   const [loadingAlerts, setLoadingAlerts] = useState(false);
   const [activeAlert, setActiveAlert] = useState<'fire' | 'smoking' | 'hot' | ''>('');
   const [intentStore, setIntentStore] = useState<IntentStore>(() => loadIntentStore(siteUrl));
@@ -113,6 +114,7 @@ export default function GoogleSearchConsole({
     if (keywords.length === 0) return;
 
     const fetchVolumes = async () => {
+      setLoadingVolumes(true);
       try {
         const response = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
           method: 'POST',
@@ -131,6 +133,8 @@ export default function GoogleSearchConsole({
         }
       } catch {
         // Silently fail — search volume is optional
+      } finally {
+        setLoadingVolumes(false);
       }
     };
     fetchVolumes();
@@ -174,10 +178,13 @@ export default function GoogleSearchConsole({
           title="Google Search Console"
           logoUrl="https://cdn.simpleicons.org/googlesearchconsole/4285F4"
         />
-        <div className="flex items-center justify-center py-12">
-          <div className="w-6 h-6 border-2 border-apple-blue border-t-transparent rounded-full animate-spin mr-3" />
-          <span className="text-apple-text-secondary text-apple-base">Loading keyword data...</span>
-        </div>
+        <LoadingStatusBar
+          steps={[
+            { label: 'Keyword rankings', status: 'loading' },
+            { label: 'Search volumes', status: 'pending' },
+            { label: 'Keyword alerts', status: 'pending' },
+          ]}
+        />
       </div>
     );
   }
@@ -523,6 +530,17 @@ export default function GoogleSearchConsole({
         title="Google Search Console"
         logoUrl="https://cdn.simpleicons.org/googlesearchconsole/4285F4"
       />
+
+      {/* Loading Status Bar — visible while background data is still loading */}
+      {(loadingVolumes || loadingAlerts) && (
+        <LoadingStatusBar
+          steps={[
+            { label: 'Keyword rankings', status: 'done' },
+            { label: 'Search volumes', status: loadingVolumes ? 'loading' : 'done' },
+            { label: 'Keyword alerts', status: loadingAlerts ? 'loading' : 'done' },
+          ]}
+        />
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -938,6 +956,74 @@ export default function GoogleSearchConsole({
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Loading Status Bar                                                 */
+/* ------------------------------------------------------------------ */
+
+interface StatusStep {
+  label: string;
+  status: 'pending' | 'loading' | 'done';
+}
+
+function LoadingStatusBar({ steps }: { steps: StatusStep[] }) {
+  const doneCount = steps.filter((s) => s.status === 'done').length;
+  const pct = Math.round((doneCount / steps.length) * 100);
+  const currentStep = steps.find((s) => s.status === 'loading');
+
+  return (
+    <div className="rounded-apple-sm border border-apple-divider bg-white overflow-hidden">
+      {/* Progress bar */}
+      <div className="h-1 bg-apple-divider">
+        <div
+          className="h-full bg-apple-blue transition-all duration-700 ease-out"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+
+      <div className="px-5 py-3 flex items-center gap-4">
+        {/* Spinner for active step */}
+        {currentStep && (
+          <div className="w-5 h-5 border-2 border-apple-blue border-t-transparent rounded-full animate-spin flex-shrink-0" />
+        )}
+
+        {/* Steps */}
+        <div className="flex items-center gap-5 flex-1">
+          {steps.map((step) => (
+            <div key={step.label} className="flex items-center gap-1.5">
+              {step.status === 'done' ? (
+                <svg className="w-3.5 h-3.5 text-apple-green flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              ) : step.status === 'loading' ? (
+                <div className="w-3.5 h-3.5 flex-shrink-0" />
+              ) : (
+                <div className="w-3.5 h-3.5 rounded-full border-2 border-apple-divider flex-shrink-0" />
+              )}
+              <span className={`text-apple-xs font-medium whitespace-nowrap ${
+                step.status === 'done'
+                  ? 'text-apple-green'
+                  : step.status === 'loading'
+                  ? 'text-apple-blue'
+                  : 'text-apple-text-tertiary'
+              }`}>
+                {step.label}
+                {step.status === 'loading' && (
+                  <span className="text-apple-text-tertiary font-normal ml-1">loading...</span>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Percentage */}
+        <span className="text-apple-xs text-apple-text-tertiary font-medium flex-shrink-0">
+          {pct}%
+        </span>
       </div>
     </div>
   );
