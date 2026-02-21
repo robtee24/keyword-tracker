@@ -7,7 +7,7 @@ import type { Project } from './components/ProjectsView';
 import ObjectivesView from './components/ObjectivesView';
 import OverviewView from './components/OverviewView';
 import GoogleSearchConsole from './components/SEO/GoogleSearchConsole';
-import RecommendationsView from './components/RecommendationsView';
+import TasklistView from './components/RecommendationsView';
 import LostKeywordsView from './components/LostKeywordsView';
 import AuditView from './components/AuditView';
 import AdvertisingView from './components/AdvertisingView';
@@ -252,6 +252,7 @@ function App() {
                         'aeo-audit': 'AEO Audit',
                         'schema-audit': 'Schema Audit',
                         'advertising': 'Advertising',
+                        'tasklist': 'Tasklist',
                       } as Record<string, string>)[currentView] || currentView}
                     </span>
                   </>
@@ -463,9 +464,9 @@ function App() {
             <AdvertisingView siteUrl={activeProject.siteUrl} projectId={activeProject.id} />
           )}
 
-          {/* Recommendations */}
-          {currentView === 'recommendations' && activeProject && (
-            <RecommendationsView siteUrl={activeProject.siteUrl} />
+          {/* Tasklist */}
+          {currentView === 'tasklist' && activeProject && (
+            <TasklistView siteUrl={activeProject.siteUrl} />
           )}
 
           {/* Activity Log */}

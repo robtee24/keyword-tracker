@@ -259,14 +259,23 @@ Respond with ONLY valid JSON in this format:
     {
       "priority": "high" | "medium" | "low",
       "category": "<short category name>",
-      "issue": "<what's wrong>",
-      "recommendation": "<specific fix>",
+      "issue": "<describe the EXACT problem found — reference the specific element, text, or code>",
+      "recommendation": "<provide the EXACT fix — include specific text to change, code to add, or precise action to take>",
+      "howToFix": "<step-by-step implementation instructions: what file/section to edit, what to change from and to, exact HTML/text/code to add or modify>",
       "impact": "<expected improvement>"
     }
   ]
 }
 
-Return 5-15 recommendations sorted by priority (high first). Be specific and actionable.
+CRITICAL RULES FOR RECOMMENDATIONS:
+- Every recommendation MUST reference a specific element on the page (e.g., "The title tag is 23 characters" not "Title could be improved")
+- Every recommendation MUST provide an exact fix (e.g., "Change title to: 'Best Vacation Rental Calculator | BNBCalc'" not "Add keywords to title")
+- The howToFix field MUST contain step-by-step instructions a developer can follow
+- NEVER give vague advice like "regularly update content" or "consider adding more keywords"
+- NEVER recommend something the page already does correctly
+- If a page element is fine, do NOT include it as a recommendation
+
+Return 5-15 recommendations sorted by priority (high first).
 Return 3-5 strengths — things the page already does correctly.`,
         },
         { role: 'user', content: pageContext },
@@ -295,7 +304,10 @@ Return 3-5 strengths — things the page already does correctly.`,
       score: typeof parsed.score === 'number' ? Math.min(100, Math.max(0, parsed.score)) : 0,
       summary: parsed.summary || '',
       strengths: Array.isArray(parsed.strengths) ? parsed.strengths : [],
-      recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [],
+      recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations.map((r) => ({
+        ...r,
+        howToFix: r.howToFix || r.how_to_fix || '',
+      })) : [],
     };
   } catch {
     console.error('[Audit] Failed to parse AI response:', cleaned.substring(0, 300));
