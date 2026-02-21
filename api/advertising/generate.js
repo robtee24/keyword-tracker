@@ -64,31 +64,96 @@ SITE OBJECTIVES:
     .map((k) => `${k.keyword} | vol:${k.volume ?? '?'} | comp:${k.competition ?? '?'} | intent:${k.intent ?? '?'}`)
     .join('\n');
 
-  const prompt = `You are a Google Ads keyword strategist. Analyze the site's keywords and objectives to build optimized keyword lists for a Google Ads campaign.
+  const prompt = `You are an expert performance marketer and Google Ads keyword strategist. You apply professional paid advertising best practices, audience targeting methodology, and marketing psychology to build high-converting keyword lists.
 
 ${objectivesContext}
 
 CURRENT RANKING KEYWORDS (keyword | monthly volume | competition | intent):
 ${keywordTable}
 
+═══ GOOGLE ADS KEYWORD MATCH TYPE BEST PRACTICES ═══
+
+BROAD MATCH STRATEGY:
+- Use with Smart Bidding (Target CPA/ROAS) — broad match relies on Google's algorithm to find relevant searches
+- Best for: high-volume discovery, finding new converting queries you haven't thought of
+- Layer with audience signals (in-market, remarketing lists for search ads) for precision
+- Always pair broad match campaigns with robust negative keyword lists
+- Include brand terms, core product terms, and high-intent category terms
+- Add audience layering in "observation" mode first to analyze performance, then "targeting" for top performers
+
+PHRASE MATCH STRATEGY:
+- Triggers when the meaning of the phrase is included in the search query
+- Best for: balancing reach with precision — moderate volume, moderate control
+- Include multi-word phrases with clear commercial or transactional intent
+- Use for product category + modifier combinations (e.g., "best [product] for [use case]")
+- Ideal for capturing comparison shoppers and solution-aware searchers
+
+EXACT MATCH STRATEGY:
+- Most precise — triggers only for searches with the same meaning
+- Best for: highest-converting terms, brand terms, competitor terms, high-CPA keywords
+- Include your most valuable converting terms — these justify higher bids
+- Use for bottom-of-funnel, decision-stage queries
+- Protect brand terms with exact match to prevent competitor poaching
+
+═══ NEGATIVE KEYWORD BEST PRACTICES ═══
+
+MUST-HAVE NEGATIVE CATEGORIES:
+1. Universal negatives: free, cheap, DIY, how to, tutorial, template, sample, example, course, class, training, certification, salary, jobs, careers, hiring, interview, reddit, quora, wiki, definition, meaning
+2. Competitor brand names the advertiser does NOT want to bid on (unless running competitor campaigns)
+3. Irrelevant industries or verticals that share terminology with the site
+4. Informational-only modifiers: what is, how does, explain, guide, vs, review, comparison (unless these are intentional campaigns)
+5. Wrong geographic signals if there's a geo focus
+6. Wrong product modifiers (wrong sizes, models, versions the site doesn't offer)
+7. Refund/complaint/problem terms: complaint, lawsuit, scam, refund, cancel, problem, broken, worst
+
+═══ CONVERSION PSYCHOLOGY FOR KEYWORD SELECTION ═══
+
+Apply these principles when scoring conversion likelihood:
+- Keywords indicating URGENCY (near me, today, fast, urgent, emergency) score higher — the searcher needs a solution NOW
+- Keywords indicating PURCHASE READINESS (buy, order, pricing, quote, demo, trial, sign up, get started) score highest
+- Keywords where the user is COMPARING OPTIONS (best, top, vs, alternative, compared, review) score moderately — they're close to deciding
+- Keywords showing PROBLEM AWARENESS (how to fix, solve, prevent, improve) score moderately — they know the pain, may convert with the right offer
+- Keywords that are purely INFORMATIONAL (what is, definition, meaning, history, types of) score lowest — early funnel, rarely convert on first click
+- Apply JOBS TO BE DONE thinking: what job is the searcher hiring a solution for? Keywords aligned with the site's core job-to-be-done convert better
+- Consider LOSS AVERSION: keywords framed around avoiding losses or problems ("stop losing", "prevent", "don't miss") signal higher urgency than gain-framed terms
+- Factor in SOCIAL PROOF keywords: searches including "popular", "most used", "trusted", "recommended" indicate a buyer looking for validation
+
+═══ AUDIENCE & INTENT ALIGNMENT ═══
+
+- Prioritize TRANSACTIONAL keywords that directly align with the site's conversion goals
+- Include COMPETITOR TRANSACTIONAL keywords — people searching for competitor products who aren't yet customers are valuable targets
+- Include BRANDED NAVIGATIONAL keywords to protect brand traffic
+- For suggested keywords, focus on terms the site SHOULD rank for based on its offerings but doesn't yet
+- Consider LONG-TAIL variations that have lower competition but strong conversion signals
+- Suggest keywords that target each stage of the buyer funnel (awareness → consideration → decision) but weight heavily toward decision stage
+
+═══ CAMPAIGN STRUCTURE RECOMMENDATION ═══
+
+The keyword lists should support this structure:
+- BRAND campaign (exact match brand terms)
+- NON-BRAND campaign (phrase/exact high-intent terms grouped by theme)
+- COMPETITOR campaign (competitor brand + product terms)
+- DISCOVERY campaign (broad match with smart bidding and audience layering)
+
 INSTRUCTIONS:
-1. **Broad Match**: Select 30-60 broad match keywords. Prefer high-volume terms with transactional or commercial intent. Include BOTH keywords the site already ranks for AND new suggested terms likely to drive conversions. Mark each as "ranking" or "suggested".
 
-2. **Phrase Match**: Select 40-80 phrase match keywords. These should be more specific multi-word phrases with clear purchase intent. Include both ranking and suggested terms.
+1. **Broad Match**: Select 30-60 keywords. Include high-volume terms suitable for broad match with smart bidding. Mix ranking keywords AND suggested terms the site should target. Weight toward terms where Google's broad match algorithm can find valuable related queries.
 
-3. **Exact Match**: Select 30-50 exact match keywords. These should be the highest-converting, most specific terms. Include both ranking and suggested terms.
+2. **Phrase Match**: Select 40-80 keywords. Multi-word phrases with commercial/transactional intent. Include both ranking and suggested terms. Focus on phrases that capture solution-aware and comparison shoppers.
 
-4. **Negative Keywords**: Generate 80-150 negative keywords organized by category. These should prevent wasted ad spend — terms that attract non-converting traffic (informational, competitor brands the advertiser wouldn't want, irrelevant modifiers, job seekers, DIY, free, etc.).
+3. **Exact Match**: Select 30-50 keywords. The highest-converting, most specific terms. Include brand terms, competitor product names, and bottom-funnel terms with strong purchase signals. Both ranking and suggested.
+
+4. **Negative Keywords**: Generate 100-200 negative keywords organized by category. Be thorough and expansive. Cover ALL the must-have categories listed above. Think about what searches would waste money for this specific site/industry.
 
 For each keyword (except negatives), include:
-- The keyword text
-- Whether it's "ranking" (already ranks in organic search) or "suggested" (AI-recommended)
-- Estimated monthly search volume (use exact data for ranking keywords, estimate for suggested)
-- A conversion likelihood score (1-10, where 10 = most likely to convert)
+- keyword: The keyword text
+- source: "ranking" (already ranks in organic search) or "suggested" (AI-recommended)
+- volume: Estimated monthly search volume (use exact data for ranking keywords, estimate for suggested)
+- conversionScore: 1-10 based on the conversion psychology principles above (10 = highest likelihood)
 
 For negative keywords, include:
-- The keyword text
-- The category (e.g., "Informational", "Job Seekers", "DIY/Free", "Irrelevant", "Competitor Brand", etc.)
+- keyword: The keyword text
+- category: The category (Informational, Job Seekers, DIY/Free, Irrelevant, Competitor Brand, Complaints, Geographic, Wrong Product, Universal)
 
 Respond with ONLY valid JSON:
 {
@@ -96,7 +161,7 @@ Respond with ONLY valid JSON:
   "phrase": [{ "keyword": "", "source": "ranking"|"suggested", "volume": 0, "conversionScore": 0 }],
   "exact": [{ "keyword": "", "source": "ranking"|"suggested", "volume": 0, "conversionScore": 0 }],
   "negative": [{ "keyword": "", "category": "" }],
-  "summary": "<2-3 sentence strategy overview>"
+  "summary": "<2-3 sentence strategy overview covering the recommended campaign approach, key opportunities, and primary conversion drivers>"
 }`;
 
   try {
@@ -110,7 +175,7 @@ Respond with ONLY valid JSON:
           { role: 'user', content: `Generate the Google Ads keyword lists for site: ${siteUrl}` },
         ],
         temperature: 0.3,
-        max_tokens: 8000,
+        max_tokens: 12000,
       }),
     });
 
