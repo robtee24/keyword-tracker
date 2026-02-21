@@ -1,4 +1,9 @@
 import { API_CONFIG, getAccessTokenFromRequest } from '../../_config.js';
+import { getSupabase } from '../../db.js';
+
+function todayUTC() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -19,6 +24,28 @@ export default async function handler(req, res) {
 
     if (!siteUrl) {
       return res.status(400).json({ error: 'siteUrl is required' });
+    }
+
+    // Check Supabase cache (valid for the current calendar day)
+    const supabase = getSupabase();
+    if (supabase) {
+      try {
+        const { data: cached } = await supabase
+          .from('gsc_cache')
+          .select('response_data')
+          .eq('site_url', siteUrl)
+          .eq('start_date', startDate)
+          .eq('end_date', endDate)
+          .eq('query_type', 'daily')
+          .eq('fetched_date', todayUTC())
+          .maybeSingle();
+
+        if (cached?.response_data) {
+          return res.status(200).json({ ...cached.response_data, fromCache: true });
+        }
+      } catch (cacheErr) {
+        console.error('Cache read error (continuing):', cacheErr.message);
+      }
     }
 
     const response = await fetch(
@@ -53,10 +80,29 @@ export default async function handler(req, res) {
       position: row.position || 0,
     }));
 
-    res.status(200).json({
+    const responseData = {
       rows: dailyData,
       dailyData,
-    });
+    };
+
+    // Save to cache (best-effort)
+    if (supabase) {
+      try {
+        await supabase.from('gsc_cache').upsert({
+          site_url: siteUrl,
+          start_date: startDate,
+          end_date: endDate,
+          query_type: 'daily',
+          fetched_date: todayUTC(),
+          response_data: responseData,
+          fetched_at: new Date().toISOString(),
+        }, { onConflict: 'site_url,start_date,end_date,query_type' });
+      } catch (saveErr) {
+        console.error('Cache write error (non-fatal):', saveErr.message);
+      }
+    }
+
+    res.status(200).json(responseData);
   } catch (error) {
     console.error('Search Console daily API error:', error);
     res.status(500).json({
