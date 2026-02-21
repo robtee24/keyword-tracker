@@ -1,10 +1,12 @@
 import { getSupabase } from '../db.js';
 
 /**
- * GET  /api/db/completed-tasks?siteUrl=X&keyword=Y  → completed tasks for a keyword
- * GET  /api/db/completed-tasks?siteUrl=X              → all completed tasks for a site
- * POST /api/db/completed-tasks { siteUrl, keyword, taskId, taskText, category }
- * DELETE /api/db/completed-tasks { siteUrl, keyword, taskId }  → uncomplete a task
+ * GET  /api/db/completed-tasks?siteUrl=X&keyword=Y&status=Z  → tasks filtered by keyword and/or status
+ * GET  /api/db/completed-tasks?siteUrl=X                      → all tasks for a site
+ * POST /api/db/completed-tasks { siteUrl, keyword, taskId, taskText, category, status }
+ *      status defaults to 'completed'. Use 'rejected' for archived/rejected items.
+ * PATCH /api/db/completed-tasks { siteUrl, keyword, taskId, status }  → update status only
+ * DELETE /api/db/completed-tasks { siteUrl, keyword, taskId }  → remove a task entirely
  */
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -15,7 +17,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'GET') {
-    const { siteUrl, keyword } = req.query;
+    const { siteUrl, keyword, status } = req.query;
     if (!siteUrl) {
       return res.status(400).json({ error: 'siteUrl is required' });
     }
@@ -26,9 +28,8 @@ export default async function handler(req, res) {
       .eq('site_url', siteUrl)
       .order('completed_at', { ascending: false });
 
-    if (keyword) {
-      query = query.eq('keyword', keyword);
-    }
+    if (keyword) query = query.eq('keyword', keyword);
+    if (status) query = query.eq('status', status);
 
     const { data, error } = await query;
     if (error) {
@@ -40,29 +41,57 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { siteUrl, keyword, taskId, taskText, category } = req.body || {};
+    const { siteUrl, keyword, taskId, taskText, category, status } = req.body || {};
     if (!siteUrl || !keyword || !taskId || !taskText) {
       return res.status(400).json({ error: 'siteUrl, keyword, taskId, and taskText are required' });
     }
 
     const { data, error } = await supabase
       .from('completed_tasks')
-      .insert({
-        site_url: siteUrl,
-        keyword,
-        task_id: taskId,
-        task_text: taskText,
-        category: category || null,
-      })
+      .upsert(
+        {
+          site_url: siteUrl,
+          keyword,
+          task_id: taskId,
+          task_text: taskText,
+          category: category || null,
+          status: status || 'completed',
+          completed_at: new Date().toISOString(),
+        },
+        { onConflict: 'site_url,keyword,task_id' }
+      )
       .select()
       .single();
 
     if (error) {
-      console.error('DB error logging completed task:', error);
+      console.error('DB error saving task:', error);
       return res.status(500).json({ error: error.message });
     }
 
     return res.status(201).json({ task: data });
+  }
+
+  if (req.method === 'PATCH') {
+    const { siteUrl, keyword, taskId, status } = req.body || {};
+    if (!siteUrl || !keyword || !taskId || !status) {
+      return res.status(400).json({ error: 'siteUrl, keyword, taskId, and status are required' });
+    }
+
+    const { data, error } = await supabase
+      .from('completed_tasks')
+      .update({ status, completed_at: new Date().toISOString() })
+      .eq('site_url', siteUrl)
+      .eq('keyword', keyword)
+      .eq('task_id', taskId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('DB error updating task status:', error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    return res.status(200).json({ task: data });
   }
 
   if (req.method === 'DELETE') {
@@ -79,7 +108,7 @@ export default async function handler(req, res) {
       .eq('task_id', taskId);
 
     if (error) {
-      console.error('DB error removing completed task:', error);
+      console.error('DB error removing task:', error);
       return res.status(500).json({ error: error.message });
     }
 

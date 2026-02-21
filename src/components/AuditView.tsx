@@ -98,8 +98,9 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
   const [recsPage, setRecsPage] = useState(1);
   const [summaryExpanded, setSummaryExpanded] = useState(true);
 
-  // Completed recommendations tracking
+  // Completed + rejected recommendations tracking
   const [completedRecs, setCompletedRecs] = useState<Set<string>>(new Set());
+  const [rejectedRecs, setRejectedRecs] = useState<Set<string>>(new Set());
   const [selectedForTasklist, setSelectedForTasklist] = useState<Set<string>>(new Set());
   const [addingToTasklist, setAddingToTasklist] = useState(false);
 
@@ -120,14 +121,21 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
       .finally(() => setLoadingResults(false));
   }, [siteUrl, auditType]);
 
-  // Load completed tasks for this audit type
+  // Load completed and rejected tasks for this audit type
   useEffect(() => {
     if (!siteUrl) return;
     fetch(`${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(`audit:${auditType}`)}`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data?.tasks) {
-          setCompletedRecs(new Set(data.tasks.map((t: any) => t.task_id)));
+          const done = new Set<string>();
+          const rejected = new Set<string>();
+          for (const t of data.tasks) {
+            if (t.status === 'rejected') rejected.add(t.task_id);
+            else done.add(t.task_id);
+          }
+          setCompletedRecs(done);
+          setRejectedRecs(rejected);
         }
       })
       .catch(() => {});
@@ -286,9 +294,21 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
       try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key }) }); } catch { /* */ }
     } else {
       setCompletedRecs((prev) => new Set(prev).add(key));
-      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType }) }); } catch { /* */ }
+      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'completed' }) }); } catch { /* */ }
     }
   }, [siteUrl, auditType, completedRecs]);
+
+  const rejectRec = useCallback(async (key: string, taskText: string) => {
+    const isRejected = rejectedRecs.has(key);
+    if (isRejected) {
+      setRejectedRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
+      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key }) }); } catch { /* */ }
+    } else {
+      setRejectedRecs((prev) => new Set(prev).add(key));
+      setCompletedRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
+      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'rejected' }) }); } catch { /* */ }
+    }
+  }, [siteUrl, auditType, rejectedRecs]);
 
   const addSelectedToTasklist = useCallback(async () => {
     if (selectedForTasklist.size === 0) return;
@@ -320,24 +340,26 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
 
   const allRecs = useMemo(() => {
     const flat: Array<Recommendation & { page_url: string; recIdx: number }> = [];
-    for (const r of results) r.recommendations.forEach((rec, i) => flat.push({ ...rec, page_url: r.page_url, recIdx: i }));
+    for (const r of results) r.recommendations.forEach((rec, i) => {
+      if (!rejectedRecs.has(recKey(r.page_url, i))) flat.push({ ...rec, page_url: r.page_url, recIdx: i });
+    });
     return flat;
-  }, [results]);
+  }, [results, rejectedRecs]);
 
   const totalRecsCount = allRecs.length;
   const completedRecsCount = useMemo(() => {
     let count = 0;
-    for (const r of results) r.recommendations.forEach((_, i) => { if (completedRecs.has(recKey(r.page_url, i))) count++; });
+    for (const rec of allRecs) { if (completedRecs.has(recKey(rec.page_url, rec.recIdx))) count++; }
     return count;
-  }, [results, completedRecs]);
+  }, [allRecs, completedRecs]);
 
   const topIssues = useMemo(() => {
     const map = new Map<string, { count: number; priority: string; example: string }>();
-    for (const r of results) for (const rec of r.recommendations) { const e = map.get(rec.category); if (e) e.count++; else map.set(rec.category, { count: 1, priority: rec.priority, example: rec.issue }); }
+    for (const rec of allRecs) { const e = map.get(rec.category); if (e) e.count++; else map.set(rec.category, { count: 1, priority: rec.priority, example: rec.issue }); }
     return [...map.entries()].map(([cat, v]) => ({ category: cat, ...v })).sort((a, b) => b.count - a.count);
-  }, [results]);
+  }, [allRecs]);
 
-  const allCategories = useMemo(() => { const c = new Set<string>(); for (const r of results) for (const rec of r.recommendations) c.add(rec.category); return [...c].sort(); }, [results]);
+  const allCategories = useMemo(() => { const c = new Set<string>(); for (const rec of allRecs) c.add(rec.category); return [...c].sort(); }, [allRecs]);
 
   const filteredPageResults = useMemo(() => {
     let list = results;
@@ -373,6 +395,10 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
     page.recommendations.forEach((_, i) => { if (completedRecs.has(recKey(page.page_url, i))) done++; });
     return done;
   }, [completedRecs]);
+
+  const pageActiveRecs = useCallback((page: PageResult) => {
+    return page.recommendations.filter((_, i) => !rejectedRecs.has(recKey(page.page_url, i)));
+  }, [rejectedRecs]);
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -614,8 +640,9 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
               <div className="space-y-3">
                 {paginatedPages.map((result) => {
                   const isExp = expandedPage === result.page_url;
+                  const activeRecs = pageActiveRecs(result);
                   const pageDone = pageCompletedRecs(result);
-                  const pageTotal = result.recommendations.length;
+                  const pageTotal = activeRecs.length;
                   const pagePct = pageTotal > 0 ? Math.round((pageDone / pageTotal) * 100) : 100;
                   return (
                     <div key={result.page_url} className="rounded-apple border border-apple-divider bg-white overflow-hidden">
@@ -652,11 +679,12 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
                               <ul className="space-y-0.5">{result.strengths.map((s, i) => (<li key={i} className="flex items-start gap-1.5 text-apple-xs text-green-700"><svg className="w-3.5 h-3.5 mt-0.5 shrink-0 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>{s}</li>))}</ul>
                             </div>
                           )}
-                          {result.recommendations.length > 0 && (
+                          {activeRecs.length > 0 && (
                             <div className="space-y-2">
                               {result.recommendations.map((rec, i) => {
-                                const pc = PRIORITY_COLORS[rec.priority] || PRIORITY_COLORS.low;
                                 const key = recKey(result.page_url, i);
+                                if (rejectedRecs.has(key)) return null;
+                                const pc = PRIORITY_COLORS[rec.priority] || PRIORITY_COLORS.low;
                                 const isDone = completedRecs.has(key);
                                 const isRecExp = expandedRecs.has(key);
                                 return (
@@ -671,6 +699,9 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
                                         <p className={`text-apple-sm font-medium ${isDone ? 'line-through text-apple-text-tertiary' : 'text-apple-text'}`}>{rec.issue}</p>
                                         {!isRecExp && <p className="text-apple-xs text-apple-text-secondary mt-0.5">{rec.recommendation}</p>}
                                       </div>
+                                      <button onClick={() => rejectRec(key, `${rec.issue} — ${rec.recommendation}`)} title="Reject & archive" className="mt-0.5 p-1 rounded hover:bg-red-100 text-apple-text-tertiary hover:text-red-500 transition-colors shrink-0">
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                                      </button>
                                       <svg className={`w-3.5 h-3.5 mt-1 text-apple-text-tertiary transition-transform shrink-0 cursor-pointer ${isRecExp ? 'rotate-180' : ''}`} onClick={() => toggleRecExpanded(key)} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
                                     </div>
                                     {isRecExp && (
@@ -743,6 +774,9 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
                           <p className={`text-apple-sm font-medium ${isDone ? 'line-through text-apple-text-tertiary' : 'text-apple-text'}`}>{rec.issue}</p>
                           {!isExp && <p className="text-apple-xs text-apple-text-secondary mt-0.5">{rec.recommendation}</p>}
                         </div>
+                        <button onClick={() => rejectRec(key, `${rec.issue} — ${rec.recommendation}`)} title="Reject & archive" className="mt-0.5 p-1 rounded hover:bg-red-100 text-apple-text-tertiary hover:text-red-500 transition-colors shrink-0">
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                        </button>
                         <svg className={`w-3.5 h-3.5 mt-1 text-apple-text-tertiary transition-transform shrink-0 cursor-pointer ${isExp ? 'rotate-180' : ''}`} onClick={() => toggleRecExpanded(key)} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
                       </div>
                       {isExp && (
