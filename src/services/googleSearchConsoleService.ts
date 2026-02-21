@@ -80,6 +80,7 @@ function parseSearchConsoleResponse(
   let totalClicks = 0;
   const impressionsHistory: Array<{ date: string; value: number }> = [];
   const clicksHistory: Array<{ date: string; value: number }> = [];
+  const positionHistory: Array<{ date: string; value: number }> = [];
 
   // Process keywords
   if (data.rows && Array.isArray(data.rows)) {
@@ -109,6 +110,7 @@ function parseSearchConsoleResponse(
       const dateStr = row.date || row.keys?.[0] || '';
       const impressions = parseInt(row.impressions || '0', 10);
       const clicks = parseInt(row.clicks || '0', 10);
+      const position = parseFloat(row.position || '0');
 
       totalImpressions += impressions;
       totalClicks += clicks;
@@ -116,6 +118,9 @@ function parseSearchConsoleResponse(
       if (dateStr) {
         impressionsHistory.push({ date: dateStr, value: impressions });
         clicksHistory.push({ date: dateStr, value: clicks });
+        if (position > 0) {
+          positionHistory.push({ date: dateStr, value: Math.round(position * 10) / 10 });
+        }
       }
     });
   } else {
@@ -141,6 +146,7 @@ function parseSearchConsoleResponse(
     keywords,
     impressionsHistory,
     clicksHistory,
+    positionHistory,
   };
 }
 
@@ -158,6 +164,7 @@ function getUnavailableMetrics(): GoogleSearchConsoleMetrics {
     keywords: [],
     impressionsHistory: [],
     clicksHistory: [],
+    positionHistory: [],
   };
 }
 

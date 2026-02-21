@@ -210,6 +210,7 @@ export default function GoogleSearchConsole({
             keywords: [],
             impressionsHistory: [],
             clicksHistory: [],
+            positionHistory: [],
           },
           compare: null,
         });
@@ -219,6 +220,113 @@ export default function GoogleSearchConsole({
     };
     loadData();
   }, [loadTrigger, dateRange, compareDateRange, siteUrl]);
+
+  const saveVolumesToDB = async (site: string, volumes: Record<string, any>) => {
+    try {
+      const resp = await fetch(API_ENDPOINTS.db.searchVolumes, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl: site, volumes }),
+      });
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '');
+        console.error('[SearchVolumes] DB save failed:', resp.status, text);
+      } else {
+        const result = await resp.json();
+        console.log('[SearchVolumes] Saved to DB:', result.saved, 'volumes');
+      }
+    } catch (err) {
+      console.error('[SearchVolumes] DB save error:', err);
+    }
+  };
+
+  const loadAndSyncSearchVolumes = async (site: string, keywords: string[]) => {
+    // Step 1: Read all stored volumes from DB
+    let storedCount = 0;
+    const volumeMap = new Map<string, any>();
+
+    try {
+      const volResp = await fetch(
+        `${API_ENDPOINTS.db.searchVolumes}?siteUrl=${encodeURIComponent(site)}`
+      );
+      if (volResp.ok) {
+        const volResult = await volResp.json();
+        storedCount = volResult.count || 0;
+        if (volResult.volumes) {
+          for (const [kw, vol] of Object.entries(volResult.volumes)) {
+            volumeMap.set(kw.toLowerCase(), vol as any);
+          }
+        }
+        console.log('[SearchVolumes] Loaded from DB:', storedCount, 'volumes');
+      } else {
+        console.error('[SearchVolumes] DB read failed:', volResp.status);
+      }
+    } catch (err) {
+      console.error('[SearchVolumes] DB read error:', err);
+    }
+
+    // Show cached volumes immediately
+    if (volumeMap.size > 0) {
+      setSearchVolumes(volumeMap);
+    }
+
+    // Step 2: Determine which keywords need a Google Ads API call
+    const missing = keywords.filter((kw) => !volumeMap.has(kw.toLowerCase()));
+    const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+    let oldestFetch = Infinity;
+    for (const vol of volumeMap.values()) {
+      if (vol.fetchedAt) {
+        const t = new Date(vol.fetchedAt).getTime();
+        if (t < oldestFetch) oldestFetch = t;
+      }
+    }
+    const needsMonthlyRefresh = volumeMap.size > 0 && oldestFetch < Date.now() - THIRTY_DAYS;
+    const toFetch = needsMonthlyRefresh ? keywords : missing;
+
+    if (toFetch.length === 0) {
+      console.log('[SearchVolumes] All volumes cached, nothing to fetch');
+      return;
+    }
+
+    console.log('[SearchVolumes] Fetching from Google Ads:', toFetch.length, 'keywords',
+      needsMonthlyRefresh ? '(monthly refresh)' : '(new keywords)');
+
+    // Step 3: Fetch from Google Ads
+    try {
+      const freshResp = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keywords: toFetch, siteUrl: site }),
+      });
+
+      if (!freshResp.ok) {
+        console.error('[SearchVolumes] Google Ads API failed:', freshResp.status);
+        return;
+      }
+
+      const freshResult = await freshResp.json();
+      const freshVolumes = freshResult.volumes || {};
+      const freshCount = Object.keys(freshVolumes).length;
+      console.log('[SearchVolumes] Got from Google Ads:', freshCount, 'volumes',
+        freshResult.fromCache ? '(from server cache)' : '(fresh)');
+
+      if (freshCount > 0) {
+        // Update state
+        setSearchVolumes((prev) => {
+          const merged = new Map(prev);
+          for (const [kw, vol] of Object.entries(freshVolumes)) {
+            merged.set(kw.toLowerCase(), vol as any);
+          }
+          return merged;
+        });
+
+        // Save to DB (awaited, not fire-and-forget)
+        await saveVolumesToDB(site, freshVolumes);
+      }
+    } catch (err) {
+      console.error('[SearchVolumes] Google Ads fetch error:', err);
+    }
+  };
 
   // Store keywords + load search volumes from DB (no Google Ads on normal loads)
   useEffect(() => {
@@ -242,91 +350,13 @@ export default function GoogleSearchConsole({
         }
       } catch { /* non-critical */ }
 
-      // 2. Load ALL stored search volumes from DB (instant, no Google Ads API)
+      // 2. Load stored search volumes from DB, fetch missing from Google Ads
       setLoadingVolumes(true);
       try {
-        const volResp = await fetch(
-          `${API_ENDPOINTS.db.searchVolumes}?siteUrl=${encodeURIComponent(siteUrl)}`
-        );
-        if (volResp.ok) {
-          const volResult = await volResp.json();
-          if (volResult.volumes && Object.keys(volResult.volumes).length > 0) {
-            const volumeMap = new Map<string, any>();
-            for (const [kw, vol] of Object.entries(volResult.volumes)) {
-              volumeMap.set(kw.toLowerCase(), vol as any);
-            }
-            setSearchVolumes(volumeMap);
-
-            // 3. Determine which keywords need a Google Ads API call:
-            //    a) keywords with NO stored volume (never fetched)
-            //    b) if the oldest stored volume is > 30 days, refresh ALL
-            const missing = keywords.filter((kw) => !volumeMap.has(kw.toLowerCase()));
-            const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
-            let oldestFetch = Infinity;
-            for (const vol of Object.values(volResult.volumes) as any[]) {
-              if (vol.fetchedAt) {
-                const t = new Date(vol.fetchedAt).getTime();
-                if (t < oldestFetch) oldestFetch = t;
-              }
-            }
-            const needsMonthlyRefresh = oldestFetch < Date.now() - THIRTY_DAYS;
-            const toFetch = needsMonthlyRefresh ? keywords : missing;
-
-            if (toFetch.length > 0) {
-              try {
-                const freshResp = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ keywords: toFetch, siteUrl }),
-                });
-                if (freshResp.ok) {
-                  const freshResult = await freshResp.json();
-                  if (freshResult.volumes && Object.keys(freshResult.volumes).length > 0) {
-                    fetch(API_ENDPOINTS.db.searchVolumes, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ siteUrl, volumes: freshResult.volumes }),
-                    }).catch(() => {});
-
-                    setSearchVolumes((prev) => {
-                      const merged = new Map(prev);
-                      for (const [kw, vol] of Object.entries(freshResult.volumes)) {
-                        merged.set(kw.toLowerCase(), vol as any);
-                      }
-                      return merged;
-                    });
-                  }
-                }
-              } catch { /* search volume is optional */ }
-            }
-          } else {
-            // No volumes stored yet — first-time fetch for all keywords
-            try {
-              const freshResp = await authenticatedFetch(API_ENDPOINTS.google.ads.searchVolume, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ keywords, siteUrl }),
-              });
-              if (freshResp.ok) {
-                const freshResult = await freshResp.json();
-                if (freshResult.volumes && Object.keys(freshResult.volumes).length > 0) {
-                  fetch(API_ENDPOINTS.db.searchVolumes, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ siteUrl, volumes: freshResult.volumes }),
-                  }).catch(() => {});
-
-                  const volumeMap = new Map<string, any>();
-                  for (const [kw, vol] of Object.entries(freshResult.volumes)) {
-                    volumeMap.set(kw.toLowerCase(), vol as any);
-                  }
-                  setSearchVolumes(volumeMap);
-                }
-              }
-            } catch { /* search volume is optional */ }
-          }
-        }
-      } catch { /* non-critical */ }
+        await loadAndSyncSearchVolumes(siteUrl, keywords);
+      } catch (err) {
+        console.error('[SearchVolumes] top-level error:', err);
+      }
       setLoadingVolumes(false);
     };
     run();
@@ -804,11 +834,11 @@ export default function GoogleSearchConsole({
           )}
         </div>
 
-        {/* Ranked Keywords */}
+        {/* Avg. Position */}
         <div className="card p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-apple-sm font-medium text-apple-text-secondary uppercase tracking-wide">
-              Ranked Keywords
+              Avg. Position
             </h3>
             <button
               onClick={() => setShowRankedKeywordsChart(!showRankedKeywordsChart)}
@@ -818,18 +848,30 @@ export default function GoogleSearchConsole({
             </button>
           </div>
           {showRankedKeywordsChart ? (
-            <LineChart data={[]} compareData={null} title="" yAxisLabel="Keywords" />
+            <LineChart data={data.current.positionHistory} compareData={data.compare?.positionHistory} title="" yAxisLabel="Position" invertY />
           ) : (
-            <div>
-              <div className={`text-apple-hero font-bold tracking-tight ${data.current.keywords?.length > 0 ? 'text-apple-text' : 'text-apple-text-tertiary'}`}>
-                {data.current.keywords?.length > 0 ? data.current.keywords.length.toLocaleString() : 'N/A'}
-              </div>
-              {data.compare?.keywords?.length > 0 && (
-                <div className="text-apple-xs text-apple-text-tertiary mt-1">
-                  Compare: {data.compare.keywords.length.toLocaleString()}
+            (() => {
+              const positions = data.current.keywords.filter((k) => k.position != null);
+              const avg = positions.length > 0
+                ? positions.reduce((s, k) => s + (k.position || 0), 0) / positions.length
+                : null;
+              const comparePositions = data.compare?.keywords?.filter((k) => k.position != null);
+              const compareAvg = comparePositions && comparePositions.length > 0
+                ? comparePositions.reduce((s, k) => s + (k.position || 0), 0) / comparePositions.length
+                : null;
+              return (
+                <div>
+                  <div className={`text-apple-hero font-bold tracking-tight ${avg != null ? 'text-apple-text' : 'text-apple-text-tertiary'}`}>
+                    {avg != null ? avg.toFixed(1) : 'N/A'}
+                  </div>
+                  {compareAvg != null && (
+                    <div className="text-apple-xs text-apple-text-tertiary mt-1">
+                      Compare: {compareAvg.toFixed(1)}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              );
+            })()
           )}
         </div>
       </div>

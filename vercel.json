@@ -6,6 +6,9 @@
   "functions": {
     "api/google/search-console/recommendations.js": {
       "maxDuration": 60
+    },
+    "api/google/ads/search-volume.js": {
+      "maxDuration": 60
     }
   },
   "rewrites": [

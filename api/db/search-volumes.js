@@ -43,7 +43,9 @@ export default async function handler(req, res) {
       };
     }
 
-    return res.status(200).json({ volumes, count: Object.keys(volumes).length });
+    const count = Object.keys(volumes).length;
+    console.log(`[DB/SearchVolumes] GET: returning ${count} volumes for site ${siteUrl}`);
+    return res.status(200).json({ volumes, count });
   }
 
   if (req.method === 'POST') {
@@ -62,6 +64,7 @@ export default async function handler(req, res) {
     }));
 
     let saved = 0;
+    const errors = [];
     for (let i = 0; i < rows.length; i += 50) {
       const batch = rows.slice(i, i + 50);
       const { error: upsertErr } = await supabase
@@ -69,13 +72,15 @@ export default async function handler(req, res) {
         .upsert(batch, { onConflict: 'site_url,keyword' });
 
       if (upsertErr) {
-        console.error('Volume upsert error:', upsertErr.message);
+        console.error('Volume upsert error:', upsertErr.message, upsertErr.details, upsertErr.hint);
+        errors.push(upsertErr.message);
       } else {
         saved += batch.length;
       }
     }
 
-    return res.status(200).json({ saved });
+    console.log(`[DB/SearchVolumes] POST: saved ${saved}/${rows.length} for site ${siteUrl}`);
+    return res.status(200).json({ saved, total: rows.length, errors: errors.length > 0 ? errors : undefined });
   }
 
   return res.status(405).json({ error: 'Method not allowed' });

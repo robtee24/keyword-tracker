@@ -15,6 +15,7 @@ export interface GoogleSearchConsoleMetrics {
   }>;
   impressionsHistory: Array<{ date: string; value: number }>;
   clicksHistory: Array<{ date: string; value: number }>;
+  positionHistory: Array<{ date: string; value: number }>;
 }
 
 export interface SearchConsoleSite {

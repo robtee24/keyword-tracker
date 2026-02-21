@@ -20,9 +20,10 @@ interface LineChartProps {
   compareData?: DataPoint[] | null;
   title: string;
   yAxisLabel?: string;
+  invertY?: boolean;
 }
 
-export default function LineChart({ data, compareData, title, yAxisLabel }: LineChartProps) {
+export default function LineChart({ data, compareData, title, yAxisLabel, invertY }: LineChartProps) {
   if (!data || data.length === 0) {
     return (
       <div className="card p-6">
@@ -72,6 +73,7 @@ export default function LineChart({ data, compareData, title, yAxisLabel }: Line
             tick={{ fill: '#86868B', fontSize: 11 }}
             axisLine={{ stroke: '#E8E8ED' }}
             tickLine={false}
+            reversed={invertY}
           />
           <Tooltip
             contentStyle={{

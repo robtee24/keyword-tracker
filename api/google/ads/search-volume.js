@@ -127,26 +127,30 @@ export default async function handler(req, res) {
 
     // 4. Save fresh volumes to cache (batch to avoid payload limits)
     if (supabase && Object.keys(freshVolumes).length > 0) {
+      let savedCount = 0;
       try {
         const allRows = Object.entries(freshVolumes).map(([kw, vol]) => ({
           site_url: cacheKey,
           keyword: kw.toLowerCase(),
-          avg_monthly_searches: vol.avgMonthlySearches,
-          competition: vol.competition,
-          competition_index: vol.competitionIndex,
+          avg_monthly_searches: typeof vol.avgMonthlySearches === 'number' ? vol.avgMonthlySearches : null,
+          competition: vol.competition || null,
+          competition_index: typeof vol.competitionIndex === 'number' ? vol.competitionIndex : null,
           fetched_at: new Date().toISOString(),
         }));
 
         for (let i = 0; i < allRows.length; i += 50) {
           const batch = allRows.slice(i, i + 50);
-          const { error: upsertErr } = await supabase
+          const { error: upsertErr, count } = await supabase
             .from('search_volumes')
             .upsert(batch, { onConflict: 'site_url,keyword' });
 
           if (upsertErr) {
-            console.error('Cache upsert batch error:', upsertErr.message, upsertErr.details);
+            console.error('Cache upsert batch error:', upsertErr.message, upsertErr.details, upsertErr.hint);
+          } else {
+            savedCount += batch.length;
           }
         }
+        console.log(`[SearchVolume] Saved ${savedCount}/${allRows.length} volumes to DB for site ${cacheKey}`);
       } catch (saveErr) {
         console.error('Cache write error (non-fatal):', saveErr.message);
       }
