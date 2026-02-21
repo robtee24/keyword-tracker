@@ -26,7 +26,7 @@ export default async function handler(req, res) {
   for (const candidate of sitemapCandidates) {
     try {
       const resp = await fetch(candidate, {
-        headers: { 'User-Agent': 'KeywordTracker-AuditBot/1.0' },
+        headers: { 'User-Agent': 'SEAUTO-AuditBot/1.0' },
         signal: AbortSignal.timeout(10000),
       });
       if (!resp.ok) continue;
@@ -73,7 +73,7 @@ function extractLocs(xml) {
 
 async function fetchSitemapUrls(sitemapUrl) {
   const resp = await fetch(sitemapUrl, {
-    headers: { 'User-Agent': 'KeywordTracker-AuditBot/1.0' },
+    headers: { 'User-Agent': 'SEAUTO-AuditBot/1.0' },
     signal: AbortSignal.timeout(10000),
   });
   if (!resp.ok) return [];

@@ -128,18 +128,20 @@ export default function Sidebar({
       }`}
     >
       {/* Logo / Collapse toggle */}
-      <div className="flex items-center gap-2 px-4 h-14 border-b border-apple-divider shrink-0">
-        {!collapsed && (
-          <span className="text-apple-sm font-semibold text-apple-text tracking-tight truncate">
-            Keyword Tracker
-          </span>
+      <div className="flex items-center gap-2 px-3 h-14 border-b border-apple-divider shrink-0">
+        {collapsed ? (
+          <button onClick={onToggleCollapse} className="mx-auto p-1 rounded-apple-sm hover:bg-apple-fill-secondary transition-colors" title="Expand">
+            <img src="/seauto-logo.png" alt="SEAUTO" className="h-6 object-contain" />
+          </button>
+        ) : (
+          <img src="/seauto-logo.png" alt="SEAUTO" className="h-8 object-contain" />
         )}
         <button
           onClick={onToggleCollapse}
           className={`p-1.5 rounded-apple-sm hover:bg-apple-fill-secondary transition-colors text-apple-text-tertiary hover:text-apple-text ${
-            collapsed ? 'mx-auto' : 'ml-auto'
+            collapsed ? 'hidden' : 'ml-auto'
           }`}
-          title={collapsed ? 'Expand' : 'Collapse'}
+          title="Collapse"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             {collapsed ? (

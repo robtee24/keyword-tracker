@@ -85,13 +85,11 @@ export default function OAuthModal({ onAuthenticated }: OAuthModalProps) {
       <div className="card p-12 max-w-md w-full text-center">
         {/* Logo / Icon */}
         <div className="mb-8">
-          <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-apple-md">
-            <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6" />
-            </svg>
+          <div className="mx-auto mb-6">
+            <img src="/seauto-logo.png" alt="SEAUTO" className="h-16 mx-auto object-contain" />
           </div>
           <h1 className="text-apple-title1 font-bold text-apple-text tracking-tight mb-2">
-            Keyword Tracker
+            SEAUTO
           </h1>
           <p className="text-apple-base text-apple-text-secondary">
             Connect your Google Search Console to track keyword rankings, impressions, and clicks.

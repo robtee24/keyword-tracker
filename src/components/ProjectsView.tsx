@@ -52,7 +52,7 @@ export default function ProjectsView({
             Projects
           </h2>
           <p className="text-apple-base text-apple-text-secondary mt-1">
-            Manage your keyword tracking projects
+            Manage your SEAUTO projects
           </p>
         </div>
         <button

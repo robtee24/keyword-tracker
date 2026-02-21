@@ -179,7 +179,7 @@ export default async function handler(req, res) {
 async function fetchPageContent(url) {
   const resp = await fetch(url, {
     headers: {
-      'User-Agent': 'KeywordTracker-AuditBot/1.0',
+      'User-Agent': 'SEAUTO-AuditBot/1.0',
       Accept: 'text/html',
     },
     signal: AbortSignal.timeout(15000),
