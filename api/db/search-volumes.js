@@ -32,7 +32,8 @@ export default async function handler(req, res) {
 
     const volumes = {};
     for (const row of (data || [])) {
-      volumes[row.keyword] = {
+      const key = (row.keyword || '').toLowerCase();
+      volumes[key] = {
         avgMonthlySearches: typeof row.avg_monthly_searches === 'number'
           ? row.avg_monthly_searches
           : parseNum(row.avg_monthly_searches),
@@ -53,7 +54,7 @@ export default async function handler(req, res) {
 
     const rows = Object.entries(volumes).map(([kw, vol]) => ({
       site_url: siteUrl,
-      keyword: kw,
+      keyword: kw.toLowerCase(),
       avg_monthly_searches: vol.avgMonthlySearches,
       competition: vol.competition,
       competition_index: vol.competitionIndex,

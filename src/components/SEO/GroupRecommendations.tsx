@@ -529,7 +529,7 @@ function buildRankedRecommendations(
     if (!result) continue;
 
     const topPage = keywordPages.get(kw)?.[0];
-    const volume = searchVolumes.get(kw)?.avgMonthlySearches ?? null;
+    const volume = searchVolumes.get(kw.toLowerCase())?.avgMonthlySearches ?? null;
     // Use position from page data if available, otherwise estimate from strategy
     const value = calculateKeywordValue(kw, null, volume);
     keywordValues.set(kw, value);

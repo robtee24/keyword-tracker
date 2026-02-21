@@ -38,8 +38,9 @@ export default async function handler(req, res) {
 
       const allCached = [];
       const batchSize = 50;
-      for (let i = 0; i < keywords.length; i += batchSize) {
-        const batch = keywords.slice(i, i + batchSize);
+      const lowerKeywords = keywords.map((kw) => kw.toLowerCase());
+      for (let i = 0; i < lowerKeywords.length; i += batchSize) {
+        const batch = lowerKeywords.slice(i, i + batchSize);
         const { data: cached, error: cacheErr } = await supabase
           .from('search_volumes')
           .select('keyword, avg_monthly_searches, competition, competition_index, fetched_at')
@@ -57,16 +58,17 @@ export default async function handler(req, res) {
       if (allCached.length > 0) {
         const freshSet = new Set();
         for (const row of allCached) {
-          cachedVolumes[row.keyword] = {
+          const lk = (row.keyword || '').toLowerCase();
+          cachedVolumes[lk] = {
             avgMonthlySearches: typeof row.avg_monthly_searches === 'number'
               ? row.avg_monthly_searches
               : parseSearchVolume(row.avg_monthly_searches),
             competition: row.competition,
             competitionIndex: row.competition_index,
           };
-          freshSet.add(row.keyword);
+          freshSet.add(lk);
         }
-        staleKeywords = keywords.filter((kw) => !freshSet.has(kw));
+        staleKeywords = keywords.filter((kw) => !freshSet.has(kw.toLowerCase()));
       }
     } catch (cacheErr) {
       console.error('Cache read error (continuing with API):', cacheErr.message);
@@ -128,7 +130,7 @@ export default async function handler(req, res) {
       try {
         const allRows = Object.entries(freshVolumes).map(([kw, vol]) => ({
           site_url: cacheKey,
-          keyword: kw,
+          keyword: kw.toLowerCase(),
           avg_monthly_searches: vol.avgMonthlySearches,
           competition: vol.competition,
           competition_index: vol.competitionIndex,

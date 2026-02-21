@@ -258,14 +258,14 @@ export default function GoogleSearchConsole({
           if (volResult.volumes && Object.keys(volResult.volumes).length > 0) {
             const volumeMap = new Map<string, any>();
             for (const [kw, vol] of Object.entries(volResult.volumes)) {
-              volumeMap.set(kw, vol as any);
+              volumeMap.set(kw.toLowerCase(), vol as any);
             }
             setSearchVolumes(volumeMap);
 
             // 3. Determine which keywords need a Google Ads API call:
             //    a) keywords with NO stored volume (never fetched)
             //    b) if the oldest stored volume is > 30 days, refresh ALL
-            const missing = keywords.filter((kw) => !volResult.volumes[kw]);
+            const missing = keywords.filter((kw) => !volumeMap.has(kw.toLowerCase()));
             const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
             let oldestFetch = Infinity;
             for (const vol of Object.values(volResult.volumes) as any[]) {
@@ -296,7 +296,7 @@ export default function GoogleSearchConsole({
                     setSearchVolumes((prev) => {
                       const merged = new Map(prev);
                       for (const [kw, vol] of Object.entries(freshResult.volumes)) {
-                        merged.set(kw, vol as any);
+                        merged.set(kw.toLowerCase(), vol as any);
                       }
                       return merged;
                     });
@@ -323,7 +323,7 @@ export default function GoogleSearchConsole({
 
                   const volumeMap = new Map<string, any>();
                   for (const [kw, vol] of Object.entries(freshResult.volumes)) {
-                    volumeMap.set(kw, vol as any);
+                    volumeMap.set(kw.toLowerCase(), vol as any);
                   }
                   setSearchVolumes(volumeMap);
                 }
@@ -506,8 +506,8 @@ export default function GoogleSearchConsole({
       let bVal: any;
 
       if (sortColumn === 'volume') {
-        aVal = searchVolumes.get(a.keyword)?.avgMonthlySearches ?? -1;
-        bVal = searchVolumes.get(b.keyword)?.avgMonthlySearches ?? -1;
+        aVal = searchVolumes.get(a.keyword.toLowerCase())?.avgMonthlySearches ?? -1;
+        bVal = searchVolumes.get(b.keyword.toLowerCase())?.avgMonthlySearches ?? -1;
       } else if (sortColumn === 'intent') {
         aVal = getEffectiveIntent(a.keyword, intentStore, keywordPages.get(a.keyword)?.[0]?.page, siteUrl).intent;
         bVal = getEffectiveIntent(b.keyword, intentStore, keywordPages.get(b.keyword)?.[0]?.page, siteUrl).intent;
@@ -1404,7 +1404,7 @@ export default function GoogleSearchConsole({
                       history={keywordHistory.get(keyword.keyword) || null}
                       loadingHistory={loadingHistory.has(keyword.keyword)}
                       siteUrl={siteUrl}
-                      volume={searchVolumes.get(keyword.keyword) || null}
+                      volume={searchVolumes.get(keyword.keyword.toLowerCase()) || null}
                       intentStore={intentStore}
                       onIntentOverride={handleIntentOverride}
                       activeGroupId={activeGroup?.id || null}
