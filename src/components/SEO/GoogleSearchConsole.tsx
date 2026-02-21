@@ -140,15 +140,22 @@ export default function GoogleSearchConsole({
         body: JSON.stringify({ groupId, siteUrl, keywords }),
       });
       if (resp.ok) {
+        const mergeKeywords = (existing: string[]) => [...new Set([...existing, ...keywords])];
         setGroups((prev) =>
           prev.map((g) =>
             g.id === groupId
-              ? { ...g, keywords: [...new Set([...g.keywords, ...keywords])] }
+              ? { ...g, keywords: mergeKeywords(g.keywords) }
               : g
           )
         );
+        if (activeGroup?.id === groupId) {
+          setActiveGroup((prev) =>
+            prev ? { ...prev, keywords: mergeKeywords(prev.keywords) } : null
+          );
+        }
         setSelectedKeywords(new Set());
         setShowAddToGroup(false);
+        setAddToGroupKeywords(new Set());
       }
     } catch { /* ignore */ }
   };
@@ -1045,11 +1052,11 @@ export default function GoogleSearchConsole({
                 <option key={intent} value={intent}>{intent}</option>
               ))}
             </select>
-            {/* Add to Group button — visible when keywords are selected */}
-            {selectedKeywords.size > 0 && groups.length > 0 && (
+            {/* Add to Group — selected keywords or all filtered results */}
+            {groups.length > 0 && (selectedKeywords.size > 0 || (searchTerm && filteredKeywords.length > 0)) && (
               <div className="relative">
                 <button
-                  onClick={() => setShowAddToGroup(!showAddToGroup)}
+                  onClick={() => { setShowAddToGroup(!showAddToGroup); if (showAddToGroup) setAddToGroupKeywords(new Set()); }}
                   className="inline-flex items-center gap-1.5 px-3 py-2 text-apple-sm font-medium rounded-apple-sm border border-apple-border text-apple-text-secondary hover:bg-apple-fill-secondary transition-all duration-200"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1058,17 +1065,53 @@ export default function GoogleSearchConsole({
                   Add to Group
                 </button>
                 {showAddToGroup && (
-                  <div className="absolute z-50 mt-1 right-0 w-48 bg-white rounded-apple-sm border border-apple-divider shadow-lg overflow-hidden">
-                    {groups.map((group) => (
-                      <button
-                        key={group.id}
-                        onClick={() => addKeywordsToGroup(group.id, [...selectedKeywords])}
-                        className="w-full text-left px-4 py-2.5 text-apple-sm text-apple-text-secondary hover:bg-apple-fill-secondary transition-colors flex items-center justify-between"
-                      >
-                        <span>{group.name}</span>
-                        <span className="text-apple-xs text-apple-text-tertiary">{group.keywords.length}</span>
-                      </button>
-                    ))}
+                  <div className="absolute z-50 mt-1 right-0 w-56 bg-white rounded-apple-sm border border-apple-divider shadow-lg overflow-hidden">
+                    {/* Mode selector: selected keywords vs all filtered */}
+                    {selectedKeywords.size > 0 && searchTerm && filteredKeywords.length > selectedKeywords.size && (
+                      <div className="px-3 py-2 border-b border-apple-divider bg-apple-fill-secondary">
+                        <div className="text-apple-xs text-apple-text-tertiary font-medium mb-1">Add keywords:</div>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => setAddToGroupKeywords(new Set(selectedKeywords))}
+                            className={`px-2 py-1 text-apple-xs rounded-apple-sm transition-colors ${
+                              addToGroupKeywords.size > 0 && addToGroupKeywords.size === selectedKeywords.size
+                                ? 'bg-apple-blue text-white' : 'bg-white border border-apple-divider text-apple-text-secondary hover:bg-apple-fill-secondary'
+                            }`}
+                          >
+                            Selected ({selectedKeywords.size})
+                          </button>
+                          <button
+                            onClick={() => setAddToGroupKeywords(new Set(filteredKeywords.map((k: any) => k.keyword)))}
+                            className={`px-2 py-1 text-apple-xs rounded-apple-sm transition-colors ${
+                              addToGroupKeywords.size === filteredKeywords.length
+                                ? 'bg-apple-blue text-white' : 'bg-white border border-apple-divider text-apple-text-secondary hover:bg-apple-fill-secondary'
+                            }`}
+                          >
+                            All results ({filteredKeywords.length})
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {groups.map((group) => {
+                      const kwsToAdd = addToGroupKeywords.size > 0
+                        ? [...addToGroupKeywords]
+                        : selectedKeywords.size > 0
+                        ? [...selectedKeywords]
+                        : filteredKeywords.map((k: any) => k.keyword);
+                      return (
+                        <button
+                          key={group.id}
+                          onClick={() => {
+                            addKeywordsToGroup(group.id, kwsToAdd);
+                            setAddToGroupKeywords(new Set());
+                          }}
+                          className="w-full text-left px-4 py-2.5 text-apple-sm text-apple-text-secondary hover:bg-apple-fill-secondary transition-colors flex items-center justify-between"
+                        >
+                          <span>{group.name}</span>
+                          <span className="text-apple-xs text-apple-text-tertiary">{group.keywords.length}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1217,6 +1260,8 @@ export default function GoogleSearchConsole({
                       volume={searchVolumes.get(keyword.keyword) || null}
                       intentStore={intentStore}
                       onIntentOverride={handleIntentOverride}
+                      activeGroupId={activeGroup?.id || null}
+                      onRemoveFromGroup={activeGroup ? (kw: string) => removeKeywordFromGroup(activeGroup.id, kw) : undefined}
                     />
                   );
                 })
@@ -1684,6 +1729,8 @@ function KeywordRow({
   volume,
   intentStore,
   onIntentOverride,
+  activeGroupId,
+  onRemoveFromGroup,
 }: {
   keyword: any;
   compareKeyword: any;
@@ -1706,6 +1753,8 @@ function KeywordRow({
   volume: { avgMonthlySearches: number | null; competition: string | null; competitionIndex: number | null } | null;
   intentStore: IntentStore;
   onIntentOverride: (keyword: string, intent: KeywordIntent) => void;
+  activeGroupId: string | null;
+  onRemoveFromGroup?: (keyword: string) => void;
 }) {
   const [showIntentPicker, setShowIntentPicker] = useState(false);
   const [taskToggleCounter, setTaskToggleCounter] = useState(0);
@@ -1726,7 +1775,7 @@ function KeywordRow({
   return (
     <>
       <tr
-        className={`border-b border-apple-divider cursor-pointer transition-colors duration-150 ${
+        className={`group/row border-b border-apple-divider cursor-pointer transition-colors duration-150 ${
           isSelected ? 'bg-blue-50/40' : isExpanded ? 'bg-apple-fill-secondary' : 'hover:bg-apple-fill-secondary'
         }`}
         onClick={(e) => {
@@ -1745,6 +1794,20 @@ function KeywordRow({
         <td className="px-6 py-3.5 text-apple-sm font-medium text-apple-text">
           <div className="flex items-center gap-2">
             {keyword.keyword}
+            {activeGroupId && onRemoveFromGroup && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemoveFromGroup(keyword.keyword);
+                }}
+                className="opacity-0 group-hover/row:opacity-100 inline-flex items-center justify-center w-5 h-5 rounded-full text-red-400 hover:text-white hover:bg-red-500 transition-all duration-150"
+                title="Remove from group"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
             <svg
               className={`w-3.5 h-3.5 text-apple-text-tertiary transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
               fill="none"
