@@ -81,7 +81,6 @@ export default function GoogleSearchConsole({
   const [showAddToGroup, setShowAddToGroup] = useState(false);
   const [newKeywords, setNewKeywords] = useState<Set<string>>(new Set());
   const [lostKeywords, setLostKeywords] = useState<Array<{ keyword: string; lastSeenAt: string }>>([]);
-  const [keywordTab, setKeywordTab] = useState<'active' | 'lost'>('active');
 
   // Reload intent store when siteUrl changes
   useEffect(() => {
@@ -238,12 +237,8 @@ export default function GoogleSearchConsole({
         });
         if (storeResp.ok) {
           const storeResult = await storeResp.json();
-          if (storeResult.newKeywords?.length > 0) {
-            setNewKeywords(new Set(storeResult.newKeywords));
-          }
-          if (storeResult.lostKeywords?.length > 0) {
-            setLostKeywords(storeResult.lostKeywords);
-          }
+          setNewKeywords(new Set(storeResult.newKeywords || []));
+          setLostKeywords(storeResult.lostKeywords || []);
         }
       } catch { /* non-critical */ }
 
@@ -842,71 +837,11 @@ export default function GoogleSearchConsole({
       {/* Keyword Table */}
       <div className="card p-6">
         <div className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-apple-body font-semibold text-apple-text">
-              Keyword Rankings
-            </h3>
-            {lostKeywords.length > 0 && (
-              <div className="flex rounded-apple-sm border border-apple-divider overflow-hidden">
-                <button
-                  onClick={() => setKeywordTab('active')}
-                  className={`px-4 py-1.5 text-apple-sm font-medium transition-colors ${
-                    keywordTab === 'active'
-                      ? 'bg-apple-blue text-white'
-                      : 'bg-white text-apple-text-secondary hover:bg-apple-fill-secondary'
-                  }`}
-                >
-                  Active Keywords
-                </button>
-                <button
-                  onClick={() => setKeywordTab('lost')}
-                  className={`px-4 py-1.5 text-apple-sm font-medium transition-colors border-l border-apple-divider ${
-                    keywordTab === 'lost'
-                      ? 'bg-orange-500 text-white'
-                      : 'bg-white text-apple-text-secondary hover:bg-apple-fill-secondary'
-                  }`}
-                >
-                  Lost Keywords ({lostKeywords.length})
-                </button>
-              </div>
-            )}
-          </div>
-
+          <h3 className="text-apple-body font-semibold text-apple-text mb-4">
+            Keyword Rankings
+          </h3>
         </div>
 
-        {keywordTab === 'lost' && lostKeywords.length > 0 ? (
-          <div className="rounded-apple-sm border border-orange-200 bg-orange-50/30 overflow-hidden">
-            <div className="px-4 py-3 border-b border-orange-200 flex items-center gap-2">
-              <svg className="w-4 h-4 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-              </svg>
-              <span className="text-apple-sm font-semibold text-orange-700">
-                Keywords no longer found in Google Search Console data
-              </span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full">
-                <thead>
-                  <tr className="border-b border-orange-200">
-                    <th className="px-6 py-3 text-left text-apple-xs font-semibold text-apple-text-secondary uppercase tracking-wider">Keyword</th>
-                    <th className="px-6 py-3 text-left text-apple-xs font-semibold text-apple-text-secondary uppercase tracking-wider">Last Seen</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lostKeywords.map((lk) => (
-                    <tr key={lk.keyword} className="border-b border-orange-100 hover:bg-orange-50/50 transition-colors">
-                      <td className="px-6 py-3 text-apple-sm text-apple-text">{lk.keyword}</td>
-                      <td className="px-6 py-3 text-apple-sm text-apple-text-secondary">
-                        {new Date(lk.lastSeenAt).toLocaleDateString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ) : (
-        <>
         <div className="mb-6">
           {/* Alerts Bar */}
           {(fireCount > 0 || smokingCount > 0 || hotCount > 0 || loadingAlerts) && (
@@ -1469,8 +1404,6 @@ export default function GoogleSearchConsole({
             </div>
           </div>
         )}
-          </>
-          )}
       </div>
     </div>
   );

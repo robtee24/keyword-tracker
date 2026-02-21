@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type View = 'projects' | 'objectives' | 'overview' | 'keywords' | 'recommendations' | 'activity-log';
+export type View = 'projects' | 'objectives' | 'overview' | 'keywords' | 'lost-keywords' | 'recommendations' | 'activity-log';
 
 interface SidebarProps {
   currentView: View;
@@ -36,6 +36,15 @@ const projectNavItems: Array<{ id: View; label: string; icon: ReactNode }> = [
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+      </svg>
+    ),
+  },
+  {
+    id: 'lost-keywords',
+    label: 'Lost Keywords',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
       </svg>
     ),
   },

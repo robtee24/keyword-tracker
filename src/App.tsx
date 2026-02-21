@@ -8,6 +8,7 @@ import ObjectivesView from './components/ObjectivesView';
 import OverviewView from './components/OverviewView';
 import GoogleSearchConsole from './components/SEO/GoogleSearchConsole';
 import RecommendationsView from './components/RecommendationsView';
+import LostKeywordsView from './components/LostKeywordsView';
 import ActivityLogView from './components/ActivityLogView';
 import OAuthModal from './components/OAuthModal';
 import { isAuthenticated, clearTokens, authenticatedFetch } from './services/authService';
@@ -390,6 +391,11 @@ function App() {
                 loadTrigger={loadTrigger}
               />
             </div>
+          )}
+
+          {/* Lost Keywords */}
+          {currentView === 'lost-keywords' && activeProject && (
+            <LostKeywordsView siteUrl={activeProject.siteUrl} />
           )}
 
           {/* Recommendations */}
