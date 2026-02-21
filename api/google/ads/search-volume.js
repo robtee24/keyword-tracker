@@ -27,7 +27,7 @@ export default async function handler(req, res) {
   const cacheKey = siteUrl || '__global__';
   const supabase = getSupabase();
 
-  // 1. Check cache for fresh volumes
+  // 1. Check cache for fresh volumes (batch .in() to avoid URL-length limits)
   let cachedVolumes = {};
   let staleKeywords = [...keywords];
 
@@ -36,18 +36,31 @@ export default async function handler(req, res) {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - VOLUME_CACHE_DAYS);
 
-      const { data: cached } = await supabase
-        .from('search_volumes')
-        .select('keyword, avg_monthly_searches, competition, competition_index, fetched_at')
-        .eq('site_url', cacheKey)
-        .in('keyword', keywords)
-        .gte('fetched_at', cutoff.toISOString());
+      const allCached = [];
+      const batchSize = 50;
+      for (let i = 0; i < keywords.length; i += batchSize) {
+        const batch = keywords.slice(i, i + batchSize);
+        const { data: cached, error: cacheErr } = await supabase
+          .from('search_volumes')
+          .select('keyword, avg_monthly_searches, competition, competition_index, fetched_at')
+          .eq('site_url', cacheKey)
+          .in('keyword', batch)
+          .gte('fetched_at', cutoff.toISOString());
 
-      if (cached && cached.length > 0) {
+        if (cacheErr) {
+          console.error('Cache batch read error:', cacheErr.message);
+        } else if (cached) {
+          allCached.push(...cached);
+        }
+      }
+
+      if (allCached.length > 0) {
         const freshSet = new Set();
-        for (const row of cached) {
+        for (const row of allCached) {
           cachedVolumes[row.keyword] = {
-            avgMonthlySearches: row.avg_monthly_searches,
+            avgMonthlySearches: typeof row.avg_monthly_searches === 'number'
+              ? row.avg_monthly_searches
+              : parseSearchVolume(row.avg_monthly_searches),
             competition: row.competition,
             competitionIndex: row.competition_index,
           };
@@ -92,10 +105,10 @@ export default async function handler(req, res) {
       }
     }
 
-    // 4. Save fresh volumes to cache
+    // 4. Save fresh volumes to cache (batch to avoid payload limits)
     if (supabase && Object.keys(freshVolumes).length > 0) {
       try {
-        const rows = Object.entries(freshVolumes).map(([kw, vol]) => ({
+        const allRows = Object.entries(freshVolumes).map(([kw, vol]) => ({
           site_url: cacheKey,
           keyword: kw,
           avg_monthly_searches: vol.avgMonthlySearches,
@@ -104,9 +117,16 @@ export default async function handler(req, res) {
           fetched_at: new Date().toISOString(),
         }));
 
-        await supabase
-          .from('search_volumes')
-          .upsert(rows, { onConflict: 'site_url,keyword' });
+        for (let i = 0; i < allRows.length; i += 50) {
+          const batch = allRows.slice(i, i + 50);
+          const { error: upsertErr } = await supabase
+            .from('search_volumes')
+            .upsert(batch, { onConflict: 'site_url,keyword' });
+
+          if (upsertErr) {
+            console.error('Cache upsert batch error:', upsertErr.message, upsertErr.details);
+          }
+        }
       } catch (saveErr) {
         console.error('Cache write error (non-fatal):', saveErr.message);
       }
@@ -192,22 +212,45 @@ async function fetchHistoricalMetrics(accessToken, developerToken, customerId, k
       const metrics = result.keywordMetrics || {};
 
       volumes[kw] = {
-        avgMonthlySearches: metrics.avgMonthlySearches
-          ? parseInt(metrics.avgMonthlySearches, 10)
-          : null,
+        avgMonthlySearches: parseSearchVolume(metrics.avgMonthlySearches),
         competition: metrics.competition || null,
-        competitionIndex: metrics.competitionIndex
-          ? parseInt(metrics.competitionIndex, 10)
+        competitionIndex: metrics.competitionIndex != null
+          ? parseInt(String(metrics.competitionIndex), 10) || null
           : null,
-        lowTopOfPageBidMicros: metrics.lowTopOfPageBidMicros
-          ? parseInt(metrics.lowTopOfPageBidMicros, 10)
+        lowTopOfPageBidMicros: metrics.lowTopOfPageBidMicros != null
+          ? parseInt(String(metrics.lowTopOfPageBidMicros), 10) || null
           : null,
-        highTopOfPageBidMicros: metrics.highTopOfPageBidMicros
-          ? parseInt(metrics.highTopOfPageBidMicros, 10)
+        highTopOfPageBidMicros: metrics.highTopOfPageBidMicros != null
+          ? parseInt(String(metrics.highTopOfPageBidMicros), 10) || null
           : null,
       };
     }
   }
 
   return volumes;
+}
+
+/**
+ * Parse a search volume value that may be a number, a numeric string,
+ * a comma-formatted string ("4,400"), or an abbreviated string ("4.4K", "1.2M").
+ */
+function parseSearchVolume(value) {
+  if (value == null) return null;
+  if (typeof value === 'number') return value === 0 ? 0 : value || null;
+
+  const str = String(value).trim().replace(/,/g, '');
+  if (!str) return null;
+
+  const match = str.match(/^([\d.]+)\s*([km])?$/i);
+  if (match) {
+    const num = parseFloat(match[1]);
+    if (isNaN(num)) return null;
+    const suffix = (match[2] || '').toLowerCase();
+    if (suffix === 'k') return Math.round(num * 1000);
+    if (suffix === 'm') return Math.round(num * 1000000);
+    return Math.round(num);
+  }
+
+  const parsed = parseInt(str, 10);
+  return isNaN(parsed) ? null : parsed;
 }
