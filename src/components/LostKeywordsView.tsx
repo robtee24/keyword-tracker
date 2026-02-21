@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react';
-import { authenticatedFetch } from '../services/authService';
+import { useState, useEffect, useRef } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 
 interface LostKeyword {
@@ -14,27 +13,30 @@ interface LostKeywordsViewProps {
 
 export default function LostKeywordsView({ siteUrl }: LostKeywordsViewProps) {
   const [lostKeywords, setLostKeywords] = useState<LostKeyword[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<'keyword' | 'firstSeen' | 'lastSeen'>('lastSeen');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const fetched = useRef(false);
 
   useEffect(() => {
-    if (!siteUrl) return;
+    if (!siteUrl || fetched.current) return;
+    fetched.current = true;
+
     let cancelled = false;
+    setLoading(true);
+    setError(null);
 
-    async function fetchLostKeywords() {
-      setLoading(true);
-      setError(null);
-      try {
-        const resp = await authenticatedFetch(
-          `${API_ENDPOINTS.db.keywords}?siteUrl=${encodeURIComponent(siteUrl)}`
-        );
+    fetch(`${API_ENDPOINTS.db.keywords}?siteUrl=${encodeURIComponent(siteUrl)}`)
+      .then((resp) => {
         if (!resp.ok) throw new Error('Failed to fetch keywords');
-        const { keywords } = await resp.json();
-
+        return resp.json();
+      })
+      .then(({ keywords }) => {
+        if (cancelled) return;
         if (!keywords || keywords.length === 0) {
           setLostKeywords([]);
+          setLoading(false);
           return;
         }
 
@@ -43,23 +45,24 @@ export default function LostKeywordsView({ siteUrl }: LostKeywordsViewProps) {
           ''
         );
 
-        const lost: LostKeyword[] = keywords
-          .filter((k: any) => k.last_seen_at < maxLastSeen)
-          .map((k: any) => ({
-            keyword: k.keyword,
-            firstSeenAt: k.first_seen_at,
-            lastSeenAt: k.last_seen_at,
-          }));
+        setLostKeywords(
+          keywords
+            .filter((k: any) => k.last_seen_at < maxLastSeen)
+            .map((k: any) => ({
+              keyword: k.keyword,
+              firstSeenAt: k.first_seen_at,
+              lastSeenAt: k.last_seen_at,
+            }))
+        );
+        setLoading(false);
+      })
+      .catch((err: any) => {
+        if (!cancelled) {
+          setError(err.message || 'Error loading lost keywords');
+          setLoading(false);
+        }
+      });
 
-        if (!cancelled) setLostKeywords(lost);
-      } catch (err: any) {
-        if (!cancelled) setError(err.message || 'Error loading lost keywords');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    fetchLostKeywords();
     return () => { cancelled = true; };
   }, [siteUrl]);
 
