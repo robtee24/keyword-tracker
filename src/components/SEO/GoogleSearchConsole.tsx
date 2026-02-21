@@ -10,6 +10,7 @@ import RecommendationsPanel from './RecommendationsPanel';
 import type { ScanResult } from './RecommendationsPanel';
 import KeywordInsightsPanel from './KeywordInsightsPanel';
 import type { MonthlyPosition } from './KeywordInsightsPanel';
+import ActivityLog from './ActivityLog';
 
 interface GoogleSearchConsoleProps {
   dateRange: DateRange;
@@ -381,70 +382,72 @@ export default function GoogleSearchConsole({
     }
   };
 
-  const handleKeywordRowClick = async (keyword: string) => {
+  const handleKeywordRowClick = (keyword: string) => {
     if (expandedKeyword === keyword) {
       setExpandedKeyword(null);
       return;
     }
     setExpandedKeyword(keyword);
 
-    // Fetch pages and history in parallel
+    // All three fetches run in parallel
     if (!keywordPages.has(keyword)) {
       setLoadingPages((prev) => new Set(prev).add(keyword));
-      try {
-        const startDate = format(dateRange.startDate, 'yyyy-MM-dd');
-        const endDate = format(dateRange.endDate, 'yyyy-MM-dd');
+      (async () => {
+        try {
+          const startDate = format(dateRange.startDate, 'yyyy-MM-dd');
+          const endDate = format(dateRange.endDate, 'yyyy-MM-dd');
 
-        const response = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.keywordPages, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keyword, startDate, endDate, siteUrl }),
-        });
+          const response = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.keywordPages, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword, startDate, endDate, siteUrl }),
+          });
 
-        if (response.ok) {
-          const result = await response.json();
-          const pages = (result.rows || [])
-            .map((row: any) => ({
-              page: row.keys?.[1] || '',
-              clicks: parseInt(row.clicks || '0', 10),
-              impressions: parseInt(row.impressions || '0', 10),
-              ctr: (() => { const raw = parseFloat(row.ctr || '0'); return raw > 1 ? raw : raw * 100; })(),
-            }))
-            .sort((a: any, b: any) => b.clicks - a.clicks);
+          if (response.ok) {
+            const result = await response.json();
+            const pages = (result.rows || [])
+              .map((row: any) => ({
+                page: row.keys?.[1] || '',
+                clicks: parseInt(row.clicks || '0', 10),
+                impressions: parseInt(row.impressions || '0', 10),
+                ctr: (() => { const raw = parseFloat(row.ctr || '0'); return raw > 1 ? raw : raw * 100; })(),
+              }))
+              .sort((a: any, b: any) => b.clicks - a.clicks);
 
-          setKeywordPages((prev) => new Map(prev).set(keyword, pages));
-        } else {
+            setKeywordPages((prev) => new Map(prev).set(keyword, pages));
+          } else {
+            setKeywordPages((prev) => new Map(prev).set(keyword, []));
+          }
+        } catch {
           setKeywordPages((prev) => new Map(prev).set(keyword, []));
+        } finally {
+          setLoadingPages((prev) => {
+            const s = new Set(prev);
+            s.delete(keyword);
+            return s;
+          });
         }
-      } catch {
-        setKeywordPages((prev) => new Map(prev).set(keyword, []));
-      } finally {
-        setLoadingPages((prev) => {
-          const s = new Set(prev);
-          s.delete(keyword);
-          return s;
-        });
-      }
+      })();
     }
 
-    // Also fetch position history
     fetchKeywordHistory(keyword);
 
-    // Load saved recommendations from DB if not already loaded
     if (!scanResults.has(keyword)) {
-      try {
-        const recResp = await fetch(
-          `${API_ENDPOINTS.db.recommendations}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(keyword)}`
-        );
-        if (recResp.ok) {
-          const recData = await recResp.json();
-          if (recData.recommendation?.scanResult) {
-            setScanResults((prev) => new Map(prev).set(keyword, recData.recommendation.scanResult));
+      (async () => {
+        try {
+          const recResp = await fetch(
+            `${API_ENDPOINTS.db.recommendations}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(keyword)}`
+          );
+          if (recResp.ok) {
+            const recData = await recResp.json();
+            if (recData.recommendation?.scanResult) {
+              setScanResults((prev) => new Map(prev).set(keyword, recData.recommendation.scanResult));
+            }
           }
+        } catch {
+          // Non-critical — user can still scan manually
         }
-      } catch {
-        // Non-critical — user can still scan manually
-      }
+      })();
     }
   };
 
@@ -465,11 +468,15 @@ export default function GoogleSearchConsole({
     );
   };
 
-  const handleScanRecommendations = async (keyword: string) => {
-    if (scanResults.has(keyword)) return; // Already scanned
+  const handleScanRecommendations = async (keyword: string, rescan = false) => {
+    if (!rescan && scanResults.has(keyword)) return;
 
     const pages = keywordPages.get(keyword) || [];
     if (pages.length === 0) return;
+
+    if (rescan) {
+      setScanResults((prev) => { const m = new Map(prev); m.delete(keyword); return m; });
+    }
 
     setLoadingRecs((prev) => new Set(prev).add(keyword));
     setRecsError((prev) => { const m = new Map(prev); m.delete(keyword); return m; });
@@ -865,6 +872,7 @@ export default function GoogleSearchConsole({
                       isLoadingRecs={loadingRecs.has(keyword.keyword)}
                       recsError={recsError.get(keyword.keyword) || null}
                       onScanRecommendations={() => handleScanRecommendations(keyword.keyword)}
+                      onRescanRecommendations={() => handleScanRecommendations(keyword.keyword, true)}
                       history={keywordHistory.get(keyword.keyword) || null}
                       loadingHistory={loadingHistory.has(keyword.keyword)}
                       siteUrl={siteUrl}
@@ -1263,6 +1271,7 @@ function KeywordRow({
   isLoadingRecs,
   recsError,
   onScanRecommendations,
+  onRescanRecommendations,
   history,
   loadingHistory,
   siteUrl,
@@ -1284,6 +1293,7 @@ function KeywordRow({
   isLoadingRecs: boolean;
   recsError: string | null;
   onScanRecommendations: () => void;
+  onRescanRecommendations: () => void;
   history: MonthlyPosition[] | null;
   loadingHistory: boolean;
   siteUrl: string;
@@ -1293,6 +1303,7 @@ function KeywordRow({
 }) {
   const [showIntentPicker, setShowIntentPicker] = useState(false);
   const [taskToggleCounter, setTaskToggleCounter] = useState(0);
+  const [activeTab, setActiveTab] = useState<'recommendations' | 'activity'>('recommendations');
   const intentPickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1455,6 +1466,36 @@ function KeywordRow({
 
         return (
           <>
+            {/* Tab Bar */}
+            <tr className="bg-apple-fill-secondary">
+              <td colSpan={colSpan} className="px-6 py-0">
+                <div className="flex gap-6 border-b border-apple-divider">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setActiveTab('recommendations'); }}
+                    className={`py-2.5 text-apple-sm font-medium border-b-2 -mb-px transition-colors ${
+                      activeTab === 'recommendations'
+                        ? 'border-apple-blue text-apple-blue'
+                        : 'border-transparent text-apple-text-tertiary hover:text-apple-text-secondary'
+                    }`}
+                  >
+                    Recommendations
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setActiveTab('activity'); }}
+                    className={`py-2.5 text-apple-sm font-medium border-b-2 -mb-px transition-colors ${
+                      activeTab === 'activity'
+                        ? 'border-apple-blue text-apple-blue'
+                        : 'border-transparent text-apple-text-tertiary hover:text-apple-text-secondary'
+                    }`}
+                  >
+                    Activity Log
+                  </button>
+                </div>
+              </td>
+            </tr>
+
+            {activeTab === 'recommendations' ? (
+            <>
             {/* 1. Insights: trending, opportunity score, position chart */}
             <tr className="bg-apple-fill-secondary">
               <td colSpan={colSpan} className="px-6 py-2">
@@ -1571,12 +1612,29 @@ function KeywordRow({
 
                 {/* Results: strategy + audit + checklist */}
                 {scanResult && (
-                  <RecommendationsPanel
-                    scanResult={scanResult}
-                    keyword={keyword.keyword}
-                    siteUrl={siteUrl}
-                    onTaskToggle={() => setTaskToggleCounter((c) => c + 1)}
-                  />
+                  <div>
+                    <div className="flex items-center justify-end mb-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRescanRecommendations();
+                        }}
+                        disabled={isLoadingRecs}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-apple-pill border border-apple-divider text-apple-xs font-medium text-apple-text-secondary hover:bg-white hover:border-apple-border transition-all duration-200 disabled:opacity-50"
+                      >
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Re-scan
+                      </button>
+                    </div>
+                    <RecommendationsPanel
+                      scanResult={scanResult}
+                      keyword={keyword.keyword}
+                      siteUrl={siteUrl}
+                      onTaskToggle={() => setTaskToggleCounter((c) => c + 1)}
+                    />
+                  </div>
                 )}
               </td>
             </tr>
@@ -1630,6 +1688,14 @@ function KeywordRow({
                   </tr>
                 ))}
               </>
+            )}
+            </>
+            ) : (
+              <tr className="bg-apple-fill-secondary">
+                <td colSpan={colSpan} className="px-6 py-3">
+                  <ActivityLog keyword={keyword.keyword} siteUrl={siteUrl} />
+                </td>
+              </tr>
             )}
           </>
         );
