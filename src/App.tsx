@@ -10,6 +10,7 @@ import GoogleSearchConsole from './components/SEO/GoogleSearchConsole';
 import RecommendationsView from './components/RecommendationsView';
 import LostKeywordsView from './components/LostKeywordsView';
 import AuditView from './components/AuditView';
+import AdvertisingView from './components/AdvertisingView';
 import ActivityLogView from './components/ActivityLogView';
 import OAuthModal from './components/OAuthModal';
 import { isAuthenticated, clearTokens, authenticatedFetch } from './services/authService';
@@ -250,6 +251,7 @@ function App() {
                         'content-audit': 'Content Audit',
                         'aeo-audit': 'AEO Audit',
                         'schema-audit': 'Schema Audit',
+                        'advertising': 'Advertising',
                       } as Record<string, string>)[currentView] || currentView}
                     </span>
                   </>
@@ -454,6 +456,11 @@ function App() {
                 description="Validates existing schema markup and identifies missing structured data opportunities for rich snippets in Google search results."
               />
             </div>
+          )}
+
+          {/* Advertising */}
+          {currentView === 'advertising' && activeProject && (
+            <AdvertisingView siteUrl={activeProject.siteUrl} projectId={activeProject.id} />
           )}
 
           {/* Recommendations */}
