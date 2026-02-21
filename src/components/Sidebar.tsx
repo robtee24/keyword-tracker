@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 export type View = 'projects' | 'objectives' | 'overview' | 'keywords' | 'recommendations' | 'activity-log';
 
 interface SidebarProps {
@@ -9,7 +11,7 @@ interface SidebarProps {
   hasActiveProject: boolean;
 }
 
-const projectNavItems: Array<{ id: View; label: string; icon: JSX.Element }> = [
+const projectNavItems: Array<{ id: View; label: string; icon: ReactNode }> = [
   {
     id: 'objectives',
     label: 'Objectives',
