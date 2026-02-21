@@ -38,22 +38,21 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Crawl each page and extract SEO signals (max 3 pages)
+    // 1. Crawl all pages in parallel (max 3 pages)
     const pagesToCrawl = pages.slice(0, 3);
-    const pageAnalyses = [];
-
-    for (const page of pagesToCrawl) {
-      try {
-        const analysis = await crawlAndAnalyze(page.url, keyword, siteUrl);
-        pageAnalyses.push(analysis);
-      } catch (crawlErr) {
-        pageAnalyses.push({
-          url: page.url,
-          crawlSuccess: false,
-          error: crawlErr.message || 'Crawl failed',
-        });
-      }
-    }
+    const pageAnalyses = await Promise.all(
+      pagesToCrawl.map(async (page) => {
+        try {
+          return await crawlAndAnalyze(page.url, keyword, siteUrl);
+        } catch (crawlErr) {
+          return {
+            url: page.url,
+            crawlSuccess: false,
+            error: crawlErr.message || 'Crawl failed',
+          };
+        }
+      })
+    );
 
     // 2. Grade the top ranking page
     const topPageAnalysis = pageAnalyses[0];

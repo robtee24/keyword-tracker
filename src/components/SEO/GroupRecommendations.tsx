@@ -99,15 +99,16 @@ export default function GroupRecommendations({
     setScanProgress({ current: 0, total: toScan.length, keyword: '' });
 
     const newResults = new Map(scanResults);
+    let completed = 0;
+    const CONCURRENCY = 3;
 
-    for (let i = 0; i < toScan.length; i++) {
-      const kw = toScan[i];
+    const scanKeyword = async (kw: string) => {
       const pages = keywordPages.get(kw) || [];
-      setScanProgress({ current: i + 1, total: toScan.length, keyword: kw });
-
       if (pages.length === 0) {
         setScanErrors((prev) => new Map(prev).set(kw, 'No pages found'));
-        continue;
+        completed++;
+        setScanProgress({ current: completed, total: toScan.length, keyword: kw });
+        return;
       }
 
       try {
@@ -132,7 +133,20 @@ export default function GroupRecommendations({
       } catch (err: any) {
         setScanErrors((prev) => new Map(prev).set(kw, err.message || 'Scan failed'));
       }
-    }
+
+      completed++;
+      setScanProgress({ current: completed, total: toScan.length, keyword: kw });
+    };
+
+    // Run scans with concurrency limit
+    const queue = [...toScan];
+    const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const kw = queue.shift()!;
+        await scanKeyword(kw);
+      }
+    });
+    await Promise.all(workers);
 
     setScanning(false);
     onScanResultsUpdate(newResults);
