@@ -171,10 +171,17 @@ function App() {
     }
   };
 
+  // Auto-load keywords when navigating to the keywords view for the first time
+  useEffect(() => {
+    if (currentView === 'keywords' && activeProject && !hasLoadedOnce) {
+      handleLoadData();
+    }
+  }, [currentView, activeProject]);
+
   // Views that need the date picker in the header
   const showsDateControls = activeProject && (currentView === 'overview' || currentView === 'keywords');
 
-  // Views that need data to be loaded
+  // Show refresh button only after initial load (for date changes)
   const needsDataLoad = currentView === 'keywords';
 
   if (appState === 'loading') {
@@ -372,36 +379,13 @@ function App() {
           )}
 
           {/* Keywords (existing GoogleSearchConsole component) */}
-          {currentView === 'keywords' && activeProject && (
-            <>
-              {!hasLoadedOnce || !committedDateRange ? (
-                <div className="max-w-5xl mx-auto">
-                  <div className="card p-16 text-center">
-                    <div className="w-16 h-16 rounded-full bg-blue-50 mx-auto mb-4 flex items-center justify-center">
-                      <svg className="w-8 h-8 text-apple-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
-                      </svg>
-                    </div>
-                    <h3 className="text-apple-title3 font-semibold text-apple-text mb-2">
-                      Ready to Load Keywords
-                    </h3>
-                    <p className="text-apple-base text-apple-text-secondary max-w-md mx-auto mb-6">
-                      Select your date range and click "Load Data" to fetch keyword rankings.
-                    </p>
-                    <button onClick={handleLoadData} className="btn-primary">
-                      Load Data
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <GoogleSearchConsole
-                  dateRange={committedDateRange}
-                  compareDateRange={committedCompareDateRange}
-                  siteUrl={activeProject.siteUrl}
-                  loadTrigger={loadTrigger}
-                />
-              )}
-            </>
+          {currentView === 'keywords' && activeProject && committedDateRange && (
+            <GoogleSearchConsole
+              dateRange={committedDateRange}
+              compareDateRange={committedCompareDateRange}
+              siteUrl={activeProject.siteUrl}
+              loadTrigger={loadTrigger}
+            />
           )}
 
           {/* Recommendations */}
