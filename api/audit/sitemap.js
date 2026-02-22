@@ -1,9 +1,9 @@
-export const config = { maxDuration: 30 };
+export const config = { maxDuration: 60 };
 
 /**
  * GET /api/audit/sitemap?siteUrl=https://example.com
  * Fetches and parses the sitemap to extract all page URLs.
- * Handles both regular sitemaps and sitemap index files.
+ * Handles regular sitemaps, sitemap index files, and nested sitemap indexes.
  */
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -12,13 +12,13 @@ export default async function handler(req, res) {
   let { siteUrl } = req.query;
   if (!siteUrl) return res.status(400).json({ error: 'siteUrl is required' });
 
-  // Normalize: ensure trailing slash
   if (!siteUrl.endsWith('/')) siteUrl += '/';
 
   const sitemapCandidates = [
     `${siteUrl}sitemap.xml`,
     `${siteUrl}sitemap_index.xml`,
     `${siteUrl}sitemap-index.xml`,
+    `${siteUrl}wp-sitemap.xml`,
   ];
 
   let urls = [];
@@ -27,37 +27,61 @@ export default async function handler(req, res) {
     try {
       const resp = await fetch(candidate, {
         headers: { 'User-Agent': 'SEAUTO-AuditBot/1.0' },
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(15000),
       });
       if (!resp.ok) continue;
 
       const xml = await resp.text();
       if (!xml.includes('<urlset') && !xml.includes('<sitemapindex')) continue;
 
-      if (xml.includes('<sitemapindex')) {
-        // Sitemap index — extract child sitemap URLs and fetch each
-        const sitemapUrls = extractLocs(xml);
-        const childResults = await Promise.allSettled(
-          sitemapUrls.slice(0, 20).map((u) => fetchSitemapUrls(u))
-        );
-        for (const r of childResults) {
-          if (r.status === 'fulfilled') urls.push(...r.value);
-        }
-      } else {
-        urls = extractLocs(xml);
-      }
-
+      urls = await resolveAllUrls(xml);
       if (urls.length > 0) break;
     } catch {
       continue;
     }
   }
 
-  // Deduplicate and sort
   urls = [...new Set(urls)].sort();
 
   console.log(`[Sitemap] Found ${urls.length} URLs for ${siteUrl}`);
   return res.status(200).json({ urls, count: urls.length });
+}
+
+async function resolveAllUrls(xml) {
+  if (xml.includes('<sitemapindex')) {
+    const childSitemapUrls = extractLocs(xml);
+    const allPageUrls = [];
+
+    const batchSize = 10;
+    for (let i = 0; i < childSitemapUrls.length; i += batchSize) {
+      const batch = childSitemapUrls.slice(i, i + batchSize);
+      const results = await Promise.allSettled(
+        batch.map(async (url) => {
+          try {
+            const resp = await fetch(url, {
+              headers: { 'User-Agent': 'SEAUTO-AuditBot/1.0' },
+              signal: AbortSignal.timeout(15000),
+            });
+            if (!resp.ok) return [];
+            const childXml = await resp.text();
+
+            if (childXml.includes('<sitemapindex')) {
+              return await resolveAllUrls(childXml);
+            }
+            return extractLocs(childXml);
+          } catch {
+            return [];
+          }
+        })
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled') allPageUrls.push(...r.value);
+      }
+    }
+    return allPageUrls;
+  }
+
+  return extractLocs(xml);
 }
 
 function extractLocs(xml) {
@@ -66,17 +90,7 @@ function extractLocs(xml) {
   let match;
   while ((match = regex.exec(xml)) !== null) {
     const url = match[1].trim();
-    if (url.startsWith('http')) locs.push(url);
+    if (url.startsWith('http') && !url.endsWith('.xml')) locs.push(url);
   }
   return locs;
-}
-
-async function fetchSitemapUrls(sitemapUrl) {
-  const resp = await fetch(sitemapUrl, {
-    headers: { 'User-Agent': 'SEAUTO-AuditBot/1.0' },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!resp.ok) return [];
-  const xml = await resp.text();
-  return extractLocs(xml);
 }

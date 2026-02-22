@@ -14,7 +14,7 @@
       "maxDuration": 60
     },
     "api/audit/sitemap.js": {
-      "maxDuration": 30
+      "maxDuration": 60
     },
     "api/advertising/generate.js": {
       "maxDuration": 60

@@ -75,5 +75,7 @@ export const API_ENDPOINTS = {
     blogAudits: `${API_BASE_URL}/api/db/blog-audits`,
     blogOpportunities: `${API_BASE_URL}/api/db/blog-opportunities`,
     blogSchedules: `${API_BASE_URL}/api/db/blog-schedules`,
+    buildResults: `${API_BASE_URL}/api/db/build-results`,
+    buildSuggestions: `${API_BASE_URL}/api/db/build-suggestions`,
   },
 };

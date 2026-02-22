@@ -17,6 +17,14 @@ interface RebuildResult {
   summary: string;
 }
 
+interface SavedBuild {
+  id?: string;
+  page_url: string;
+  build_type: string;
+  result: RebuildResult;
+  created_at: string;
+}
+
 const IMPROVEMENT_OPTIONS = [
   { id: 'seo', label: 'SEO Optimization', desc: 'Title tags, meta descriptions, headings, keywords' },
   { id: 'content', label: 'Content Quality', desc: 'Copy, readability, depth, engagement' },
@@ -36,14 +44,18 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
   const [sitemapUrls, setSitemapUrls] = useState<string[]>([]);
   const [loadingSitemap, setLoadingSitemap] = useState(true);
   const [urlInput, setUrlInput] = useState('');
-  const [selectedUrl, setSelectedUrl] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedImprovements, setSelectedImprovements] = useState<Set<string>>(new Set(['seo', 'content', 'conversion']));
 
   const [building, setBuilding] = useState(false);
   const [result, setResult] = useState<RebuildResult | null>(null);
+  const [resultPageUrl, setResultPageUrl] = useState('');
   const [showPreview, setShowPreview] = useState(false);
   const [activeTab, setActiveTab] = useState<'changes' | 'code'>('changes');
+
+  const [savedBuilds, setSavedBuilds] = useState<SavedBuild[]>([]);
+  const [loadingSaved, setLoadingSaved] = useState(true);
+  const [viewingSavedIdx, setViewingSavedIdx] = useState<number | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -59,18 +71,29 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
     })();
   }, [siteUrl]);
 
+  const loadSavedBuilds = useCallback(async () => {
+    setLoadingSaved(true);
+    try {
+      const resp = await fetch(`${API_ENDPOINTS.db.buildResults}?siteUrl=${encodeURIComponent(siteUrl)}&buildType=rebuild`);
+      const data = await resp.json();
+      setSavedBuilds(data.results || []);
+    } catch { /* ignore */ }
+    setLoadingSaved(false);
+  }, [siteUrl]);
+
+  useEffect(() => { loadSavedBuilds(); }, [loadSavedBuilds]);
+
   const filteredUrls = useMemo(() => {
-    if (!urlInput.trim()) return sitemapUrls.slice(0, 20);
+    if (!urlInput.trim()) return [];
     const q = urlInput.toLowerCase();
-    return sitemapUrls.filter(u => u.toLowerCase().includes(q)).slice(0, 20);
+    return sitemapUrls.filter(u => u.toLowerCase().includes(q)).slice(0, 15);
   }, [urlInput, sitemapUrls]);
 
   const isValidUrl = useMemo(() => {
-    return sitemapUrls.includes(selectedUrl);
-  }, [selectedUrl, sitemapUrls]);
+    return urlInput.trim() !== '' && sitemapUrls.includes(urlInput.trim());
+  }, [urlInput, sitemapUrls]);
 
   const selectUrl = useCallback((url: string) => {
-    setSelectedUrl(url);
     setUrlInput(url);
     setShowSuggestions(false);
   }, []);
@@ -85,9 +108,11 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
 
   const handleBuild = async () => {
     if (!isValidUrl) return;
+    const pageUrl = urlInput.trim();
     setBuilding(true);
     setResult(null);
     setShowPreview(false);
+    setResultPageUrl(pageUrl);
 
     try {
       const objectives = localStorage.getItem('site_objectives') || '';
@@ -96,7 +121,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
-          pageUrl: selectedUrl,
+          pageUrl,
           improvements: IMPROVEMENT_OPTIONS.filter(o => selectedImprovements.has(o.id)).map(o => o.label),
           objectives,
         }),
@@ -105,6 +130,13 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
       if (data.result) {
         setResult(data.result);
         setActiveTab('changes');
+
+        await fetch(API_ENDPOINTS.db.buildResults, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ siteUrl, pageUrl, buildType: 'rebuild', result: data.result }),
+        });
+        await loadSavedBuilds();
       }
     } catch (err) {
       console.error('Build failed:', err);
@@ -119,7 +151,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
-          keyword: `build:${selectedUrl}`,
+          keyword: `build:${resultPageUrl}`,
           taskId: `build-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           taskText: `${change.area}: ${change.improved}`,
           category: change.area,
@@ -131,37 +163,59 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
     }
   };
 
+  const viewSavedBuild = (idx: number) => {
+    if (viewingSavedIdx === idx) {
+      setViewingSavedIdx(null);
+      setResult(null);
+      return;
+    }
+    setViewingSavedIdx(idx);
+    const build = savedBuilds[idx];
+    setResult(build.result);
+    setResultPageUrl(build.page_url);
+    setActiveTab('changes');
+    setShowPreview(false);
+  };
+
+  const displayResult = result;
+
   return (
     <div className="space-y-6 max-w-5xl">
       <div>
         <h1 className="text-2xl font-semibold text-apple-text">Rebuild Page</h1>
         <p className="text-apple-sm text-apple-text-secondary mt-1">
-          Select a page from your sitemap and generate an improved version with AI-powered recommendations.
+          Enter a page URL from your sitemap and generate an improved version with AI-powered recommendations.
         </p>
       </div>
 
-      {/* URL Selection */}
+      {/* URL Input */}
       <div className="bg-white rounded-apple border border-apple-border p-5">
-        <h2 className="text-base font-semibold text-apple-text mb-3">Select Page</h2>
+        <h2 className="text-base font-semibold text-apple-text mb-3">Page URL</h2>
         <div className="relative">
           <input
             ref={inputRef}
             type="text"
             value={urlInput}
-            onChange={(e) => { setUrlInput(e.target.value); setSelectedUrl(''); setShowSuggestions(true); }}
-            onFocus={() => setShowSuggestions(true)}
+            onChange={(e) => { setUrlInput(e.target.value); setShowSuggestions(true); }}
+            onFocus={() => { if (urlInput.trim()) setShowSuggestions(true); }}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-            placeholder={loadingSitemap ? 'Loading sitemap...' : 'Search or select a page URL...'}
-            className="input text-apple-sm w-full"
+            placeholder={loadingSitemap ? 'Loading sitemap...' : `Enter a URL — ${sitemapUrls.length} pages in sitemap`}
+            className="input text-apple-sm w-full pr-10"
             disabled={loadingSitemap}
           />
-          {selectedUrl && isValidUrl && (
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <span className="absolute right-3 top-1/2 -translate-y-1/2">
+            {loadingSitemap ? (
+              <div className="w-4 h-4 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
+            ) : isValidUrl ? (
+              <svg className="w-5 h-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>
-            </span>
-          )}
+            ) : urlInput.trim() ? (
+              <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : null}
+          </span>
           {showSuggestions && filteredUrls.length > 0 && (
             <div className="absolute z-10 mt-1 w-full bg-white border border-apple-border rounded-apple-sm shadow-lg max-h-60 overflow-y-auto">
               {filteredUrls.map((url) => (
@@ -170,20 +224,22 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
                   onMouseDown={() => selectUrl(url)}
                   className="w-full text-left px-3 py-2 text-apple-sm hover:bg-apple-fill-secondary transition-colors truncate"
                 >
-                  {url.replace(/^https?:\/\/[^/]+/, '')}
+                  {url}
                 </button>
               ))}
+              {filteredUrls.length < sitemapUrls.filter(u => u.toLowerCase().includes(urlInput.toLowerCase())).length && (
+                <div className="px-3 py-2 text-apple-xs text-apple-text-tertiary border-t border-apple-divider">
+                  Keep typing to narrow results...
+                </div>
+              )}
             </div>
           )}
         </div>
-        {urlInput && !isValidUrl && !showSuggestions && (
-          <p className="text-apple-xs text-amber-600 mt-1.5">
-            This URL must be in your sitemap. Type to search from {sitemapUrls.length} pages.
+        {urlInput.trim() && !isValidUrl && !showSuggestions && !loadingSitemap && (
+          <p className="text-apple-xs text-red-500 mt-1.5">
+            This URL was not found in your sitemap ({sitemapUrls.length} pages). Check the URL and try again.
           </p>
         )}
-        <p className="text-apple-xs text-apple-text-tertiary mt-2">
-          {sitemapUrls.length} pages found in sitemap
-        </p>
       </div>
 
       {/* Improvement Checkboxes */}
@@ -228,7 +284,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
               'Build'
             )}
           </button>
-          {result && (
+          {displayResult && (
             <button
               onClick={() => setShowPreview(!showPreview)}
               className="px-5 py-2 rounded-apple-sm border border-apple-border text-apple-sm font-medium text-apple-text hover:bg-apple-fill-secondary transition-colors"
@@ -239,13 +295,16 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
         </div>
       </div>
 
-      {/* Results */}
-      {result && (
+      {/* Current Result */}
+      {displayResult && (
         <div className="bg-white rounded-apple border border-apple-border p-5">
           <div className="mb-4">
-            <h2 className="text-base font-semibold text-apple-text">{result.title}</h2>
-            <p className="text-apple-xs text-apple-text-tertiary italic mt-1">{result.metaDescription}</p>
-            <p className="text-apple-sm text-apple-text-secondary mt-2">{result.summary}</p>
+            <div className="flex items-center gap-2 mb-1">
+              <h2 className="text-base font-semibold text-apple-text">{displayResult.title}</h2>
+            </div>
+            <a href={resultPageUrl} target="_blank" rel="noopener noreferrer" className="text-apple-xs text-apple-blue hover:underline">{resultPageUrl}</a>
+            <p className="text-apple-xs text-apple-text-tertiary italic mt-1">{displayResult.metaDescription}</p>
+            <p className="text-apple-sm text-apple-text-secondary mt-2">{displayResult.summary}</p>
           </div>
 
           <div className="flex gap-2 border-b border-apple-divider pb-3 mb-4">
@@ -255,7 +314,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
                 activeTab === 'changes' ? 'bg-apple-blue text-white' : 'text-apple-text-secondary hover:bg-apple-fill-secondary'
               }`}
             >
-              Changes ({result.recommendations?.length || 0})
+              Changes ({displayResult.recommendations?.length || 0})
             </button>
             <button
               onClick={() => setActiveTab('code')}
@@ -269,7 +328,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
 
           {activeTab === 'changes' && (
             <div className="space-y-3">
-              {(result.recommendations || []).map((change, i) => (
+              {(displayResult.recommendations || []).map((change, i) => (
                 <div key={i} className="border border-apple-border rounded-apple-sm p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1">
@@ -298,19 +357,19 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
 
           {activeTab === 'code' && (
             <div className="space-y-4">
-              {result.htmlContent && (
+              {displayResult.htmlContent && (
                 <div>
                   <h3 className="text-sm font-semibold text-apple-text mb-2">HTML Content</h3>
                   <pre className="bg-gray-900 text-gray-100 rounded-apple-sm p-4 text-xs overflow-x-auto max-h-96 overflow-y-auto whitespace-pre-wrap">
-                    {result.htmlContent}
+                    {displayResult.htmlContent}
                   </pre>
                 </div>
               )}
-              {result.schemaMarkup && (
+              {displayResult.schemaMarkup && (
                 <div>
                   <h3 className="text-sm font-semibold text-apple-text mb-2">Schema Markup</h3>
                   <pre className="bg-gray-900 text-gray-100 rounded-apple-sm p-4 text-xs overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">
-                    {result.schemaMarkup}
+                    {displayResult.schemaMarkup}
                   </pre>
                 </div>
               )}
@@ -320,7 +379,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
       )}
 
       {/* Preview */}
-      {showPreview && result?.htmlContent && (
+      {showPreview && displayResult?.htmlContent && (
         <div className="bg-white rounded-apple border border-apple-border p-5">
           <h2 className="text-base font-semibold text-apple-text mb-3">Page Preview</h2>
           <div className="border border-apple-border rounded-apple-sm bg-white overflow-hidden">
@@ -331,15 +390,46 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
                 <div className="w-3 h-3 rounded-full bg-green-400" />
               </div>
               <div className="flex-1 bg-white rounded px-3 py-1 text-apple-xs text-apple-text-secondary truncate">
-                {selectedUrl}
+                {resultPageUrl}
               </div>
             </div>
             <iframe
-              srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${result.title}</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:24px;line-height:1.6;color:#1d1d1f;max-width:900px;margin:0 auto}h1{font-size:2em;margin-bottom:0.5em}h2{font-size:1.5em;margin-top:1.5em}h3{font-size:1.2em}p{margin:0.8em 0}img{max-width:100%;height:auto}a{color:#0071e3}ul,ol{padding-left:1.5em}blockquote{border-left:3px solid #0071e3;margin:1em 0;padding:0.5em 1em;background:#f5f5f7}</style></head><body>${result.htmlContent}</body></html>`}
+              srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${displayResult.title}</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:24px;line-height:1.6;color:#1d1d1f;max-width:900px;margin:0 auto}h1{font-size:2em;margin-bottom:0.5em}h2{font-size:1.5em;margin-top:1.5em}h3{font-size:1.2em}p{margin:0.8em 0}img{max-width:100%;height:auto}a{color:#0071e3}ul,ol{padding-left:1.5em}blockquote{border-left:3px solid #0071e3;margin:1em 0;padding:0.5em 1em;background:#f5f5f7}</style></head><body>${displayResult.htmlContent}</body></html>`}
               className="w-full h-[600px] border-0"
               title="Page Preview"
               sandbox="allow-same-origin"
             />
+          </div>
+        </div>
+      )}
+
+      {/* Previous Builds */}
+      {!loadingSaved && savedBuilds.length > 0 && (
+        <div className="bg-white rounded-apple border border-apple-border p-5">
+          <h2 className="text-base font-semibold text-apple-text mb-3">Previous Builds</h2>
+          <div className="space-y-2">
+            {savedBuilds.map((build, i) => (
+              <button
+                key={build.id || i}
+                onClick={() => viewSavedBuild(i)}
+                className={`w-full flex items-center gap-3 p-3 rounded-apple-sm border text-left transition-colors ${
+                  viewingSavedIdx === i ? 'border-apple-blue bg-apple-blue/5' : 'border-apple-border hover:bg-apple-fill-secondary'
+                }`}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-apple-sm font-medium text-apple-text truncate">{build.result?.title || build.page_url}</p>
+                  <a href={build.page_url} target="_blank" rel="noopener noreferrer" className="text-apple-xs text-apple-blue hover:underline truncate block" onClick={e => e.stopPropagation()}>
+                    {build.page_url}
+                  </a>
+                </div>
+                <span className="text-apple-xs text-apple-text-tertiary shrink-0">
+                  {new Date(build.created_at).toLocaleDateString()}
+                </span>
+                <span className="text-apple-xs text-apple-text-tertiary shrink-0">
+                  {build.result?.recommendations?.length || 0} changes
+                </span>
+              </button>
+            ))}
           </div>
         </div>
       )}

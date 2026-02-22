@@ -39,6 +39,7 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [buildingIdx, setBuildingIdx] = useState<number | null>(null);
   const [previewIdx, setPreviewIdx] = useState<number | null>(null);
+  const [dbRecordId, setDbRecordId] = useState<string | null>(null);
 
   const [showWizard, setShowWizard] = useState(false);
   const [wizardStep, setWizardStep] = useState<WizardStep>('purpose');
@@ -52,6 +53,34 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
   });
   const [wizardBuilding, setWizardBuilding] = useState(false);
   const [wizardResult, setWizardResult] = useState<BuiltPage | null>(null);
+
+  const [loadingSaved, setLoadingSaved] = useState(true);
+
+  const [savedWizardBuilds, setSavedWizardBuilds] = useState<Array<{ result: BuiltPage; created_at: string }>>([]);
+
+  const loadSavedData = useCallback(async () => {
+    setLoadingSaved(true);
+    try {
+      const [suggestResp, wizardResp] = await Promise.all([
+        fetch(`${API_ENDPOINTS.db.buildSuggestions}?siteUrl=${encodeURIComponent(siteUrl)}`),
+        fetch(`${API_ENDPOINTS.db.buildResults}?siteUrl=${encodeURIComponent(siteUrl)}&buildType=wizard`),
+      ]);
+      const suggestData = await suggestResp.json();
+      const wizardData = await wizardResp.json();
+
+      if (suggestData.suggestions && suggestData.suggestions.length > 0) {
+        setSuggestions(suggestData.suggestions);
+        setDbRecordId(suggestData.id || null);
+        setHasSuggestions(true);
+      }
+      if (wizardData.results) {
+        setSavedWizardBuilds(wizardData.results);
+      }
+    } catch { /* ignore */ }
+    setLoadingSaved(false);
+  }, [siteUrl]);
+
+  useEffect(() => { loadSavedData(); }, [loadSavedData]);
 
   const generateSuggestions = useCallback(async () => {
     setLoading(true);
@@ -70,8 +99,22 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
         }),
       });
       const data = await resp.json();
-      setSuggestions((data.suggestions || []).map((s: PageSuggestion) => ({ ...s, built: false, builtContent: null })));
+      const newSuggestions = (data.suggestions || []).map((s: PageSuggestion) => ({ ...s, built: false, builtContent: null }));
+      setSuggestions(newSuggestions);
       setHasSuggestions(true);
+
+      const saveResp = await fetch(API_ENDPOINTS.db.buildSuggestions, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl, suggestions: newSuggestions }),
+      });
+      const saveData = await saveResp.json();
+      if (saveData.id) setDbRecordId(saveData.id);
+      else {
+        const reloadResp = await fetch(`${API_ENDPOINTS.db.buildSuggestions}?siteUrl=${encodeURIComponent(siteUrl)}`);
+        const reloadData = await reloadResp.json();
+        if (reloadData.id) setDbRecordId(reloadData.id);
+      }
     } catch (err) {
       console.error('Failed to generate suggestions:', err);
     }
@@ -98,9 +141,29 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
       });
       const data = await resp.json();
       if (data.page) {
-        setSuggestions(prev => prev.map((s, i) =>
+        const updated = suggestions.map((s, i) =>
           i === idx ? { ...s, built: true, builtContent: data.page } : s
-        ));
+        );
+        setSuggestions(updated);
+
+        if (dbRecordId) {
+          await fetch(API_ENDPOINTS.db.buildSuggestions, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: dbRecordId, suggestionIndex: idx, built: true, builtContent: data.page }),
+          });
+        }
+
+        await fetch(API_ENDPOINTS.db.buildResults, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            siteUrl,
+            pageUrl: `/${suggestion.slug}`,
+            buildType: 'new',
+            result: data.page,
+          }),
+        });
       }
     } catch (err) {
       console.error('Build failed:', err);
@@ -126,7 +189,21 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
         }),
       });
       const data = await resp.json();
-      if (data.page) setWizardResult(data.page);
+      if (data.page) {
+        setWizardResult(data.page);
+
+        await fetch(API_ENDPOINTS.db.buildResults, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            siteUrl,
+            pageUrl: data.page.slug ? `/${data.page.slug}` : '',
+            buildType: 'wizard',
+            result: data.page,
+          }),
+        });
+        await loadSavedData();
+      }
     } catch (err) {
       console.error('Wizard build failed:', err);
     }
@@ -157,6 +234,15 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
     };
     return colors[t] || 'bg-gray-100 text-gray-600';
   };
+
+  if (loadingSaved) {
+    return (
+      <div className="flex items-center gap-2 py-12 text-apple-text-secondary text-apple-sm justify-center">
+        <div className="w-4 h-4 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
+        Loading saved data...
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -309,7 +395,7 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                       </svg>
-                      <span className="text-apple-sm font-medium">Page built successfully!</span>
+                      <span className="text-apple-sm font-medium">Page built and saved!</span>
                     </div>
                     <h3 className="text-base font-semibold text-apple-text">{wizardResult.title}</h3>
                     <p className="text-apple-xs text-apple-text-tertiary italic">{wizardResult.metaDescription}</p>
@@ -360,7 +446,7 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className={`text-apple-sm font-medium ${s.built ? 'text-green-600' : 'text-apple-text'}`}>
-                      {s.built && '✓ '}{s.title}
+                      {s.built && '\u2713 '}{s.title}
                     </span>
                   </div>
                   <div className="flex gap-1.5 mt-1 flex-wrap">
@@ -394,7 +480,7 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
                       <ul className="mt-1 space-y-0.5">
                         {s.outline.map((section, si) => (
                           <li key={si} className="text-apple-xs text-apple-text-secondary flex gap-1.5">
-                            <span className="shrink-0">•</span> {section}
+                            <span className="shrink-0">&bull;</span> {section}
                           </li>
                         ))}
                       </ul>
@@ -450,6 +536,28 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Saved Wizard Builds */}
+      {savedWizardBuilds.length > 0 && (
+        <div className="bg-white rounded-apple border border-apple-border p-5">
+          <h2 className="text-base font-semibold text-apple-text mb-3">Custom-Built Pages</h2>
+          <div className="space-y-2">
+            {savedWizardBuilds.map((build, i) => (
+              <div key={i} className="border border-apple-border rounded-apple-sm p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-apple-sm font-medium text-apple-text">{build.result?.title}</p>
+                    <p className="text-apple-xs text-apple-text-tertiary italic truncate">{build.result?.metaDescription}</p>
+                  </div>
+                  <span className="text-apple-xs text-apple-text-tertiary shrink-0">
+                    {new Date(build.created_at).toLocaleDateString()}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
