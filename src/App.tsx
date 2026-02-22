@@ -436,6 +436,7 @@ function App() {
                 auditType="seo"
                 title="SEO Audit"
                 description="Comprehensive technical SEO audit of every page in your sitemap. Analyzes title tags, meta descriptions, headings, internal links, images, and more."
+                isVisible={currentView === 'seo-audit'}
               />
             </div>
           )}
@@ -446,6 +447,7 @@ function App() {
                 auditType="content"
                 title="Content Audit"
                 description="Evaluates copy quality, conversion optimization, and marketing psychology across every page. Combines copywriting, CRO, and persuasion analysis."
+                isVisible={currentView === 'content-audit'}
               />
             </div>
           )}
@@ -456,6 +458,7 @@ function App() {
                 auditType="aeo"
                 title="AEO Audit"
                 description="AI Engine Optimization audit — analyzes how well your pages would be cited by AI assistants like ChatGPT, Perplexity, and Google AI Overviews."
+                isVisible={currentView === 'aeo-audit'}
               />
             </div>
           )}
@@ -466,6 +469,7 @@ function App() {
                 auditType="schema"
                 title="Schema Audit"
                 description="Validates existing schema markup and identifies missing structured data opportunities for rich snippets in Google search results."
+                isVisible={currentView === 'schema-audit'}
               />
             </div>
           )}
@@ -476,6 +480,7 @@ function App() {
                 auditType="compliance"
                 title="Compliance Audit"
                 description="Audits every page for GDPR, CCPA, ADA/WCAG accessibility, privacy policies, security headers, cookie consent, and all applicable legal and regulatory compliance requirements."
+                isVisible={currentView === 'compliance-audit'}
               />
             </div>
           )}
@@ -486,6 +491,7 @@ function App() {
                 auditType="speed"
                 title="Page Speed Audit"
                 description="Analyzes Core Web Vitals signals, render-blocking resources, image optimization, font loading, third-party scripts, resource hints, and overall page load performance."
+                isVisible={currentView === 'speed-audit'}
               />
             </div>
           )}

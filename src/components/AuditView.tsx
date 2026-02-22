@@ -36,6 +36,7 @@ interface AuditViewProps {
   auditType: AuditType;
   title: string;
   description: string;
+  isVisible?: boolean;
 }
 
 const AUDIT_TYPE_LABELS: Record<AuditType, string> = { seo: 'SEO', content: 'Content', aeo: 'AEO', schema: 'Schema', compliance: 'Compliance', speed: 'Page Speed' };
@@ -65,7 +66,7 @@ const BATCH_SIZE = 5;
 // Unique key for a rec so we can track completion
 function recKey(pageUrl: string, idx: number) { return `${pageUrl}::${idx}`; }
 
-export default function AuditView({ siteUrl, auditType, title, description }: AuditViewProps) {
+export default function AuditView({ siteUrl, auditType, title, description, isVisible }: AuditViewProps) {
   const [mode, setMode] = useState<AuditMode | null>(null);
   const [pageUrlInput, setPageUrlInput] = useState('');
   const [keywordSearch, setKeywordSearch] = useState('');
@@ -105,8 +106,9 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
   const [selectedForTasklist, setSelectedForTasklist] = useState<Set<string>>(new Set());
   const [addingToTasklist, setAddingToTasklist] = useState(false);
 
-  // Load saved results
-  useEffect(() => {
+  const prevVisibleRef = useRef(isVisible);
+
+  const loadResults = useCallback(() => {
     if (!siteUrl) return;
     setLoadingResults(true);
     fetch(`${API_ENDPOINTS.db.pageAudits}?siteUrl=${encodeURIComponent(siteUrl)}&auditType=${auditType}`)
@@ -122,8 +124,7 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
       .finally(() => setLoadingResults(false));
   }, [siteUrl, auditType]);
 
-  // Load all task statuses for this audit type
-  useEffect(() => {
+  const loadTaskStatuses = useCallback(() => {
     if (!siteUrl) return;
     fetch(`${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(`audit:${auditType}`)}`)
       .then((r) => r.ok ? r.json() : null)
@@ -144,6 +145,21 @@ export default function AuditView({ siteUrl, auditType, title, description }: Au
       })
       .catch(() => {});
   }, [siteUrl, auditType]);
+
+  // Load saved results on mount
+  useEffect(() => { loadResults(); }, [loadResults]);
+
+  // Load task statuses on mount
+  useEffect(() => { loadTaskStatuses(); }, [loadTaskStatuses]);
+
+  // Reload when view becomes visible (e.g. after running audit from main Audit tab)
+  useEffect(() => {
+    if (isVisible && !prevVisibleRef.current && !isRunning) {
+      loadResults();
+      loadTaskStatuses();
+    }
+    prevVisibleRef.current = isVisible;
+  }, [isVisible, isRunning, loadResults, loadTaskStatuses]);
 
   useEffect(() => {
     if (!siteUrl) return;
