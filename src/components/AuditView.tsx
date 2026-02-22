@@ -15,11 +15,20 @@ interface Recommendation {
   impact: string;
 }
 
+interface ComplianceStandard {
+  id: string;
+  name: string;
+  category: string;
+  status: 'pass' | 'fail';
+  findings: string;
+}
+
 interface PageResult {
   page_url: string;
   score: number;
   summary: string;
   strengths: string[];
+  standards?: ComplianceStandard[];
   recommendations: Recommendation[];
   audited_at: string;
   error?: string;
@@ -115,7 +124,7 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data?.results) {
-          const mapped = data.results.map((r: any) => ({ ...r, strengths: Array.isArray(r.strengths) ? r.strengths : [] }));
+          const mapped = data.results.map((r: any) => ({ ...r, strengths: Array.isArray(r.strengths) ? r.strengths : [], standards: Array.isArray(r.standards) ? r.standards : undefined }));
           setResults(mapped);
           completedUrlsRef.current = new Set(mapped.map((r: PageResult) => r.page_url));
         }
@@ -255,6 +264,7 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
             score: r.score || 0,
             summary: r.summary || '',
             strengths: Array.isArray(r.strengths) ? r.strengths : [],
+            standards: Array.isArray(r.standards) ? r.standards : undefined,
             recommendations: (r.recommendations || []).map((rec: any) => ({ ...rec, howToFix: rec.howToFix || rec.how_to_fix || '' })),
             audited_at: new Date().toISOString(),
             error: r.error,
@@ -587,6 +597,93 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
                     ))}
                   </div>
 
+                  {/* Compliance Standards Grid */}
+                  {auditType === 'compliance' && (() => {
+                    const allStandards = new Map<string, { pass: number; fail: number; name: string; category: string; findings: string[] }>();
+                    for (const r of results) {
+                      for (const s of r.standards || []) {
+                        const existing = allStandards.get(s.id);
+                        if (existing) {
+                          if (s.status === 'pass') existing.pass++; else existing.fail++;
+                          if (s.findings && existing.findings.length < 3) existing.findings.push(s.findings);
+                        } else {
+                          allStandards.set(s.id, { pass: s.status === 'pass' ? 1 : 0, fail: s.status === 'fail' ? 1 : 0, name: s.name, category: s.category, findings: s.findings ? [s.findings] : [] });
+                        }
+                      }
+                    }
+                    if (allStandards.size === 0) return null;
+
+                    const categories = ['Accessibility', 'Privacy / Cookie', 'Security / Technical'];
+                    const grouped = new Map<string, Array<{ id: string; name: string; pass: number; fail: number; findings: string[] }>>();
+                    for (const cat of categories) grouped.set(cat, []);
+                    for (const [id, data] of allStandards) {
+                      const cat = categories.find((c) => c === data.category) || 'Security / Technical';
+                      grouped.get(cat)!.push({ id, name: data.name, pass: data.pass, fail: data.fail, findings: data.findings });
+                    }
+
+                    const totalPass = [...allStandards.values()].reduce((s, d) => s + (d.fail === 0 ? 1 : 0), 0);
+                    const totalStandards = allStandards.size;
+
+                    return (
+                      <div className="rounded-apple border border-apple-divider bg-white overflow-hidden">
+                        <div className="px-4 py-3 border-b border-apple-divider bg-apple-fill-secondary/50 flex items-center justify-between">
+                          <span className="text-apple-xs font-semibold text-apple-text-secondary uppercase tracking-wider">Compliance Standards</span>
+                          <span className={`text-apple-sm font-bold ${totalPass === totalStandards ? 'text-green-600' : 'text-amber-600'}`}>{totalPass}/{totalStandards} Passing</span>
+                        </div>
+                        <div className="divide-y divide-apple-divider">
+                          {categories.map((cat) => {
+                            const items = grouped.get(cat) || [];
+                            if (items.length === 0) return null;
+                            return (
+                              <div key={cat}>
+                                <div className="px-4 py-2 bg-gray-50/50">
+                                  <span className="text-apple-xs font-semibold text-apple-text-tertiary uppercase tracking-wider">{cat}</span>
+                                </div>
+                                <div className="divide-y divide-apple-divider/50">
+                                  {items.map((std) => {
+                                    const allPass = std.fail === 0;
+                                    const stdKey = `std:${std.id}`;
+                                    const isExp = expandedRecs.has(stdKey);
+                                    return (
+                                      <button key={std.id} onClick={() => toggleRecExpanded(stdKey)} className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-apple-fill-secondary/30 transition-colors">
+                                        <span className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${allPass ? 'bg-green-100' : 'bg-red-100'}`}>
+                                          {allPass ? (
+                                            <svg className="w-3.5 h-3.5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                          ) : (
+                                            <svg className="w-3.5 h-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                          )}
+                                        </span>
+                                        <div className="flex-1 min-w-0">
+                                          <span className="text-apple-sm font-medium text-apple-text">{std.name}</span>
+                                          {results.length > 1 && (
+                                            <span className="text-apple-xs text-apple-text-tertiary ml-2">
+                                              {std.pass} pass / {std.fail} fail
+                                            </span>
+                                          )}
+                                          {isExp && std.findings.length > 0 && (
+                                            <div className="mt-2 space-y-1">
+                                              {std.findings.map((f, i) => (
+                                                <p key={i} className="text-apple-xs text-apple-text-secondary">{f}</p>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                        <span className={`shrink-0 px-2 py-0.5 rounded-apple-pill text-[10px] font-bold uppercase ${allPass ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                          {allPass ? 'PASS' : 'FAIL'}
+                                        </span>
+                                        <svg className={`w-3.5 h-3.5 text-apple-text-tertiary transition-transform shrink-0 ${isExp ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* Top issues — expandable in place */}
                   {topIssues.length > 0 && (
                     <div className="rounded-apple border border-apple-divider bg-white overflow-hidden">
@@ -703,6 +800,37 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
                       {isExp && (
                         <div className="px-4 pb-4 border-t border-apple-divider/50 bg-apple-fill-secondary/20">
                           {result.summary && <div className={`rounded-apple-sm border p-3 mt-3 mb-3 ${getScoreBg(result.score)}`}><p className="text-apple-sm text-apple-text">{result.summary}</p></div>}
+                          {auditType === 'compliance' && result.standards && result.standards.length > 0 && (
+                            <div className="rounded-apple-sm border border-apple-divider bg-white overflow-hidden mb-3">
+                              <div className="px-3 py-2 bg-gray-50/50 border-b border-apple-divider">
+                                <span className="text-apple-xs font-semibold text-apple-text-secondary uppercase tracking-wider">Standards</span>
+                                <span className={`text-apple-xs font-bold ml-2 ${result.standards.filter((s) => s.status === 'pass').length === result.standards.length ? 'text-green-600' : 'text-amber-600'}`}>
+                                  {result.standards.filter((s) => s.status === 'pass').length}/{result.standards.length} Passing
+                                </span>
+                              </div>
+                              <div className="divide-y divide-apple-divider/50">
+                                {result.standards.map((std) => {
+                                  const stdKey = `page-std:${result.page_url}:${std.id}`;
+                                  const isStdExp = expandedRecs.has(stdKey);
+                                  return (
+                                    <button key={std.id} onClick={() => toggleRecExpanded(stdKey)} className="w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-apple-fill-secondary/30 transition-colors">
+                                      <span className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${std.status === 'pass' ? 'bg-green-100' : 'bg-red-100'}`}>
+                                        {std.status === 'pass' ? (
+                                          <svg className="w-3 h-3 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                        ) : (
+                                          <svg className="w-3 h-3 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                        )}
+                                      </span>
+                                      <span className="text-apple-xs font-medium text-apple-text flex-1 min-w-0">{std.name}</span>
+                                      <span className={`shrink-0 px-1.5 py-0.5 rounded-apple-pill text-[9px] font-bold uppercase ${std.status === 'pass' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {std.status}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                           {result.strengths?.length > 0 && (
                             <div className="rounded-apple-sm border border-green-200 bg-green-50/40 p-3 mb-3">
                               <p className="text-apple-xs font-semibold text-green-800 mb-1">Doing Well</p>

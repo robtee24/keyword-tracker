@@ -91,76 +91,65 @@ RICH SNIPPET OPPORTUNITIES:
 
 SCORING: Rate 0-100 based on schema completeness and correctness.`,
 
-  compliance: `You are an expert web compliance auditor specializing in privacy law, accessibility standards, and regulatory requirements. Analyze this page for ALL applicable compliance frameworks.
+  compliance: `You are an expert web compliance auditor. You MUST evaluate the page against EXACTLY these 12 standards and give each one a PASS or FAIL verdict.
 
-EVALUATE PRIVACY & DATA PROTECTION:
-- GDPR (EU General Data Protection Regulation):
-  - Cookie consent banner present and functional (opt-in before tracking)
-  - Privacy policy linked and accessible from every page
-  - Right to erasure / data deletion mechanism
-  - Data processing disclosure (what data is collected, why, how long stored)
-  - Third-party data sharing disclosure
-  - Lawful basis for processing stated
-  - DPO (Data Protection Officer) contact info if required
-  - Cross-border data transfer disclosures (EU to non-EU)
-- CCPA / CPRA (California Consumer Privacy Act):
-  - "Do Not Sell or Share My Personal Information" link present
-  - Privacy policy includes CCPA-required disclosures
-  - Categories of personal information collected listed
-  - Right to know, delete, and opt-out mechanisms
-  - Financial incentive disclosures (if applicable)
-  - Authorized agent request process
-- Other US State Privacy Laws:
-  - Virginia VCDPA, Colorado CPA, Connecticut CTDPA, Utah UCPA, Texas TDPSA, Oregon OCPA compliance signals
-  - Universal opt-out mechanism support (Global Privacy Control)
-- PIPEDA (Canada), LGPD (Brazil), POPIA (South Africa) signals
-- ePrivacy Directive (EU cookie law) compliance
+═══ ACCESSIBILITY (check HTML structure) ═══
 
-EVALUATE ACCESSIBILITY (ADA / WCAG):
-- ADA (Americans with Disabilities Act) / Section 508 compliance:
-  - WCAG 2.1 Level AA conformance signals
-  - Alt text on all images (present, descriptive, not redundant)
-  - Color contrast ratios (text vs background meets 4.5:1 minimum)
-  - Keyboard navigation (can all interactive elements be reached via Tab?)
-  - Form labels and error messages (associated with inputs, descriptive)
-  - ARIA landmarks and roles (proper use of nav, main, banner, etc.)
-  - Skip navigation link present
-  - Focus indicators visible on interactive elements
-  - Video captions / audio descriptions (if media present)
-  - Readable font sizes (minimum 16px body text)
-  - Touch target sizes (minimum 44x44px for mobile)
-  - Page language declared in HTML lang attribute
-  - Heading hierarchy logical (no skipped levels)
-  - Link text descriptive (no "click here" or "read more" without context)
-  - Tables have proper headers and scope
-  - No content that flashes more than 3 times per second
+1. WCAG 2.0/2.1/2.2 (Level A & AA)
+   Check: lang attribute on <html>, alt text on every <img>, heading hierarchy (no skipped levels), ARIA landmarks (nav, main, banner, contentinfo), skip-navigation link, form inputs have associated <label> or aria-label, link text is descriptive (no bare "click here"), tables have <th> with scope, no auto-playing media, focus-visible CSS not suppressed, color contrast indicators (inline style analysis), touch targets ≥ 44px, text resizable (no fixed px on body font).
+   PASS = zero or only minor warnings.
+   FAIL = any missing alt text, missing lang, skipped heading levels, missing form labels, or missing ARIA landmarks.
 
-EVALUATE LEGAL COMPLIANCE:
-- Terms of Service / Terms of Use linked
-- Cookie policy (separate from privacy policy, detailing cookie types)
-- Copyright notice present and current year
-- DMCA notice / takedown procedure (if user-generated content)
-- CAN-SPAM compliance (if email signup exists: unsubscribe mechanism, physical address)
-- FTC disclosure requirements (affiliate links, sponsored content, endorsements clearly labeled)
-- COPPA (Children's Online Privacy Protection Act) — age gate if content targets minors
-- PCI DSS signals (if payment processing: HTTPS, no card data in URLs)
+2. Section 508
+   Check: all WCAG Level A & AA criteria above PLUS multimedia alternatives (captions/transcripts for video/audio elements), no CAPTCHA without accessible alternative, no content that flashes > 3 times/second.
+   PASS = meets WCAG AA + multimedia requirements.
+   FAIL = any WCAG AA failure OR missing multimedia alternatives.
 
-EVALUATE SECURITY COMPLIANCE:
-- HTTPS enforced (no mixed content)
-- Security headers present (Content-Security-Policy, X-Frame-Options, X-Content-Type-Options, Strict-Transport-Security, Referrer-Policy, Permissions-Policy)
-- No inline scripts without nonces (CSP violations)
-- Third-party scripts inventory (how many, from where, privacy implications)
-- Form submissions over HTTPS
-- No sensitive data exposed in page source or URLs
+═══ PRIVACY / COOKIE (check page content & scripts) ═══
 
-EVALUATE INDUSTRY-SPECIFIC (if applicable):
-- HIPAA signals (health-related content: PHI handling, BAA mentions)
-- SOX compliance signals (financial data handling)
-- FERPA signals (educational records)
-- GLBA signals (financial services)
-- EU Digital Services Act signals
+3. GDPR (General Data Protection Regulation)
+   Check: cookie consent banner/dialog present in HTML (look for common consent manager patterns: OneTrust, Cookiebot, CookieYes, Osano, custom consent banners with accept/reject buttons), cookies/tracking scripts NOT firing before user consent (scripts deferred behind consent logic), privacy policy link accessible from the page, data processing disclosures.
+   PASS = consent mechanism found AND tracking appears gated behind consent AND privacy policy linked.
+   FAIL = no consent banner, OR tracking scripts fire unconditionally, OR no privacy policy link.
 
-SCORING: Rate 0-100 based on overall compliance posture. Score severely for missing cookie consent, no privacy policy, or critical accessibility failures. A score of 100 means fully compliant across all detected frameworks.`,
+4. ePrivacy Directive
+   Check: prior consent required before ANY cookie is set (look for analytics/marketing scripts loading without consent gate), cookie policy page linked (separate from privacy policy), clear cookie categories disclosed.
+   PASS = cookies appear gated behind consent, cookie policy linked.
+   FAIL = scripts load cookies before consent OR no cookie policy.
+
+5. CCPA (California Consumer Privacy Act)
+   Check: "Do Not Sell or Share My Personal Information" link present on page (or in footer), privacy policy link present, opt-out mechanism detectable.
+   PASS = "Do Not Sell" link found AND privacy policy linked.
+   FAIL = missing "Do Not Sell" link OR no privacy policy.
+
+6. CPRA (California Privacy Rights Act)
+   Check: Global Privacy Control (GPC) support signal (Sec-GPC header respect or documented GPC support), "Limit Use of My Sensitive Personal Information" link or equivalent opt-out, updated privacy policy reflecting CPRA rights.
+   PASS = GPC support indicated AND opt-out link present.
+   FAIL = no GPC support OR no opt-out mechanism.
+
+═══ SECURITY / TECHNICAL (check HTTP headers & HTML) ═══
+
+7. TLS (Transport Layer Security)
+   Check: page served over HTTPS (from the URL), no mixed content (HTTP resources loaded on HTTPS page — check src/href attributes for http:// URLs), valid certificate (page loaded successfully over HTTPS).
+   PASS = HTTPS enforced, no mixed content detected.
+   FAIL = HTTP resources found on page OR page not served over HTTPS.
+
+8. HSTS (HTTP Strict-Transport-Security)
+   Check: Strict-Transport-Security response header present. Look for max-age value ≥ 31536000 (1 year). Check for includeSubDomains and preload directives.
+   PASS = HSTS header present with max-age ≥ 31536000.
+   FAIL = HSTS header missing OR max-age too low.
+
+9. CSP (Content-Security-Policy)
+   Check: Content-Security-Policy response header present. Evaluate directives: default-src, script-src, style-src, img-src, connect-src, frame-ancestors. Check for unsafe-inline and unsafe-eval in script-src (security weakness). Check for nonce-based or hash-based script allowlisting.
+   PASS = CSP header present with meaningful directives (not just default-src *).
+   FAIL = no CSP header OR CSP is effectively permissive (default-src * or script-src 'unsafe-inline' 'unsafe-eval').
+
+10. PCI DSS (public-facing technical controls)
+    Check: HTTPS enforced on all pages with forms, no credit card fields in URL parameters, no card data visible in page source, payment forms use iframes/tokenization (Stripe, Braintree, etc.), no inline JavaScript handling card numbers. If no payment forms exist, this standard is N/A (PASS).
+    PASS = HTTPS on forms, card data properly isolated, OR no payment processing present.
+    FAIL = payment forms without HTTPS, card data in URLs, or raw card handling in page scripts.
+
+SCORING: Rate 0-100. Each FAIL on standards 1-10 deducts 10 points from 100. Standards marked N/A count as PASS.`,
 
   speed: `You are an expert web performance engineer specializing in Core Web Vitals, page load optimization, and frontend performance. Analyze this page's HTML for every performance issue you can detect.
 
@@ -308,6 +297,7 @@ export default async function handler(req, res) {
       score: auditResult.score,
       recommendations: auditResult.recommendations,
       strengths: auditResult.strengths,
+      standards: auditResult.standards || null,
       summary: auditResult.summary || '',
       audited_at: new Date().toISOString(),
     };
@@ -339,6 +329,7 @@ export default async function handler(req, res) {
     score: auditResult.score,
     summary: auditResult.summary,
     strengths: auditResult.strengths,
+    standards: auditResult.standards || null,
     recommendations: auditResult.recommendations,
   });
 }
@@ -368,6 +359,7 @@ async function fetchPageContent(url) {
   const schemaMarkup = extractSchemaMarkup(html);
 
   const perfData = extractPerformanceData(html);
+  const complianceData = extractComplianceData(html, url, resp.headers);
 
   return {
     url,
@@ -384,6 +376,7 @@ async function fetchPageContent(url) {
     schemaMarkup,
     htmlLength: html.length,
     perfData,
+    complianceData,
   };
 }
 
@@ -418,21 +411,32 @@ Images with dimensions: ${content.perfData.imagesWithDimensions}/${content.image
 Web fonts: ${content.perfData.webFontCount}
 Font display strategy: ${content.perfData.fontDisplay || 'not specified'}
 Viewport meta: ${content.perfData.hasViewport ? 'yes' : 'no'}
-DOCTYPE: ${content.perfData.hasDoctype ? 'yes' : 'no'}` : ''}`;
+DOCTYPE: ${content.perfData.hasDoctype ? 'yes' : 'no'}` : ''}
+${content.complianceData ? `
+COMPLIANCE DATA:
+Protocol: ${content.complianceData.protocol}
+HSTS Header: ${content.complianceData.hstsHeader || 'NOT PRESENT'}
+CSP Header: ${content.complianceData.cspHeader || 'NOT PRESENT'}
+X-Frame-Options: ${content.complianceData.xFrameOptions || 'NOT PRESENT'}
+X-Content-Type-Options: ${content.complianceData.xContentTypeOptions || 'NOT PRESENT'}
+Referrer-Policy: ${content.complianceData.referrerPolicy || 'NOT PRESENT'}
+Permissions-Policy: ${content.complianceData.permissionsPolicy || 'NOT PRESENT'}
+Mixed Content: ${content.complianceData.mixedContentUrls.length > 0 ? content.complianceData.mixedContentUrls.join(', ') : 'none detected'}
+HTML lang attribute: ${content.complianceData.htmlLang || 'NOT SET'}
+Skip navigation link: ${content.complianceData.hasSkipNav ? 'yes' : 'no'}
+ARIA landmarks: ${content.complianceData.ariaLandmarks.join(', ') || 'none'}
+Form labels: ${content.complianceData.formsWithoutLabels} form inputs without labels out of ${content.complianceData.totalFormInputs}
+Cookie consent signals: ${content.complianceData.consentSignals.join(', ') || 'none detected'}
+Privacy policy link: ${content.complianceData.hasPrivacyPolicy ? 'yes' : 'no'}
+Do Not Sell link: ${content.complianceData.hasDoNotSell ? 'yes' : 'no'}
+Cookie policy link: ${content.complianceData.hasCookiePolicy ? 'yes' : 'no'}
+GPC support signals: ${content.complianceData.gpcSignals.join(', ') || 'none detected'}
+Payment forms: ${content.complianceData.hasPaymentForms ? 'yes' : 'no'}
+Payment iframes: ${content.complianceData.paymentIframes.join(', ') || 'none'}` : ''}`;
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: `${AUDIT_PROMPTS[auditType]}
+  const isCompliance = auditType === 'compliance';
 
+  const standardResponseFormat = `
 Respond with ONLY valid JSON in this format:
 {
   "score": <number 0-100>,
@@ -448,8 +452,42 @@ Respond with ONLY valid JSON in this format:
       "impact": "<expected improvement>"
     }
   ]
+}`;
+
+  const complianceResponseFormat = `
+Respond with ONLY valid JSON in this format:
+{
+  "score": <number 0-100>,
+  "summary": "<2-3 sentence overview of the page's compliance status>",
+  "standards": [
+    {
+      "id": "<standard-id>",
+      "name": "<full standard name>",
+      "category": "Accessibility" | "Privacy / Cookie" | "Security / Technical",
+      "status": "pass" | "fail",
+      "findings": "<1-3 sentence explanation of what was found — cite specific elements, headers, or code>"
+    }
+  ],
+  "strengths": ["<what the page does well — 3-5 bullet points>"],
+  "recommendations": [
+    {
+      "priority": "high" | "medium" | "low",
+      "category": "<short category name>",
+      "issue": "<describe the EXACT problem found — reference the specific element, text, or code>",
+      "recommendation": "<provide the EXACT fix — include specific text to change, code to add, or precise action to take>",
+      "howToFix": "<step-by-step implementation instructions>",
+      "impact": "<expected improvement>"
+    }
+  ]
 }
 
+You MUST include ALL 10 standards in the "standards" array using these exact IDs:
+wcag, section508, gdpr, eprivacy, ccpa, cpra, tls, hsts, csp, pci_dss
+
+Each standard MUST have status "pass" or "fail" based on your analysis.
+The "findings" field must cite specific evidence from the page (e.g., "3 <img> tags missing alt attribute", "No Strict-Transport-Security header found", "OneTrust consent banner detected").`;
+
+  const sharedRules = `
 CRITICAL RULES FOR RECOMMENDATIONS:
 - Every recommendation MUST reference a specific element on the page (e.g., "The title tag is 23 characters" not "Title could be improved")
 - Every recommendation MUST provide an exact fix (e.g., "Change title to: 'Best Vacation Rental Calculator | BNBCalc'" not "Add keywords to title")
@@ -459,12 +497,27 @@ CRITICAL RULES FOR RECOMMENDATIONS:
 - If a page element is fine, do NOT include it as a recommendation
 
 Return 5-15 recommendations sorted by priority (high first).
-Return 3-5 strengths — things the page already does correctly.`,
+Return 3-5 strengths — things the page already does correctly.`;
+
+  const responseFormat = isCompliance ? complianceResponseFormat : standardResponseFormat;
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `${AUDIT_PROMPTS[auditType]}\n${responseFormat}\n${sharedRules}`,
         },
         { role: 'user', content: pageContext },
       ],
       temperature: 0.2,
-      max_tokens: 3000,
+      max_tokens: isCompliance ? 4000 : 3000,
     }),
   });
 
@@ -483,7 +536,7 @@ Return 3-5 strengths — things the page already does correctly.`,
 
   try {
     const parsed = JSON.parse(cleaned);
-    return {
+    const result = {
       score: typeof parsed.score === 'number' ? Math.min(100, Math.max(0, parsed.score)) : 0,
       summary: parsed.summary || '',
       strengths: Array.isArray(parsed.strengths) ? parsed.strengths : [],
@@ -492,6 +545,10 @@ Return 3-5 strengths — things the page already does correctly.`,
         howToFix: r.howToFix || r.how_to_fix || '',
       })) : [],
     };
+    if (Array.isArray(parsed.standards)) {
+      result.standards = parsed.standards;
+    }
+    return result;
   } catch {
     console.error('[Audit] Failed to parse AI response:', cleaned.substring(0, 300));
     return { score: 0, summary: 'Failed to parse audit results', strengths: [], recommendations: [] };
@@ -635,6 +692,107 @@ function extractPerformanceData(html) {
     fontDisplay: fontDisplayMatch ? fontDisplayMatch[1] : '',
     hasViewport: /<meta[^>]*name=["']viewport["']/i.test(html),
     hasDoctype: /^<!DOCTYPE/i.test(html.trim()),
+  };
+}
+
+function extractComplianceData(html, url, headers) {
+  const protocol = url.startsWith('https') ? 'HTTPS' : 'HTTP';
+  const hstsHeader = headers.get('strict-transport-security') || '';
+  const cspHeader = headers.get('content-security-policy') || '';
+  const xFrameOptions = headers.get('x-frame-options') || '';
+  const xContentTypeOptions = headers.get('x-content-type-options') || '';
+  const referrerPolicy = headers.get('referrer-policy') || '';
+  const permissionsPolicy = headers.get('permissions-policy') || '';
+
+  const mixedContentUrls = [];
+  if (protocol === 'HTTPS') {
+    const httpRefs = html.match(/(?:src|href|action)=["'](http:\/\/[^"']+)["']/gi) || [];
+    for (const ref of httpRefs.slice(0, 10)) {
+      const urlMatch = ref.match(/["'](http:\/\/[^"']+)["']/i);
+      if (urlMatch) mixedContentUrls.push(urlMatch[1]);
+    }
+  }
+
+  const htmlLangMatch = html.match(/<html[^>]*\slang=["']([^"']*)["']/i);
+  const htmlLang = htmlLangMatch ? htmlLangMatch[1] : '';
+
+  const hasSkipNav = /skip[- ]?(to[- ]?)?(main|content|nav)/i.test(html);
+
+  const ariaLandmarks = [];
+  const roles = ['banner', 'navigation', 'main', 'contentinfo', 'complementary', 'search', 'form'];
+  for (const role of roles) {
+    if (new RegExp(`role=["']${role}["']|<${role === 'navigation' ? 'nav' : role === 'banner' ? 'header' : role === 'contentinfo' ? 'footer' : role === 'main' ? 'main' : role === 'complementary' ? 'aside' : '___'}[\\s>]`, 'i').test(html)) {
+      ariaLandmarks.push(role);
+    }
+  }
+
+  const inputTags = html.match(/<input[^>]*>/gi) || [];
+  const selectTags = html.match(/<select[^>]*>/gi) || [];
+  const textareaTags = html.match(/<textarea[^>]*>/gi) || [];
+  const allFormElements = [...inputTags, ...selectTags, ...textareaTags];
+  const totalFormInputs = allFormElements.filter((el) => !/type=["'](hidden|submit|button|reset|image)["']/i.test(el)).length;
+  let formsWithoutLabels = 0;
+  for (const el of allFormElements) {
+    if (/type=["'](hidden|submit|button|reset|image)["']/i.test(el)) continue;
+    const hasAriaLabel = /aria-label(ledby)?=/i.test(el);
+    const idMatch = el.match(/\bid=["']([^"']*)["']/i);
+    const hasAssociatedLabel = idMatch ? new RegExp(`<label[^>]*for=["']${idMatch[1]}["']`, 'i').test(html) : false;
+    if (!hasAriaLabel && !hasAssociatedLabel) formsWithoutLabels++;
+  }
+
+  const consentSignals = [];
+  const consentPatterns = [
+    { pattern: /onetrust|optanon/i, name: 'OneTrust' },
+    { pattern: /cookiebot/i, name: 'Cookiebot' },
+    { pattern: /cookieyes|cookie-yes/i, name: 'CookieYes' },
+    { pattern: /osano/i, name: 'Osano' },
+    { pattern: /cookie[- ]?consent|consent[- ]?banner|accept[- ]?cookies|cookie[- ]?notice/i, name: 'Cookie Consent Banner' },
+    { pattern: /gdpr|cookie[- ]?policy/i, name: 'GDPR/Cookie reference' },
+  ];
+  for (const cp of consentPatterns) {
+    if (cp.pattern.test(html)) consentSignals.push(cp.name);
+  }
+
+  const hasPrivacyPolicy = /privacy[- ]?policy|privacy[- ]?notice/i.test(html);
+  const hasDoNotSell = /do[- ]?not[- ]?sell|do[- ]?not[- ]?share/i.test(html);
+  const hasCookiePolicy = /cookie[- ]?policy|cookie[- ]?notice/i.test(html);
+
+  const gpcSignals = [];
+  if (/global[- ]?privacy[- ]?control|gpc/i.test(html)) gpcSignals.push('GPC reference in page');
+  if (/sec-gpc/i.test(html)) gpcSignals.push('Sec-GPC reference');
+  if (/limit[- ]?use.*sensitive/i.test(html)) gpcSignals.push('Limit Use link');
+
+  const hasPaymentForms = /credit[- ]?card|card[- ]?number|payment|checkout|billing/i.test(html) && /<form/i.test(html);
+  const paymentIframes = [];
+  const iframeTags = html.match(/<iframe[^>]*>/gi) || [];
+  for (const iframe of iframeTags) {
+    if (/stripe|braintree|paypal|square|adyen|checkout/i.test(iframe)) {
+      const srcMatch = iframe.match(/src=["']([^"']*)["']/i);
+      if (srcMatch) paymentIframes.push(srcMatch[1].substring(0, 80));
+    }
+  }
+
+  return {
+    protocol,
+    hstsHeader,
+    cspHeader: cspHeader.substring(0, 500),
+    xFrameOptions,
+    xContentTypeOptions,
+    referrerPolicy,
+    permissionsPolicy: permissionsPolicy.substring(0, 300),
+    mixedContentUrls,
+    htmlLang,
+    hasSkipNav,
+    ariaLandmarks,
+    totalFormInputs,
+    formsWithoutLabels,
+    consentSignals,
+    hasPrivacyPolicy,
+    hasDoNotSell,
+    hasCookiePolicy,
+    gpcSignals,
+    hasPaymentForms,
+    paymentIframes,
   };
 }
 
