@@ -161,6 +161,89 @@ EVALUATE INDUSTRY-SPECIFIC (if applicable):
 - EU Digital Services Act signals
 
 SCORING: Rate 0-100 based on overall compliance posture. Score severely for missing cookie consent, no privacy policy, or critical accessibility failures. A score of 100 means fully compliant across all detected frameworks.`,
+
+  speed: `You are an expert web performance engineer specializing in Core Web Vitals, page load optimization, and frontend performance. Analyze this page's HTML for every performance issue you can detect.
+
+EVALUATE CORE WEB VITALS SIGNALS:
+- LCP (Largest Contentful Paint) risks:
+  - Hero image optimization (format, dimensions, lazy vs eager loading)
+  - Above-the-fold content loading strategy
+  - Server response time indicators (large HTML = slow TTFB)
+  - Preload hints for critical resources
+  - Font loading strategy impact on LCP
+- INP (Interaction to Next Paint) risks:
+  - JavaScript bundle size indicators (number of scripts, inline scripts)
+  - Event handler patterns in HTML (onclick, onload, etc.)
+  - Third-party scripts blocking main thread
+  - Heavy DOM operations visible in markup
+- CLS (Cumulative Layout Shift) risks:
+  - Images without explicit width/height attributes
+  - Iframes without dimensions
+  - Dynamic content injection patterns
+  - Web fonts without font-display strategy
+  - Ads or embeds without reserved space
+
+EVALUATE RESOURCE LOADING:
+- Render-blocking resources:
+  - CSS files in <head> without media queries or preload
+  - JavaScript files in <head> without async or defer
+  - Number of synchronous scripts
+- Resource hints:
+  - preload for critical resources (fonts, hero image, critical CSS)
+  - preconnect for third-party origins
+  - prefetch for next-page resources
+  - dns-prefetch for external domains
+  - modulepreload for ES modules
+- Third-party scripts:
+  - Total count of external scripts
+  - Which domains they load from
+  - Analytics, ads, widgets, social embeds
+  - Impact on page load performance
+
+EVALUATE IMAGE OPTIMIZATION:
+- Image format (WebP/AVIF vs JPEG/PNG/GIF)
+- Lazy loading (loading="lazy" on below-fold images)
+- Eager loading on hero/LCP image (loading="eager" or no attribute)
+- Responsive images (srcset, sizes attributes)
+- Image dimensions specified (width/height attributes)
+- SVG usage for icons/logos
+- Background images in inline styles
+
+EVALUATE CSS & FONT PERFORMANCE:
+- Total number of CSS files
+- Inline critical CSS present?
+- Font loading strategy (font-display: swap/optional)
+- Number of web fonts loaded
+- Font preloading
+- CSS media queries for conditional loading
+- Print stylesheets separated
+
+EVALUATE JAVASCRIPT PERFORMANCE:
+- Total number of script tags
+- Scripts with async attribute
+- Scripts with defer attribute
+- Scripts without async/defer (render-blocking)
+- Inline script volume
+- Module scripts (type="module")
+- Third-party vs first-party scripts ratio
+
+EVALUATE HTML & DOM OPTIMIZATION:
+- DOM size (total element count estimated from HTML length)
+- DOM depth (nesting levels)
+- Unnecessary wrapper elements
+- HTML compression indicators
+- Viewport meta tag present
+- Character encoding declared
+- DOCTYPE present
+
+EVALUATE CACHING & DELIVERY:
+- CDN usage signals (asset URLs from CDN domains)
+- Service worker registration
+- Manifest file linked
+- HTTP/2 push hints
+- Cache-busting in asset URLs (hash-based filenames)
+
+SCORING: Rate 0-100 based on overall page speed optimization. Score severely for render-blocking resources without async/defer, images without dimensions, no resource hints, and excessive third-party scripts. A score of 80+ means the page follows modern performance best practices.`,
 };
 
 const AI_RESPONSE_FORMAT = `
@@ -312,7 +395,20 @@ ${content.bodyText || '(empty)'}
 IMAGES: ${content.imageCount} total, ${content.imagesWithoutAlt} without alt text
 INTERNAL LINKS: ${content.internalLinkCount}
 HTML SIZE: ${Math.round(content.htmlLength / 1024)}KB
-SCHEMA MARKUP: ${content.schemaMarkup || '(none found)'}`;
+SCHEMA MARKUP: ${content.schemaMarkup || '(none found)'}
+${content.perfData ? `
+PERFORMANCE DATA:
+Scripts: ${content.perfData.scriptCount} total (${content.perfData.asyncScripts} async, ${content.perfData.deferScripts} defer, ${content.perfData.blockingScripts} blocking)
+Stylesheets: ${content.perfData.stylesheetCount}
+Inline styles: ${content.perfData.inlineStyleCount}
+Resource hints: ${content.perfData.resourceHints.join(', ') || 'none'}
+Third-party domains: ${content.perfData.thirdPartyDomains.join(', ') || 'none'}
+Images with lazy loading: ${content.perfData.lazyImages}/${content.imageCount}
+Images with dimensions: ${content.perfData.imagesWithDimensions}/${content.imageCount}
+Web fonts: ${content.perfData.webFontCount}
+Font display strategy: ${content.perfData.fontDisplay || 'not specified'}
+Viewport meta: ${content.perfData.hasViewport ? 'yes' : 'no'}
+DOCTYPE: ${content.perfData.hasDoctype ? 'yes' : 'no'}` : ''}`;
 }
 
 async function runAudit(apiKey, pageContext, auditType) {
@@ -369,6 +465,7 @@ async function fetchPageContent(url) {
   });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const html = await resp.text();
+  const images = extractImages(html);
 
   return {
     url,
@@ -379,11 +476,12 @@ async function fetchPageContent(url) {
     ogDesc: extractMeta(html, 'og:description', 'property'),
     headings: extractHeadings(html),
     bodyText: extractBodyText(html).substring(0, 3000),
-    imageCount: extractImages(html).length,
-    imagesWithoutAlt: extractImages(html).filter((i) => !i.alt).length,
+    imageCount: images.length,
+    imagesWithoutAlt: images.filter((i) => !i.alt).length,
     internalLinkCount: extractInternalLinks(html, url).length,
     schemaMarkup: extractSchemaMarkup(html),
     htmlLength: html.length,
+    perfData: extractPerformanceData(html),
   };
 }
 
@@ -460,6 +558,59 @@ function extractSchemaMarkup(html) {
   let match;
   while ((match = regex.exec(html)) !== null) schemas.push(match[1].trim());
   return schemas.length > 0 ? schemas.join('\n---\n').substring(0, 2000) : '';
+}
+
+function extractPerformanceData(html) {
+  const scriptTags = html.match(/<script[^>]*>/gi) || [];
+  const asyncScripts = scriptTags.filter((s) => /\basync\b/i.test(s)).length;
+  const deferScripts = scriptTags.filter((s) => /\bdefer\b/i.test(s)).length;
+  const blockingScripts = scriptTags.filter((s) => /\bsrc=/i.test(s) && !/\basync\b/i.test(s) && !/\bdefer\b/i.test(s) && !/type=["']module["']/i.test(s)).length;
+
+  const stylesheetMatches = html.match(/<link[^>]*rel=["']stylesheet["'][^>]*>/gi) || [];
+  const inlineStyleMatches = html.match(/<style[^>]*>[\s\S]*?<\/style>/gi) || [];
+
+  const resourceHints = [];
+  const hintTypes = ['preload', 'preconnect', 'prefetch', 'dns-prefetch', 'modulepreload'];
+  for (const hint of hintTypes) {
+    const re = new RegExp(`<link[^>]*rel=["']${hint}["'][^>]*>`, 'gi');
+    const m = html.match(re);
+    if (m && m.length > 0) resourceHints.push(`${hint}(${m.length})`);
+  }
+
+  const thirdPartyDomains = new Set();
+  const srcRegex = /(?:src|href)=["'](https?:\/\/[^/"']+)/gi;
+  let srcMatch;
+  while ((srcMatch = srcRegex.exec(html)) !== null) {
+    try {
+      const domain = new URL(srcMatch[1]).hostname;
+      thirdPartyDomains.add(domain);
+    } catch { /* ignore */ }
+  }
+
+  const imgTags = html.match(/<img[^>]*>/gi) || [];
+  const lazyImages = imgTags.filter((img) => /loading=["']lazy["']/i.test(img)).length;
+  const imagesWithDimensions = imgTags.filter((img) => /\bwidth=/i.test(img) && /\bheight=/i.test(img)).length;
+
+  const fontFaceMatches = html.match(/@font-face/gi) || [];
+  const fontLinkMatches = html.match(/fonts\.googleapis\.com|fonts\.gstatic\.com|use\.typekit\.net/gi) || [];
+  const fontDisplayMatch = html.match(/font-display:\s*(swap|optional|fallback|block|auto)/i);
+
+  return {
+    scriptCount: scriptTags.length,
+    asyncScripts,
+    deferScripts,
+    blockingScripts,
+    stylesheetCount: stylesheetMatches.length,
+    inlineStyleCount: inlineStyleMatches.length,
+    resourceHints,
+    thirdPartyDomains: [...thirdPartyDomains].slice(0, 20),
+    lazyImages,
+    imagesWithDimensions,
+    webFontCount: fontFaceMatches.length + fontLinkMatches.length,
+    fontDisplay: fontDisplayMatch ? fontDisplayMatch[1] : '',
+    hasViewport: /<meta[^>]*name=["']viewport["']/i.test(html),
+    hasDoctype: /^<!DOCTYPE/i.test(html.trim()),
+  };
 }
 
 function stripTags(html) {

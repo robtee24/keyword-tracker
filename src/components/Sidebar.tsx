@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 
-export type View = 'projects' | 'objectives' | 'overview' | 'keywords' | 'lost-keywords' | 'audit' | 'seo-audit' | 'content-audit' | 'aeo-audit' | 'schema-audit' | 'compliance-audit' | 'advertising' | 'tasklist' | 'activity-log';
+export type View = 'projects' | 'objectives' | 'overview' | 'keywords' | 'lost-keywords' | 'audit' | 'seo-audit' | 'content-audit' | 'aeo-audit' | 'schema-audit' | 'compliance-audit' | 'speed-audit' | 'advertising' | 'tasklist' | 'activity-log';
 
 interface SidebarProps {
   currentView: View;
@@ -57,9 +57,10 @@ const auditSubItems: Array<{ id: View; label: string }> = [
   { id: 'aeo-audit', label: 'AEO' },
   { id: 'schema-audit', label: 'Schema' },
   { id: 'compliance-audit', label: 'Compliance' },
+  { id: 'speed-audit', label: 'Page Speed' },
 ];
 
-const AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit']);
+const AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit']);
 
 const bottomNavItems: Array<{ id: View; label: string; icon: ReactNode }> = [
   {

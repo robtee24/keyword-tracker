@@ -161,7 +161,7 @@ function App() {
       setVisitedAudits(new Set());
     } else {
       localStorage.setItem('kt_active_view', view);
-      if (['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit'].includes(view)) {
+      if (['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit'].includes(view)) {
         setVisitedAudits((prev) => new Set(prev).add(view));
       }
     }
@@ -254,6 +254,7 @@ function App() {
                         'aeo-audit': 'Audit › AEO',
                         'schema-audit': 'Audit › Schema',
                         'compliance-audit': 'Audit › Compliance',
+                        'speed-audit': 'Audit › Page Speed',
                         'advertising': 'Advertising',
                         'tasklist': 'Tasklist',
                       } as Record<string, string>)[currentView] || currentView}
@@ -475,6 +476,16 @@ function App() {
                 auditType="compliance"
                 title="Compliance Audit"
                 description="Audits every page for GDPR, CCPA, ADA/WCAG accessibility, privacy policies, security headers, cookie consent, and all applicable legal and regulatory compliance requirements."
+              />
+            </div>
+          )}
+          {activeProject && visitedAudits.has('speed-audit') && (
+            <div style={{ display: currentView === 'speed-audit' ? 'block' : 'none' }}>
+              <AuditView
+                siteUrl={activeProject.siteUrl}
+                auditType="speed"
+                title="Page Speed Audit"
+                description="Analyzes Core Web Vitals signals, render-blocking resources, image optimization, font loading, third-party scripts, resource hints, and overall page load performance."
               />
             </div>
           )}

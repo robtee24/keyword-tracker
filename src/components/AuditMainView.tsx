@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
 
-type AuditType = 'seo' | 'content' | 'aeo' | 'schema' | 'compliance';
+type AuditType = 'seo' | 'content' | 'aeo' | 'schema' | 'compliance' | 'speed';
 type AuditMode = 'page' | 'keyword' | 'group' | 'site';
 type ResultsTab = 'summary' | 'pages' | 'recommendations';
 
@@ -42,10 +42,11 @@ const ALL_AUDIT_TYPES: { id: AuditType; label: string; desc: string }[] = [
   { id: 'aeo', label: 'AEO', desc: 'AI search visibility, featured snippets, entity coverage' },
   { id: 'schema', label: 'Schema', desc: 'Structured data, rich snippets, schema.org markup' },
   { id: 'compliance', label: 'Compliance', desc: 'GDPR, CCPA, ADA/WCAG, security headers' },
+  { id: 'speed', label: 'Page Speed', desc: 'Core Web Vitals, resource loading, image optimization' },
 ];
 
 const AUDIT_TYPE_LABELS: Record<AuditType, string> = {
-  seo: 'SEO', content: 'Content', aeo: 'AEO', schema: 'Schema', compliance: 'Compliance',
+  seo: 'SEO', content: 'Content', aeo: 'AEO', schema: 'Schema', compliance: 'Compliance', speed: 'Page Speed',
 };
 
 const PRIORITY_COLORS = {
@@ -60,6 +61,7 @@ const AUDIT_TYPE_COLORS: Record<AuditType, string> = {
   aeo: 'bg-cyan-100 text-cyan-700',
   schema: 'bg-orange-100 text-orange-700',
   compliance: 'bg-emerald-100 text-emerald-700',
+  speed: 'bg-rose-100 text-rose-700',
 };
 
 function getScoreColor(s: number) { return s >= 80 ? 'text-green-600' : s >= 60 ? 'text-amber-600' : 'text-red-600'; }
@@ -80,7 +82,7 @@ function recKey(pageUrl: string, auditType: string, idx: number) { return `${aud
 
 export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
   // Audit type selection
-  const [selectedTypes, setSelectedTypes] = useState<Set<AuditType>>(new Set(['seo', 'content', 'aeo', 'schema', 'compliance']));
+  const [selectedTypes, setSelectedTypes] = useState<Set<AuditType>>(new Set(['seo', 'content', 'aeo', 'schema', 'compliance', 'speed']));
 
   // Mode selection
   const [mode, setMode] = useState<AuditMode | null>(null);
