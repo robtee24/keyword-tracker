@@ -11,6 +11,8 @@ import TasklistView from './components/RecommendationsView';
 import LostKeywordsView from './components/LostKeywordsView';
 import AuditView from './components/AuditView';
 import AuditMainView from './components/AuditMainView';
+import AdAuditMainView from './components/AdAuditMainView';
+import AdAuditView from './components/AdAuditView';
 import AdvertisingView from './components/AdvertisingView';
 import ActivityLogView from './components/ActivityLogView';
 import OAuthModal from './components/OAuthModal';
@@ -21,6 +23,62 @@ import type { DateRange, SearchConsoleSite } from './types';
 type AppState = 'loading' | 'unauthenticated' | 'authenticated';
 
 const PROJECTS_KEY = 'kt_projects';
+
+const SEO_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit']);
+const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure']);
+
+const BREADCRUMB_LABELS: Record<string, string> = {
+  'objectives': 'Objectives',
+  'overview': 'Organic Overview',
+  'keywords': 'Organic Overview › Keywords',
+  'lost-keywords': 'Organic Overview › Lost Keywords',
+  'audit': 'SEO Audit',
+  'seo-audit': 'SEO Audit › SEO',
+  'content-audit': 'SEO Audit › Content',
+  'aeo-audit': 'SEO Audit › AEO',
+  'schema-audit': 'SEO Audit › Schema',
+  'compliance-audit': 'SEO Audit › Compliance',
+  'speed-audit': 'SEO Audit › Page Speed',
+  'ad-audit': 'Ad Audit',
+  'ad-audit-google': 'Ad Audit › Google Ads',
+  'ad-audit-meta': 'Ad Audit › Meta Ads',
+  'ad-audit-linkedin': 'Ad Audit › LinkedIn Ads',
+  'ad-audit-reddit': 'Ad Audit › Reddit Ads',
+  'ad-audit-budget': 'Ad Audit › Budget & Spend',
+  'ad-audit-performance': 'Ad Audit › Performance',
+  'ad-audit-creative': 'Ad Audit › Creative & Copy',
+  'ad-audit-attribution': 'Ad Audit › Attribution',
+  'ad-audit-structure': 'Ad Audit › Account Structure',
+  'advertising': 'Advertising',
+  'tasklist': 'Tasklist',
+  'activity-log': 'Activity Log',
+};
+
+type AdAuditType = 'google' | 'meta' | 'linkedin' | 'reddit' | 'budget' | 'performance' | 'creative' | 'attribution' | 'structure';
+
+const AD_AUDIT_VIEW_MAP: Record<string, AdAuditType> = {
+  'ad-audit-google': 'google',
+  'ad-audit-meta': 'meta',
+  'ad-audit-linkedin': 'linkedin',
+  'ad-audit-reddit': 'reddit',
+  'ad-audit-budget': 'budget',
+  'ad-audit-performance': 'performance',
+  'ad-audit-creative': 'creative',
+  'ad-audit-attribution': 'attribution',
+  'ad-audit-structure': 'structure',
+};
+
+const AD_AUDIT_TITLES: Record<AdAuditType, { title: string; description: string }> = {
+  google: { title: 'Google Ads Audit', description: 'Analyzes wasted spend, Quality Score breakdowns, bid strategies, ad extensions, keyword cannibalization, and search term mining.' },
+  meta: { title: 'Meta Ads Audit', description: 'Detects creative fatigue, audience overlap, frequency cap issues, retargeting window optimization, and competitor creative analysis.' },
+  linkedin: { title: 'LinkedIn Ads Audit', description: 'Evaluates B2B campaign performance against LinkedIn benchmarks, audience quality, lead gen form friction, and budget efficiency.' },
+  reddit: { title: 'Reddit Ads Audit', description: 'Analyzes community targeting, subreddit performance, creative fit, and bid inefficiencies for Reddit advertising campaigns.' },
+  budget: { title: 'Budget & Spend Audit', description: 'Cross-channel budget optimization, wasted spend identification, budget scenario modeling, channel mix rebalancing, and ROAS forecasting.' },
+  performance: { title: 'Performance Audit', description: 'CPA spike diagnostics, anomaly detection, day/hour scheduling optimization, geo analysis, and device performance splits.' },
+  creative: { title: 'Creative & Copy Audit', description: 'Ad copy variant analysis, landing page conversion audit, and creative performance benchmarking.' },
+  attribution: { title: 'Attribution & Tracking Audit', description: 'Attribution model comparison, conversion path analysis, and UTM/tracking consistency review.' },
+  structure: { title: 'Account Structure Audit', description: 'Campaign and ad set structure review, naming convention standardization, and consolidation opportunities.' },
+};
 
 function loadProjects(): Project[] {
   try {
@@ -37,22 +95,17 @@ function saveProjects(projects: Project[]) {
 function App() {
   const [appState, setAppState] = useState<AppState>('loading');
 
-  // Navigation
   const [currentView, setCurrentView] = useState<View>('projects');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  // Projects
   const [projects, setProjects] = useState<Project[]>(loadProjects);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
 
-  // Sites (for project creation dropdown)
   const [sites, setSites] = useState<SearchConsoleSite[]>([]);
   const [sitesLoading, setSitesLoading] = useState(false);
 
-  // Audit views that have been visited (stay mounted for background processing)
   const [visitedAudits, setVisitedAudits] = useState<Set<string>>(new Set());
 
-  // Date selection
   const [dateRange, setDateRange] = useState<DateRange>({
     startDate: new Date(new Date().setDate(new Date().getDate() - 30)),
     endDate: new Date(),
@@ -72,7 +125,6 @@ function App() {
     }
   }, []);
 
-  // Fetch sites when authenticated
   useEffect(() => {
     if (appState !== 'authenticated') return;
     setSitesLoading(true);
@@ -83,7 +135,6 @@ function App() {
       .finally(() => setSitesLoading(false));
   }, [appState]);
 
-  // Restore last active project and view
   useEffect(() => {
     const lastId = localStorage.getItem('kt_active_project');
     const lastView = localStorage.getItem('kt_active_view') as View | null;
@@ -161,7 +212,7 @@ function App() {
       setVisitedAudits(new Set());
     } else {
       localStorage.setItem('kt_active_view', view);
-      if (['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit'].includes(view)) {
+      if (SEO_AUDIT_VIEWS.has(view) || AD_AUDIT_VIEWS.has(view)) {
         setVisitedAudits((prev) => new Set(prev).add(view));
       }
     }
@@ -182,17 +233,13 @@ function App() {
     }
   };
 
-  // Auto-load keywords when navigating to the keywords view for the first time
   useEffect(() => {
     if (currentView === 'keywords' && activeProject && !hasLoadedOnce) {
       handleLoadData();
     }
   }, [currentView, activeProject]);
 
-  // Views that need the date picker in the header
   const showsDateControls = activeProject && (currentView === 'overview' || currentView === 'keywords');
-
-  // Show refresh button only after initial load (for date changes)
   const needsDataLoad = currentView === 'keywords';
 
   if (appState === 'loading') {
@@ -209,7 +256,6 @@ function App() {
 
   return (
     <div className="flex h-screen bg-apple-bg overflow-hidden">
-      {/* Sidebar */}
       <Sidebar
         currentView={currentView}
         onNavigate={handleNavigate}
@@ -219,11 +265,8 @@ function App() {
         hasActiveProject={!!activeProject}
       />
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top Header Bar */}
         <header className="h-14 shrink-0 bg-white/80 backdrop-blur-xl border-b border-apple-divider flex items-center px-6 gap-4">
-          {/* Breadcrumb */}
           <div className="flex items-center gap-2 min-w-0">
             <button
               onClick={() => handleNavigate('projects')}
@@ -239,25 +282,13 @@ function App() {
                 <span className="text-apple-sm font-medium text-apple-text truncate">
                   {activeProject.name}
                 </span>
-                {currentView !== 'projects' && (
+                {currentView !== 'projects' && BREADCRUMB_LABELS[currentView] && (
                   <>
                     <svg className="w-3 h-3 text-apple-text-tertiary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                     </svg>
-                    <span className="text-apple-sm text-apple-text-tertiary capitalize">
-                      {({
-                        'activity-log': 'Activity Log',
-                        'lost-keywords': 'Lost Keywords',
-                        'audit': 'SEO Audit',
-                        'seo-audit': 'SEO Audit › SEO',
-                        'content-audit': 'SEO Audit › Content',
-                        'aeo-audit': 'SEO Audit › AEO',
-                        'schema-audit': 'SEO Audit › Schema',
-                        'compliance-audit': 'SEO Audit › Compliance',
-                        'speed-audit': 'SEO Audit › Page Speed',
-                        'advertising': 'Advertising',
-                        'tasklist': 'Tasklist',
-                      } as Record<string, string>)[currentView] || currentView}
+                    <span className="text-apple-sm text-apple-text-tertiary">
+                      {BREADCRUMB_LABELS[currentView]}
                     </span>
                   </>
                 )}
@@ -267,7 +298,6 @@ function App() {
 
           <div className="flex-1" />
 
-          {/* Date controls */}
           {showsDateControls && (
             <div className="flex items-center gap-2">
               <button
@@ -300,7 +330,6 @@ function App() {
           )}
         </header>
 
-        {/* Date Picker Dropdown */}
         {showDatePicker && showsDateControls && (
           <div className="bg-white border-b border-apple-divider shadow-sm px-6 py-4">
             <div className="max-w-3xl flex flex-wrap gap-6 items-end">
@@ -360,7 +389,6 @@ function App() {
                 )}
               </div>
 
-              {/* Load Data button in dropdown for keywords view */}
               {needsDataLoad && (
                 <button
                   onClick={handleLoadData}
@@ -373,9 +401,7 @@ function App() {
           </div>
         )}
 
-        {/* Scrollable Content Area */}
         <main className="flex-1 overflow-y-auto p-6">
-          {/* Projects List */}
           {currentView === 'projects' && (
             <ProjectsView
               projects={projects}
@@ -387,12 +413,10 @@ function App() {
             />
           )}
 
-          {/* Website Objectives */}
           {currentView === 'objectives' && activeProject && (
             <ObjectivesView projectId={activeProject.id} projectName={activeProject.name} siteUrl={activeProject.siteUrl} />
           )}
 
-          {/* Overview Dashboard — kept mounted so it doesn't refetch on every view switch */}
           {activeProject && (
             <div style={{ display: currentView === 'overview' ? 'block' : 'none' }}>
               <OverviewView
@@ -403,7 +427,6 @@ function App() {
             </div>
           )}
 
-          {/* Keywords — kept mounted so it doesn't refetch on every view switch */}
           {activeProject && committedDateRange && (
             <div style={{ display: currentView === 'keywords' ? 'block' : 'none' }}>
               <GoogleSearchConsole
@@ -416,97 +439,75 @@ function App() {
             </div>
           )}
 
-          {/* Lost Keywords */}
           {currentView === 'lost-keywords' && activeProject && (
             <LostKeywordsView siteUrl={activeProject.siteUrl} />
           )}
 
-          {/* Main Audit View — unified audit with checklist */}
+          {/* ── SEO Audit Views ── */}
           {activeProject && visitedAudits.has('audit') && (
             <div style={{ display: currentView === 'audit' ? 'block' : 'none' }}>
               <AuditMainView siteUrl={activeProject.siteUrl} />
             </div>
           )}
-
-          {/* Individual Audit Views — stay mounted once visited so audits continue in background */}
           {activeProject && visitedAudits.has('seo-audit') && (
             <div style={{ display: currentView === 'seo-audit' ? 'block' : 'none' }}>
-              <AuditView
-                siteUrl={activeProject.siteUrl}
-                auditType="seo"
-                title="SEO Audit"
-                description="Comprehensive technical SEO audit of every page in your sitemap. Analyzes title tags, meta descriptions, headings, internal links, images, and more."
-                isVisible={currentView === 'seo-audit'}
-              />
+              <AuditView siteUrl={activeProject.siteUrl} auditType="seo" title="SEO Audit" description="Comprehensive technical SEO audit of every page in your sitemap. Analyzes title tags, meta descriptions, headings, internal links, images, and more." isVisible={currentView === 'seo-audit'} />
             </div>
           )}
           {activeProject && visitedAudits.has('content-audit') && (
             <div style={{ display: currentView === 'content-audit' ? 'block' : 'none' }}>
-              <AuditView
-                siteUrl={activeProject.siteUrl}
-                auditType="content"
-                title="Content Audit"
-                description="Evaluates copy quality, conversion optimization, and marketing psychology across every page. Combines copywriting, CRO, and persuasion analysis."
-                isVisible={currentView === 'content-audit'}
-              />
+              <AuditView siteUrl={activeProject.siteUrl} auditType="content" title="Content Audit" description="Evaluates copy quality, conversion optimization, and marketing psychology across every page." isVisible={currentView === 'content-audit'} />
             </div>
           )}
           {activeProject && visitedAudits.has('aeo-audit') && (
             <div style={{ display: currentView === 'aeo-audit' ? 'block' : 'none' }}>
-              <AuditView
-                siteUrl={activeProject.siteUrl}
-                auditType="aeo"
-                title="AEO Audit"
-                description="AI Engine Optimization audit — analyzes how well your pages would be cited by AI assistants like ChatGPT, Perplexity, and Google AI Overviews."
-                isVisible={currentView === 'aeo-audit'}
-              />
+              <AuditView siteUrl={activeProject.siteUrl} auditType="aeo" title="AEO Audit" description="AI Engine Optimization audit — analyzes how well your pages would be cited by AI assistants." isVisible={currentView === 'aeo-audit'} />
             </div>
           )}
           {activeProject && visitedAudits.has('schema-audit') && (
             <div style={{ display: currentView === 'schema-audit' ? 'block' : 'none' }}>
-              <AuditView
-                siteUrl={activeProject.siteUrl}
-                auditType="schema"
-                title="Schema Audit"
-                description="Validates existing schema markup and identifies missing structured data opportunities for rich snippets in Google search results."
-                isVisible={currentView === 'schema-audit'}
-              />
+              <AuditView siteUrl={activeProject.siteUrl} auditType="schema" title="Schema Audit" description="Validates existing schema markup and identifies missing structured data opportunities." isVisible={currentView === 'schema-audit'} />
             </div>
           )}
           {activeProject && visitedAudits.has('compliance-audit') && (
             <div style={{ display: currentView === 'compliance-audit' ? 'block' : 'none' }}>
-              <AuditView
-                siteUrl={activeProject.siteUrl}
-                auditType="compliance"
-                title="Compliance Audit"
-                description="Audits every page for GDPR, CCPA, ADA/WCAG accessibility, privacy policies, security headers, cookie consent, and all applicable legal and regulatory compliance requirements."
-                isVisible={currentView === 'compliance-audit'}
-              />
+              <AuditView siteUrl={activeProject.siteUrl} auditType="compliance" title="Compliance Audit" description="Audits for GDPR, CCPA, ADA/WCAG accessibility, privacy, security headers, and all applicable compliance requirements." isVisible={currentView === 'compliance-audit'} />
             </div>
           )}
           {activeProject && visitedAudits.has('speed-audit') && (
             <div style={{ display: currentView === 'speed-audit' ? 'block' : 'none' }}>
-              <AuditView
-                siteUrl={activeProject.siteUrl}
-                auditType="speed"
-                title="Page Speed Audit"
-                description="Analyzes Core Web Vitals signals, render-blocking resources, image optimization, font loading, third-party scripts, resource hints, and overall page load performance."
-                isVisible={currentView === 'speed-audit'}
-              />
+              <AuditView siteUrl={activeProject.siteUrl} auditType="speed" title="Page Speed Audit" description="Analyzes Core Web Vitals signals, render-blocking resources, image optimization, font loading, and page load performance." isVisible={currentView === 'speed-audit'} />
             </div>
           )}
 
-          {/* Advertising */}
+          {/* ── Advertising Audit Views ── */}
+          {activeProject && visitedAudits.has('ad-audit') && (
+            <div style={{ display: currentView === 'ad-audit' ? 'block' : 'none' }}>
+              <AdAuditMainView siteUrl={activeProject.siteUrl} />
+            </div>
+          )}
+          {activeProject && Object.entries(AD_AUDIT_VIEW_MAP).map(([viewId, adType]) =>
+            visitedAudits.has(viewId) ? (
+              <div key={viewId} style={{ display: currentView === viewId ? 'block' : 'none' }}>
+                <AdAuditView
+                  siteUrl={activeProject.siteUrl}
+                  adAuditType={adType}
+                  title={AD_AUDIT_TITLES[adType].title}
+                  description={AD_AUDIT_TITLES[adType].description}
+                  isVisible={currentView === viewId}
+                />
+              </div>
+            ) : null
+          )}
+
           {currentView === 'advertising' && activeProject && (
             <AdvertisingView siteUrl={activeProject.siteUrl} projectId={activeProject.id} />
           )}
 
-          {/* Tasklist */}
           {currentView === 'tasklist' && activeProject && (
             <TasklistView siteUrl={activeProject.siteUrl} />
           )}
 
-          {/* Activity Log */}
           {currentView === 'activity-log' && activeProject && (
             <ActivityLogView siteUrl={activeProject.siteUrl} />
           )}

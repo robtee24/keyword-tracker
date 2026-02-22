@@ -1,6 +1,12 @@
 import type { ReactNode } from 'react';
 
-export type View = 'projects' | 'objectives' | 'overview' | 'keywords' | 'lost-keywords' | 'audit' | 'seo-audit' | 'content-audit' | 'aeo-audit' | 'schema-audit' | 'compliance-audit' | 'speed-audit' | 'advertising' | 'tasklist' | 'activity-log';
+export type View =
+  | 'projects' | 'objectives'
+  | 'overview' | 'keywords' | 'lost-keywords'
+  | 'audit' | 'seo-audit' | 'content-audit' | 'aeo-audit' | 'schema-audit' | 'compliance-audit' | 'speed-audit'
+  | 'ad-audit' | 'ad-audit-google' | 'ad-audit-meta' | 'ad-audit-linkedin' | 'ad-audit-reddit'
+  | 'ad-audit-budget' | 'ad-audit-performance' | 'ad-audit-creative' | 'ad-audit-attribution' | 'ad-audit-structure'
+  | 'advertising' | 'tasklist' | 'activity-log';
 
 interface SidebarProps {
   currentView: View;
@@ -11,46 +17,16 @@ interface SidebarProps {
   hasActiveProject: boolean;
 }
 
-const projectNavItems: Array<{ id: View; label: string; icon: ReactNode }> = [
-  {
-    id: 'objectives',
-    label: 'Objectives',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-      </svg>
-    ),
-  },
-  {
-    id: 'overview',
-    label: 'Overview',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-      </svg>
-    ),
-  },
-  {
-    id: 'keywords',
-    label: 'Keywords',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
-      </svg>
-    ),
-  },
-  {
-    id: 'lost-keywords',
-    label: 'Lost Keywords',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-      </svg>
-    ),
-  },
+const ORGANIC_VIEWS = new Set<View>(['overview', 'keywords', 'lost-keywords']);
+const SEO_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit']);
+const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure']);
+
+const organicSubItems: Array<{ id: View; label: string }> = [
+  { id: 'keywords', label: 'Keywords' },
+  { id: 'lost-keywords', label: 'Lost Keywords' },
 ];
 
-const auditSubItems: Array<{ id: View; label: string }> = [
+const seoAuditSubItems: Array<{ id: View; label: string }> = [
   { id: 'seo-audit', label: 'SEO' },
   { id: 'content-audit', label: 'Content' },
   { id: 'aeo-audit', label: 'AEO' },
@@ -59,7 +35,17 @@ const auditSubItems: Array<{ id: View; label: string }> = [
   { id: 'speed-audit', label: 'Page Speed' },
 ];
 
-const AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit']);
+const adAuditSubItems: Array<{ id: View; label: string }> = [
+  { id: 'ad-audit-google', label: 'Google Ads' },
+  { id: 'ad-audit-meta', label: 'Meta Ads' },
+  { id: 'ad-audit-linkedin', label: 'LinkedIn Ads' },
+  { id: 'ad-audit-reddit', label: 'Reddit Ads' },
+  { id: 'ad-audit-budget', label: 'Budget & Spend' },
+  { id: 'ad-audit-performance', label: 'Performance' },
+  { id: 'ad-audit-creative', label: 'Creative & Copy' },
+  { id: 'ad-audit-attribution', label: 'Attribution' },
+  { id: 'ad-audit-structure', label: 'Account Structure' },
+];
 
 const bottomNavItems: Array<{ id: View; label: string; icon: ReactNode }> = [
   {
@@ -91,6 +77,66 @@ const bottomNavItems: Array<{ id: View; label: string; icon: ReactNode }> = [
   },
 ];
 
+function NavGroup({
+  label,
+  icon,
+  parentView,
+  subItems,
+  isGroupActive,
+  currentView,
+  onNavigate,
+  collapsed,
+  title,
+}: {
+  label: string;
+  icon: ReactNode;
+  parentView: View;
+  subItems: Array<{ id: View; label: string }>;
+  isGroupActive: boolean;
+  currentView: View;
+  onNavigate: (v: View) => void;
+  collapsed: boolean;
+  title?: string;
+}) {
+  return (
+    <div>
+      <button
+        onClick={() => onNavigate(parentView)}
+        className={`w-full flex items-center gap-3 px-3 py-2 rounded-apple-sm text-apple-sm font-medium transition-all duration-150 ${
+          isGroupActive
+            ? 'bg-apple-blue/10 text-apple-blue'
+            : 'text-apple-text-secondary hover:bg-apple-fill-secondary hover:text-apple-text'
+        }`}
+        title={collapsed ? (title || label) : undefined}
+      >
+        <span className={`shrink-0 ${isGroupActive ? 'text-apple-blue' : ''}`}>{icon}</span>
+        {!collapsed && <span className="truncate">{label}</span>}
+      </button>
+
+      {!collapsed && (
+        <div className="ml-4 mt-0.5 space-y-0.5 border-l border-apple-divider pl-2">
+          {subItems.map((sub) => {
+            const isSubActive = currentView === sub.id;
+            return (
+              <button
+                key={sub.id}
+                onClick={() => onNavigate(sub.id)}
+                className={`w-full text-left px-3 py-1.5 rounded-apple-sm text-apple-xs font-medium transition-all duration-150 ${
+                  isSubActive
+                    ? 'bg-apple-blue/10 text-apple-blue'
+                    : 'text-apple-text-secondary hover:bg-apple-fill-secondary hover:text-apple-text'
+                }`}
+              >
+                {sub.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Sidebar({
   currentView,
   onNavigate,
@@ -99,7 +145,9 @@ export default function Sidebar({
   onSignOut,
   hasActiveProject,
 }: SidebarProps) {
-  const isAuditActive = AUDIT_VIEWS.has(currentView);
+  const isOrganicActive = ORGANIC_VIEWS.has(currentView);
+  const isSeoAuditActive = SEO_AUDIT_VIEWS.has(currentView);
+  const isAdAuditActive = AD_AUDIT_VIEWS.has(currentView);
 
   const renderNavButton = (item: { id: View; label: string; icon: ReactNode }) => {
     const isActive = currentView === item.id;
@@ -128,7 +176,6 @@ export default function Sidebar({
         collapsed ? 'w-[60px]' : 'w-[220px]'
       }`}
     >
-      {/* Logo / Collapse toggle */}
       <div className="flex items-center gap-2 px-3 h-14 border-b border-apple-divider shrink-0">
         {collapsed ? (
           <button onClick={onToggleCollapse} className="mx-auto p-1 rounded-apple-sm hover:bg-apple-fill-secondary transition-colors" title="Expand">
@@ -154,9 +201,8 @@ export default function Sidebar({
         </button>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-        {/* Projects — always visible */}
+        {/* Projects */}
         <button
           onClick={() => onNavigate('projects')}
           className={`w-full flex items-center gap-3 px-3 py-2 rounded-apple-sm text-apple-sm font-medium transition-all duration-150 ${
@@ -174,7 +220,6 @@ export default function Sidebar({
           {!collapsed && <span className="truncate">Projects</span>}
         </button>
 
-        {/* Project-specific nav items */}
         {hasActiveProject && (
           <>
             {!collapsed && (
@@ -186,56 +231,71 @@ export default function Sidebar({
             )}
             {collapsed && <div className="border-t border-apple-divider my-2 mx-2" />}
 
-            {projectNavItems.map(renderNavButton)}
+            {/* Objectives */}
+            {renderNavButton({
+              id: 'objectives',
+              label: 'Objectives',
+              icon: (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              ),
+            })}
+
+            {/* ── Organic Overview Group ── */}
+            <NavGroup
+              label="Organic Overview"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                </svg>
+              }
+              parentView="overview"
+              subItems={organicSubItems}
+              isGroupActive={isOrganicActive}
+              currentView={currentView}
+              onNavigate={onNavigate}
+              collapsed={collapsed}
+            />
 
             {/* ── SEO Audit Group ── */}
-            <div>
-              <button
-                onClick={() => onNavigate('audit')}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-apple-sm text-apple-sm font-medium transition-all duration-150 ${
-                  isAuditActive
-                    ? 'bg-apple-blue/10 text-apple-blue'
-                    : 'text-apple-text-secondary hover:bg-apple-fill-secondary hover:text-apple-text'
-                }`}
-                title={collapsed ? 'SEO Audit' : undefined}
-              >
-                <span className={`shrink-0 ${isAuditActive ? 'text-apple-blue' : ''}`}>
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                  </svg>
-                </span>
-                {!collapsed && <span className="truncate">SEO Audit</span>}
-              </button>
+            <NavGroup
+              label="SEO Audit"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                </svg>
+              }
+              parentView="audit"
+              subItems={seoAuditSubItems}
+              isGroupActive={isSeoAuditActive}
+              currentView={currentView}
+              onNavigate={onNavigate}
+              collapsed={collapsed}
+            />
 
-              {/* Sub-items — always visible */}
-              {!collapsed && (
-                <div className="ml-4 mt-0.5 space-y-0.5 border-l border-apple-divider pl-2">
-                  {auditSubItems.map((sub) => {
-                    const isSubActive = currentView === sub.id;
-                    return (
-                      <button
-                        key={sub.id}
-                        onClick={() => onNavigate(sub.id)}
-                        className={`w-full text-left px-3 py-1.5 rounded-apple-sm text-apple-xs font-medium transition-all duration-150 ${
-                          isSubActive
-                            ? 'bg-apple-blue/10 text-apple-blue'
-                            : 'text-apple-text-secondary hover:bg-apple-fill-secondary hover:text-apple-text'
-                        }`}
-                      >
-                        {sub.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            {/* ── Advertising Audit Group ── */}
+            <NavGroup
+              label="Ad Audit"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              }
+              parentView="ad-audit"
+              subItems={adAuditSubItems}
+              isGroupActive={isAdAuditActive}
+              currentView={currentView}
+              onNavigate={onNavigate}
+              collapsed={collapsed}
+              title="Advertising Audit"
+            />
 
             {bottomNavItems.map(renderNavButton)}
           </>
         )}
       </nav>
 
-      {/* Sign out */}
       <div className="px-2 pb-4 shrink-0">
         <button
           onClick={onSignOut}

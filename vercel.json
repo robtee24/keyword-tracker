@@ -24,6 +24,9 @@
     },
     "api/audit/run-multi.js": {
       "maxDuration": 120
+    },
+    "api/audit/run-ad-audit.js": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
