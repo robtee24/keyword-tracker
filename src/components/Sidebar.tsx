@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import type { ReactNode } from 'react';
 
 export type View = 'projects' | 'objectives' | 'overview' | 'keywords' | 'lost-keywords' | 'audit' | 'seo-audit' | 'content-audit' | 'aeo-audit' | 'schema-audit' | 'compliance-audit' | 'speed-audit' | 'advertising' | 'tasklist' | 'activity-log';
@@ -101,27 +100,6 @@ export default function Sidebar({
   hasActiveProject,
 }: SidebarProps) {
   const isAuditActive = AUDIT_VIEWS.has(currentView);
-  const [auditExpanded, setAuditExpanded] = useState(isAuditActive);
-
-  const handleAuditClick = () => {
-    if (collapsed) {
-      onNavigate('audit');
-      return;
-    }
-    if (!auditExpanded) {
-      setAuditExpanded(true);
-      onNavigate('audit');
-    } else if (currentView === 'audit') {
-      setAuditExpanded(false);
-    } else {
-      onNavigate('audit');
-    }
-  };
-
-  const handleAuditSubClick = (view: View) => {
-    setAuditExpanded(true);
-    onNavigate(view);
-  };
 
   const renderNavButton = (item: { id: View; label: string; icon: ReactNode }) => {
     const isActive = currentView === item.id;
@@ -210,45 +188,34 @@ export default function Sidebar({
 
             {projectNavItems.map(renderNavButton)}
 
-            {/* ── Audit Group ── */}
+            {/* ── SEO Audit Group ── */}
             <div>
               <button
-                onClick={handleAuditClick}
+                onClick={() => onNavigate('audit')}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-apple-sm text-apple-sm font-medium transition-all duration-150 ${
                   isAuditActive
                     ? 'bg-apple-blue/10 text-apple-blue'
                     : 'text-apple-text-secondary hover:bg-apple-fill-secondary hover:text-apple-text'
                 }`}
-                title={collapsed ? 'Audit' : undefined}
+                title={collapsed ? 'SEO Audit' : undefined}
               >
                 <span className={`shrink-0 ${isAuditActive ? 'text-apple-blue' : ''}`}>
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                   </svg>
                 </span>
-                {!collapsed && (
-                  <>
-                    <span className="truncate flex-1">Audit</span>
-                    <svg
-                      className={`w-3.5 h-3.5 text-apple-text-tertiary transition-transform duration-200 ${auditExpanded ? 'rotate-180' : ''}`}
-                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-                      onClick={(e) => { e.stopPropagation(); setAuditExpanded(!auditExpanded); }}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </>
-                )}
+                {!collapsed && <span className="truncate">SEO Audit</span>}
               </button>
 
-              {/* Sub-items */}
-              {!collapsed && auditExpanded && (
+              {/* Sub-items — always visible */}
+              {!collapsed && (
                 <div className="ml-4 mt-0.5 space-y-0.5 border-l border-apple-divider pl-2">
                   {auditSubItems.map((sub) => {
                     const isSubActive = currentView === sub.id;
                     return (
                       <button
                         key={sub.id}
-                        onClick={() => handleAuditSubClick(sub.id)}
+                        onClick={() => onNavigate(sub.id)}
                         className={`w-full text-left px-3 py-1.5 rounded-apple-sm text-apple-xs font-medium transition-all duration-150 ${
                           isSubActive
                             ? 'bg-apple-blue/10 text-apple-blue'

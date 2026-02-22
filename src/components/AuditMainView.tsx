@@ -511,7 +511,7 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
   return (
     <div className="max-w-6xl mx-auto">
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-apple-text mb-1">Audit</h2>
+        <h2 className="text-xl font-semibold text-apple-text mb-1">SEO Audit</h2>
         <p className="text-apple-sm text-apple-text-secondary">
           Run comprehensive audits across multiple frameworks. Each page is crawled once and analyzed for all selected audit types simultaneously.
         </p>
