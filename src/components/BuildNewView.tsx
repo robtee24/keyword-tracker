@@ -59,6 +59,11 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
 
   const [savedWizardBuilds, setSavedWizardBuilds] = useState<Array<{ result: BuiltPage; created_at: string }>>([]);
 
+  const [modifyTarget, setModifyTarget] = useState<{ type: 'wizard' | 'suggestion'; idx?: number } | null>(null);
+  const [modifyInput, setModifyInput] = useState('');
+  const [isModifying, setIsModifying] = useState(false);
+  const [modifyError, setModifyError] = useState('');
+
   const loadSavedData = useCallback(async () => {
     setLoadingSaved(true);
     try {
@@ -212,6 +217,74 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
       console.error('Wizard build failed:', err);
     }
     setWizardBuilding(false);
+  };
+
+  const handleModifyPage = async (currentResult: BuiltPage) => {
+    if (!modifyInput.trim() || isModifying) return;
+    setIsModifying(true);
+    setModifyError('');
+    try {
+      const resp = await fetch(API_ENDPOINTS.build.modifyPage, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          siteUrl,
+          pageUrl: currentResult.slug ? `/${currentResult.slug}` : '',
+          currentHtml: currentResult.htmlContent,
+          modifications: modifyInput.trim(),
+          currentTitle: currentResult.title,
+          currentMeta: currentResult.metaDescription,
+        }),
+      });
+      const data = await resp.json();
+      if (data.error) {
+        setModifyError(data.error);
+      } else if (data.result) {
+        const updatedPage: BuiltPage = {
+          title: data.result.title || currentResult.title,
+          metaDescription: data.result.metaDescription || currentResult.metaDescription,
+          slug: currentResult.slug,
+          htmlContent: data.result.htmlContent || currentResult.htmlContent,
+          schemaMarkup: data.result.schemaMarkup || currentResult.schemaMarkup,
+          suggestedImages: currentResult.suggestedImages,
+          internalLinkSuggestions: currentResult.internalLinkSuggestions,
+          summary: data.result.summary || currentResult.summary,
+        };
+
+        if (modifyTarget?.type === 'wizard') {
+          setWizardResult(updatedPage);
+        } else if (modifyTarget?.type === 'suggestion' && modifyTarget.idx !== undefined) {
+          const updated = suggestions.map((s, i) =>
+            i === modifyTarget.idx ? { ...s, builtContent: updatedPage } : s
+          );
+          setSuggestions(updated);
+          if (dbRecordId) {
+            await fetch(API_ENDPOINTS.db.buildSuggestions, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: dbRecordId, suggestionIndex: modifyTarget.idx, built: true, builtContent: updatedPage }),
+            });
+          }
+        }
+
+        await fetch(API_ENDPOINTS.db.buildResults, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            siteUrl,
+            pageUrl: currentResult.slug ? `/${currentResult.slug}` : '',
+            buildType: modifyTarget?.type === 'wizard' ? 'wizard' : 'new',
+            result: updatedPage,
+          }),
+        });
+        setModifyInput('');
+        setModifyTarget(null);
+        logActivity(siteUrl, 'build', 'modify', `Modified page: ${updatedPage.title}`);
+      }
+    } catch (err) {
+      setModifyError(err instanceof Error ? err.message : 'Modification failed');
+    }
+    setIsModifying(false);
   };
 
   const getPriorityColor = (p: string) => {
@@ -423,7 +496,54 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
                         sandbox="allow-same-origin"
                       />
                     </div>
-                    <button onClick={() => setShowWizard(false)} className="w-full px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium">Done</button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setModifyTarget({ type: 'wizard' });
+                          setModifyInput('');
+                          setModifyError('');
+                        }}
+                        className={`flex-1 px-4 py-2 rounded-apple-sm text-apple-sm font-medium transition-colors ${
+                          modifyTarget?.type === 'wizard' ? 'bg-purple-600 text-white' : 'border border-purple-300 text-purple-600 hover:bg-purple-50'
+                        }`}
+                      >
+                        Modify Page
+                      </button>
+                      <button onClick={() => setShowWizard(false)} className="flex-1 px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium">Done</button>
+                    </div>
+
+                    {modifyTarget?.type === 'wizard' && (
+                      <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-apple-sm space-y-3">
+                        <textarea
+                          value={modifyInput}
+                          onChange={(e) => setModifyInput(e.target.value)}
+                          placeholder="Describe your modifications..."
+                          className="w-full h-24 px-3 py-2 rounded-apple-sm border border-purple-200 text-apple-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 resize-none bg-white"
+                          disabled={isModifying}
+                        />
+                        {modifyError && <p className="text-apple-xs text-red-600">{modifyError}</p>}
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => wizardResult && handleModifyPage(wizardResult)}
+                            disabled={!modifyInput.trim() || isModifying}
+                            className="px-3 py-1.5 rounded-apple-sm bg-purple-600 text-white text-apple-xs font-medium disabled:opacity-50"
+                          >
+                            {isModifying ? (
+                              <span className="flex items-center gap-1.5">
+                                <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                Modifying...
+                              </span>
+                            ) : 'Apply'}
+                          </button>
+                          <button
+                            onClick={() => { setModifyTarget(null); setModifyInput(''); setModifyError(''); }}
+                            className="px-3 py-1.5 rounded-apple-sm border border-apple-border text-apple-xs text-apple-text-secondary"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <p className="text-apple-sm text-red-600">Build failed. Please try again.</p>
@@ -514,14 +634,64 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
                         ) : 'Build'}
                       </button>
                     ) : (
-                      <button
-                        onClick={() => setPreviewIdx(previewIdx === i ? null : i)}
-                        className="px-4 py-1.5 rounded-apple-sm border border-apple-blue text-apple-blue text-apple-xs font-medium hover:bg-apple-blue/5 transition-colors"
-                      >
-                        {previewIdx === i ? 'Hide Preview' : 'Preview'}
-                      </button>
+                      <>
+                        <button
+                          onClick={() => setPreviewIdx(previewIdx === i ? null : i)}
+                          className="px-4 py-1.5 rounded-apple-sm border border-apple-blue text-apple-blue text-apple-xs font-medium hover:bg-apple-blue/5 transition-colors"
+                        >
+                          {previewIdx === i ? 'Hide Preview' : 'Preview'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setModifyTarget(modifyTarget?.type === 'suggestion' && modifyTarget.idx === i ? null : { type: 'suggestion', idx: i });
+                            setModifyInput('');
+                            setModifyError('');
+                          }}
+                          className={`px-4 py-1.5 rounded-apple-sm text-apple-xs font-medium transition-colors ${
+                            modifyTarget?.type === 'suggestion' && modifyTarget.idx === i
+                              ? 'bg-purple-600 text-white'
+                              : 'border border-purple-300 text-purple-600 hover:bg-purple-50'
+                          }`}
+                        >
+                          Modify
+                        </button>
+                      </>
                     )}
                   </div>
+
+                  {modifyTarget?.type === 'suggestion' && modifyTarget.idx === i && s.builtContent && (
+                    <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-apple-sm space-y-3">
+                      <label className="block text-apple-xs font-medium text-purple-800">Describe your modifications</label>
+                      <textarea
+                        value={modifyInput}
+                        onChange={(e) => setModifyInput(e.target.value)}
+                        placeholder="e.g., Change the headline, add a FAQ section, make the tone more casual..."
+                        className="w-full h-24 px-3 py-2 rounded-apple-sm border border-purple-200 text-apple-xs focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 resize-none bg-white"
+                        disabled={isModifying}
+                      />
+                      {modifyError && <p className="text-apple-xs text-red-600">{modifyError}</p>}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => s.builtContent && handleModifyPage(s.builtContent)}
+                          disabled={!modifyInput.trim() || isModifying}
+                          className="px-3 py-1.5 rounded-apple-sm bg-purple-600 text-white text-apple-xs font-medium disabled:opacity-50"
+                        >
+                          {isModifying ? (
+                            <span className="flex items-center gap-1.5">
+                              <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              Modifying...
+                            </span>
+                          ) : 'Apply'}
+                        </button>
+                        <button
+                          onClick={() => { setModifyTarget(null); setModifyInput(''); setModifyError(''); }}
+                          className="px-3 py-1.5 rounded-apple-sm border border-apple-border text-apple-xs text-apple-text-secondary"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {previewIdx === i && s.builtContent && (
                     <div className="mt-3">

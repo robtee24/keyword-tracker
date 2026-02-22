@@ -86,6 +86,11 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
   const [loadingSaved, setLoadingSaved] = useState(true);
   const [viewingSavedIdx, setViewingSavedIdx] = useState<number | null>(null);
 
+  const [showModify, setShowModify] = useState(false);
+  const [modifyInput, setModifyInput] = useState('');
+  const [isModifying, setIsModifying] = useState(false);
+  const [modifyError, setModifyError] = useState('');
+
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -267,6 +272,46 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
     } catch (err) {
       console.error('Failed to add to tasklist:', err);
     }
+  };
+
+  const handleModify = async () => {
+    if (!modifyInput.trim() || !result?.htmlContent || isModifying) return;
+    setIsModifying(true);
+    setModifyError('');
+    try {
+      const resp = await fetch(API_ENDPOINTS.build.modifyPage, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          siteUrl,
+          pageUrl: resultPageUrl,
+          currentHtml: result.htmlContent,
+          modifications: modifyInput.trim(),
+          currentTitle: result.title,
+          currentMeta: result.metaDescription,
+        }),
+      });
+      const data = await resp.json();
+      if (data.error) {
+        setModifyError(data.error);
+      } else if (data.result) {
+        setResult(data.result);
+        setActiveTab('code');
+        setShowPreview(true);
+        setModifyInput('');
+        setShowModify(false);
+        await fetch(API_ENDPOINTS.db.buildResults, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ siteUrl, pageUrl: resultPageUrl, buildType: 'rebuild', result: data.result }),
+        });
+        await loadSavedBuilds();
+        logActivity(siteUrl, 'build', 'modify', `Modified page: ${resultPageUrl}`);
+      }
+    } catch (err) {
+      setModifyError(err instanceof Error ? err.message : 'Modification failed');
+    }
+    setIsModifying(false);
   };
 
   const viewSavedBuild = (idx: number) => {
@@ -560,7 +605,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
             <p className="text-apple-sm text-apple-text-secondary mt-2">{displayResult.summary}</p>
           </div>
 
-          <div className="flex gap-2 border-b border-apple-divider pb-3 mb-4">
+          <div className="flex items-center gap-2 border-b border-apple-divider pb-3 mb-4">
             <button
               onClick={() => setActiveTab('changes')}
               className={`px-3 py-1.5 rounded-apple-sm text-apple-sm font-medium transition-colors ${
@@ -577,7 +622,55 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
             >
               Generated Code
             </button>
+            <div className="ml-auto">
+              <button
+                onClick={() => setShowModify(!showModify)}
+                className={`px-3 py-1.5 rounded-apple-sm text-apple-sm font-medium transition-colors ${
+                  showModify ? 'bg-purple-600 text-white' : 'border border-purple-300 text-purple-600 hover:bg-purple-50'
+                }`}
+              >
+                Modify Page
+              </button>
+            </div>
           </div>
+
+          {showModify && (
+            <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-apple-sm space-y-3">
+              <label className="block text-apple-sm font-medium text-purple-800">
+                Describe your modifications
+              </label>
+              <textarea
+                value={modifyInput}
+                onChange={(e) => setModifyInput(e.target.value)}
+                placeholder="e.g., Change the hero headline to 'Transform Your Business Today', add a testimonials section below the pricing, make the CTA buttons green instead of blue..."
+                className="w-full h-28 px-3 py-2 rounded-apple-sm border border-purple-200 text-apple-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 resize-none bg-white"
+                disabled={isModifying}
+              />
+              {modifyError && (
+                <p className="text-apple-xs text-red-600">{modifyError}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleModify}
+                  disabled={!modifyInput.trim() || isModifying}
+                  className="px-4 py-2 rounded-apple-sm bg-purple-600 text-white text-apple-sm font-medium hover:bg-purple-700 transition-colors disabled:opacity-50"
+                >
+                  {isModifying ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Modifying...
+                    </span>
+                  ) : 'Apply Modifications'}
+                </button>
+                <button
+                  onClick={() => { setShowModify(false); setModifyInput(''); setModifyError(''); }}
+                  className="px-4 py-2 rounded-apple-sm border border-apple-border text-apple-sm text-apple-text-secondary hover:bg-apple-fill-secondary transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
           {activeTab === 'changes' && (
             <div className="space-y-3">

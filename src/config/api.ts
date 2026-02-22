@@ -59,6 +59,7 @@ export const API_ENDPOINTS = {
   build: {
     crawl: `${API_BASE_URL}/api/build/crawl`,
     rebuild: `${API_BASE_URL}/api/build/rebuild`,
+    modifyPage: `${API_BASE_URL}/api/build/modify-page`,
     suggestPages: `${API_BASE_URL}/api/build/suggest-pages`,
     createPage: `${API_BASE_URL}/api/build/create-page`,
   },

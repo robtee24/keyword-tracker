@@ -51,6 +51,9 @@
     },
     "api/build/create-page.js": {
       "maxDuration": 120
+    },
+    "api/build/modify-page.js": {
+      "maxDuration": 120
     }
   },
   "rewrites": [

@@ -118,8 +118,6 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
   const [selectedForTasklist, setSelectedForTasklist] = useState<Set<string>>(new Set());
   const [addingToTasklist, setAddingToTasklist] = useState(false);
 
-  const prevVisibleRef = useRef(isVisible);
-
   const loadResults = useCallback(() => {
     if (!siteUrl) return;
     setLoadingResults(true);
@@ -158,19 +156,12 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
       .catch(() => {});
   }, [siteUrl, auditType]);
 
-  // Load saved results on mount
-  useEffect(() => { loadResults(); }, [loadResults]);
-
-  // Load task statuses on mount
-  useEffect(() => { loadTaskStatuses(); }, [loadTaskStatuses]);
-
-  // Reload when view becomes visible (e.g. after running audit from main Audit tab)
+  // Reload results and task statuses whenever this view becomes visible
   useEffect(() => {
-    if (isVisible && !prevVisibleRef.current && !isRunning) {
+    if (isVisible && !isRunning) {
       loadResults();
       loadTaskStatuses();
     }
-    prevVisibleRef.current = isVisible;
   }, [isVisible, isRunning, loadResults, loadTaskStatuses]);
 
   useEffect(() => {
