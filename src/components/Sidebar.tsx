@@ -4,12 +4,13 @@ import type { ReactNode } from 'react';
 export type View =
   | 'projects' | 'objectives'
   | 'overview' | 'keywords' | 'lost-keywords' | 'organic-tasklist' | 'organic-activity'
+  | 'blog-audit' | 'blog-opportunity' | 'blog-automate' | 'blog-tasklist' | 'blog-activity'
   | 'audit' | 'seo-audit' | 'content-audit' | 'aeo-audit' | 'schema-audit' | 'compliance-audit' | 'speed-audit' | 'seo-tasklist' | 'seo-activity'
   | 'ad-audit' | 'ad-audit-google' | 'ad-audit-meta' | 'ad-audit-linkedin' | 'ad-audit-reddit'
   | 'ad-audit-budget' | 'ad-audit-performance' | 'ad-audit-creative' | 'ad-audit-attribution' | 'ad-audit-structure'
   | 'ad-tasklist' | 'ad-activity'
   | 'advertising'
-  | 'blog-audit' | 'blog-opportunity' | 'blog-automate' | 'blog-tasklist' | 'blog-activity';
+  | 'build-rebuild' | 'build-new' | 'build-tasklist' | 'build-activity';
 
 interface SidebarProps {
   currentView: View;
@@ -24,6 +25,7 @@ const ORGANIC_VIEWS = new Set<View>(['overview', 'keywords', 'lost-keywords', 'o
 const SEO_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit', 'seo-tasklist', 'seo-activity']);
 const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure', 'ad-tasklist', 'ad-activity', 'advertising']);
 const BLOG_VIEWS = new Set<View>(['blog-audit', 'blog-opportunity', 'blog-automate', 'blog-tasklist', 'blog-activity']);
+const BUILD_VIEWS = new Set<View>(['build-rebuild', 'build-new', 'build-tasklist', 'build-activity']);
 
 const organicSubItems: Array<{ id: View; label: string }> = [
   { id: 'overview', label: 'Overview' },
@@ -51,6 +53,13 @@ const blogSubItems: Array<{ id: View; label: string }> = [
   { id: 'blog-automate', label: 'Automate' },
   { id: 'blog-tasklist', label: 'Tasklist' },
   { id: 'blog-activity', label: 'Activity Log' },
+];
+
+const buildSubItems: Array<{ id: View; label: string }> = [
+  { id: 'build-rebuild', label: 'Rebuild' },
+  { id: 'build-new', label: 'New' },
+  { id: 'build-tasklist', label: 'Tasklist' },
+  { id: 'build-activity', label: 'Activity Log' },
 ];
 
 const adAuditSubItems: Array<{ id: View; label: string }> = [
@@ -168,14 +177,16 @@ export default function Sidebar({
   hasActiveProject,
 }: SidebarProps) {
   const isOrganicActive = ORGANIC_VIEWS.has(currentView);
+  const isBlogActive = BLOG_VIEWS.has(currentView);
   const isSeoAuditActive = SEO_AUDIT_VIEWS.has(currentView);
   const isAdAuditActive = AD_AUDIT_VIEWS.has(currentView);
-  const isBlogActive = BLOG_VIEWS.has(currentView);
+  const isBuildActive = BUILD_VIEWS.has(currentView);
 
   const [organicExpanded, setOrganicExpanded] = useState(isOrganicActive);
+  const [blogExpanded, setBlogExpanded] = useState(isBlogActive);
   const [seoExpanded, setSeoExpanded] = useState(isSeoAuditActive);
   const [adExpanded, setAdExpanded] = useState(isAdAuditActive);
-  const [blogExpanded, setBlogExpanded] = useState(isBlogActive);
+  const [buildExpanded, setBuildExpanded] = useState(isBuildActive);
 
   const renderNavButton = (item: { id: View; label: string; icon: ReactNode }) => {
     const isActive = currentView === item.id;
@@ -286,6 +297,23 @@ export default function Sidebar({
             />
 
             <NavGroup
+              label="Blog"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+                </svg>
+              }
+              parentView="blog-audit"
+              subItems={blogSubItems}
+              isGroupActive={isBlogActive}
+              expanded={blogExpanded}
+              onToggleExpand={() => setBlogExpanded(!blogExpanded)}
+              currentView={currentView}
+              onNavigate={onNavigate}
+              collapsed={collapsed}
+            />
+
+            <NavGroup
               label="SEO"
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -320,17 +348,17 @@ export default function Sidebar({
             />
 
             <NavGroup
-              label="Blog"
+              label="Build"
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                 </svg>
               }
-              parentView="blog-audit"
-              subItems={blogSubItems}
-              isGroupActive={isBlogActive}
-              expanded={blogExpanded}
-              onToggleExpand={() => setBlogExpanded(!blogExpanded)}
+              parentView="build-rebuild"
+              subItems={buildSubItems}
+              isGroupActive={isBuildActive}
+              expanded={buildExpanded}
+              onToggleExpand={() => setBuildExpanded(!buildExpanded)}
               currentView={currentView}
               onNavigate={onNavigate}
               collapsed={collapsed}

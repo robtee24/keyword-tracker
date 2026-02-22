@@ -56,6 +56,11 @@ export const API_ENDPOINTS = {
     opportunities: `${API_BASE_URL}/api/blog/opportunities`,
     generate: `${API_BASE_URL}/api/blog/generate`,
   },
+  build: {
+    rebuild: `${API_BASE_URL}/api/build/rebuild`,
+    suggestPages: `${API_BASE_URL}/api/build/suggest-pages`,
+    createPage: `${API_BASE_URL}/api/build/create-page`,
+  },
   db: {
     completedTasks: `${API_BASE_URL}/api/db/completed-tasks`,
     recommendations: `${API_BASE_URL}/api/db/recommendations`,

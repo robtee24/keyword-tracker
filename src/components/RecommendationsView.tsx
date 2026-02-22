@@ -23,23 +23,34 @@ interface RankedItem {
   scannedAt: string;
 }
 
-export type TasklistScope = 'organic' | 'seo' | 'ad' | 'blog';
+export type TasklistScope = 'organic' | 'seo' | 'ad' | 'blog' | 'build' | 'all';
 
 interface RecommendationsViewProps {
   siteUrl: string;
   scope: TasklistScope;
 }
 
-function isOrganicKeyword(kw: string) { return !kw.startsWith('audit:') && !kw.startsWith('ad-') && !kw.startsWith('blog:'); }
+function isOrganicKeyword(kw: string) { return !kw.startsWith('audit:') && !kw.startsWith('ad-') && !kw.startsWith('blog:') && !kw.startsWith('build:'); }
 function isSeoKeyword(kw: string) { return kw.startsWith('audit:'); }
 function isAdKeyword(kw: string) { return kw.startsWith('ad-'); }
 function isBlogKeyword(kw: string) { return kw.startsWith('blog:'); }
+function isBuildKeyword(kw: string) { return kw.startsWith('build:'); }
+
+function getScopeLabel(kw: string): string {
+  if (kw.startsWith('audit:')) return 'SEO';
+  if (kw.startsWith('ad-')) return 'Advertising';
+  if (kw.startsWith('blog:')) return 'Blog';
+  if (kw.startsWith('build:')) return 'Build';
+  return 'Organic';
+}
 
 function matchesScope(keyword: string, scope: TasklistScope) {
+  if (scope === 'all') return true;
   if (scope === 'organic') return isOrganicKeyword(keyword);
   if (scope === 'seo') return isSeoKeyword(keyword);
   if (scope === 'ad') return isAdKeyword(keyword);
   if (scope === 'blog') return isBlogKeyword(keyword);
+  if (scope === 'build') return isBuildKeyword(keyword);
   return true;
 }
 
@@ -48,6 +59,8 @@ const SCOPE_DESCRIPTIONS: Record<TasklistScope, string> = {
   seo: 'Recommendations from SEO page audits',
   ad: 'Recommendations from advertising audits',
   blog: 'Recommendations from blog audits',
+  build: 'Recommendations from page builds',
+  all: 'All recommendations across every section',
 };
 
 const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
@@ -59,6 +72,7 @@ export default function RecommendationsView({ siteUrl, scope }: RecommendationsV
   const [dbTasks, setDbTasks] = useState<DbTask[]>([]);
   const [filterPriority, setFilterPriority] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
+  const [filterScope, setFilterScope] = useState<'all' | 'organic' | 'seo' | 'ad' | 'blog' | 'build'>('all');
 
   const loadData = useCallback(async () => {
     if (!siteUrl) return;
@@ -67,7 +81,7 @@ export default function RecommendationsView({ siteUrl, scope }: RecommendationsV
       const fetches: Promise<Response>[] = [
         fetch(`${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}`),
       ];
-      if (scope === 'organic') {
+      if (scope === 'organic' || scope === 'all') {
         fetches.push(fetch(`${API_ENDPOINTS.db.recommendations}?site_url=${encodeURIComponent(siteUrl)}`));
       }
 
@@ -87,10 +101,10 @@ export default function RecommendationsView({ siteUrl, scope }: RecommendationsV
           completedAt: t.completed_at || '',
           source: (t.keyword || '').startsWith('audit:') || (t.keyword || '').startsWith('ad-') ? 'audit' as const : 'keyword' as const,
         }));
-        setDbTasks(all.filter((t: DbTask) => matchesScope(t.keyword, scope)));
+        setDbTasks(scope === 'all' ? all : all.filter((t: DbTask) => matchesScope(t.keyword, scope)));
       }
 
-      if (scope === 'organic' && recsResp?.ok) {
+      if ((scope === 'organic' || scope === 'all') && recsResp?.ok) {
         const recsData = await recsResp.json();
         const allRecs = recsData.recommendations || [];
         const ranked: RankedItem[] = [];
@@ -144,24 +158,33 @@ export default function RecommendationsView({ siteUrl, scope }: RecommendationsV
     ...dbTasks.map((t) => t.category),
   ])].filter(Boolean).sort();
 
+  const applySubScopeFilter = (kw: string) => {
+    if (scope !== 'all' || filterScope === 'all') return true;
+    return matchesScope(kw, filterScope);
+  };
+
   const filteredCurrentKeyword = currentKeywordTasks.filter((item) => {
     if (filterPriority && item.priority !== filterPriority) return false;
     if (filterCategory && item.category !== filterCategory) return false;
+    if (!applySubScopeFilter(item.keyword)) return false;
     return true;
   });
 
   const filteredPendingDb = pendingDbTasks.filter((t) => {
     if (filterCategory && t.category !== filterCategory) return false;
+    if (!applySubScopeFilter(t.keyword)) return false;
     return true;
   });
 
   const filteredCompleted = completedTasks.filter((t) => {
     if (filterCategory && t.category !== filterCategory) return false;
+    if (!applySubScopeFilter(t.keyword)) return false;
     return true;
   });
 
   const filteredRejected = rejectedTasks.filter((t) => {
     if (filterCategory && t.category !== filterCategory) return false;
+    if (!applySubScopeFilter(t.keyword)) return false;
     return true;
   });
 
@@ -204,10 +227,13 @@ export default function RecommendationsView({ siteUrl, scope }: RecommendationsV
   }, [siteUrl]);
 
   const formatSource = (task: DbTask) => {
-    if (task.source === 'audit') {
+    if (task.keyword.startsWith('audit:')) {
       const type = task.keyword.replace('audit:', '');
       return `${type.toUpperCase()} Audit`;
     }
+    if (task.keyword.startsWith('blog:')) return task.keyword.replace('blog:', '');
+    if (task.keyword.startsWith('build:')) return task.keyword.replace('build:', '');
+    if (task.keyword.startsWith('ad-')) return task.keyword;
     return task.keyword;
   };
 
@@ -241,6 +267,17 @@ export default function RecommendationsView({ siteUrl, scope }: RecommendationsV
       ) : (
         <>
           <div className="flex items-center gap-3 mb-4">
+            {scope === 'all' && (
+              <select value={filterScope} onChange={(e) => setFilterScope(e.target.value as typeof filterScope)}
+                className="px-3 py-2 text-apple-sm rounded-apple-sm border border-apple-border bg-white text-apple-text-secondary cursor-pointer">
+                <option value="all">All Types</option>
+                <option value="organic">Organic</option>
+                <option value="seo">SEO</option>
+                <option value="ad">Advertising</option>
+                <option value="blog">Blog</option>
+                <option value="build">Build</option>
+              </select>
+            )}
             {activeTab === 'current' && (
               <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)}
                 className="px-3 py-2 text-apple-sm rounded-apple-sm border border-apple-border bg-white text-apple-text-secondary cursor-pointer">

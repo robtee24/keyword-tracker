@@ -8,7 +8,7 @@ interface ActivityItem {
   timestamp: string;
 }
 
-export type ActivityScope = 'organic' | 'seo' | 'ad' | 'blog';
+export type ActivityScope = 'organic' | 'seo' | 'ad' | 'blog' | 'build' | 'all';
 
 interface ActivityLogViewProps {
   siteUrl: string;
@@ -16,11 +16,21 @@ interface ActivityLogViewProps {
 }
 
 function matchesScope(keyword: string, scope: ActivityScope) {
-  if (scope === 'organic') return !keyword.startsWith('audit:') && !keyword.startsWith('ad-') && !keyword.startsWith('blog:');
+  if (scope === 'all') return true;
+  if (scope === 'organic') return !keyword.startsWith('audit:') && !keyword.startsWith('ad-') && !keyword.startsWith('blog:') && !keyword.startsWith('build:');
   if (scope === 'seo') return keyword.startsWith('audit:');
   if (scope === 'ad') return keyword.startsWith('ad-');
   if (scope === 'blog') return keyword.startsWith('blog:');
+  if (scope === 'build') return keyword.startsWith('build:');
   return true;
+}
+
+function getScopeLabel(keyword: string): string {
+  if (keyword.startsWith('audit:')) return 'SEO';
+  if (keyword.startsWith('ad-')) return 'Advertising';
+  if (keyword.startsWith('blog:')) return 'Blog';
+  if (keyword.startsWith('build:')) return 'Build';
+  return 'Organic';
 }
 
 const SCOPE_DESCRIPTIONS: Record<ActivityScope, string> = {
@@ -28,6 +38,8 @@ const SCOPE_DESCRIPTIONS: Record<ActivityScope, string> = {
   seo: 'Timeline of SEO audit actions',
   ad: 'Timeline of advertising audit actions',
   blog: 'Timeline of blog audit and generation actions',
+  build: 'Timeline of page build actions',
+  all: 'All activities across every section',
 };
 
 function timeAgo(dateStr: string): string {
@@ -49,6 +61,7 @@ export default function ActivityLogView({ siteUrl, scope }: ActivityLogViewProps
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<string>('');
+  const [filterScope, setFilterScope] = useState<string>('all');
 
   useEffect(() => {
     if (!siteUrl) return;
@@ -96,7 +109,11 @@ export default function ActivityLogView({ siteUrl, scope }: ActivityLogViewProps
     fetchAll();
   }, [siteUrl, scope]);
 
-  const filtered = filterType ? items.filter((i) => i.type === filterType) : items;
+  const filtered = items.filter((i) => {
+    if (filterType && i.type !== filterType) return false;
+    if (scope === 'all' && filterScope !== 'all' && !matchesScope(i.keyword, filterScope as ActivityScope)) return false;
+    return true;
+  });
 
   // Group by date
   const grouped = new Map<string, ActivityItem[]>();
@@ -145,6 +162,20 @@ export default function ActivityLogView({ siteUrl, scope }: ActivityLogViewProps
         <>
           {/* Filters */}
           <div className="flex items-center gap-3 mb-6">
+            {scope === 'all' && (
+              <select
+                value={filterScope}
+                onChange={(e) => setFilterScope(e.target.value)}
+                className="px-3 py-2 text-apple-sm rounded-apple-sm border border-apple-border bg-white text-apple-text-secondary cursor-pointer"
+              >
+                <option value="all">All Sections</option>
+                <option value="organic">Organic</option>
+                <option value="seo">SEO</option>
+                <option value="ad">Advertising</option>
+                <option value="blog">Blog</option>
+                <option value="build">Build</option>
+              </select>
+            )}
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
@@ -192,6 +223,11 @@ export default function ActivityLogView({ siteUrl, scope }: ActivityLogViewProps
                           {item.description}
                         </div>
                         <div className="flex items-center gap-2 mt-1">
+                          {scope === 'all' && (
+                            <span className="inline-flex px-2 py-0.5 rounded-apple-pill text-[10px] font-bold uppercase bg-blue-50 text-blue-600">
+                              {getScopeLabel(item.keyword)}
+                            </span>
+                          )}
                           <span className="inline-flex px-2 py-0.5 rounded-apple-pill text-[10px] font-medium bg-apple-fill-secondary text-apple-text-secondary">
                             {item.keyword}
                           </span>

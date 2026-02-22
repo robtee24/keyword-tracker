@@ -18,6 +18,8 @@ import ActivityLogView from './components/ActivityLogView';
 import BlogAuditView from './components/BlogAuditView';
 import BlogOpportunityView from './components/BlogOpportunityView';
 import BlogAutomateView from './components/BlogAutomateView';
+import BuildRebuildView from './components/BuildRebuildView';
+import BuildNewView from './components/BuildNewView';
 import OAuthModal from './components/OAuthModal';
 import { isAuthenticated, clearTokens, authenticatedFetch } from './services/authService';
 import { API_ENDPOINTS } from './config/api';
@@ -30,6 +32,7 @@ const PROJECTS_KEY = 'kt_projects';
 const SEO_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit', 'seo-tasklist', 'seo-activity']);
 const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure', 'ad-tasklist', 'ad-activity', 'advertising']);
 const BLOG_VIEWS = new Set<View>(['blog-audit', 'blog-opportunity', 'blog-automate', 'blog-tasklist', 'blog-activity']);
+const BUILD_VIEWS = new Set<View>(['build-rebuild', 'build-new', 'build-tasklist', 'build-activity']);
 
 const BREADCRUMB_LABELS: Record<string, string> = {
   'objectives': 'Objectives',
@@ -65,6 +68,10 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   'blog-automate': 'Blog › Automate',
   'blog-tasklist': 'Blog › Tasklist',
   'blog-activity': 'Blog › Activity Log',
+  'build-rebuild': 'Build › Rebuild',
+  'build-new': 'Build › New',
+  'build-tasklist': 'Build › Tasklist',
+  'build-activity': 'Build › Activity Log',
 };
 
 type AdAuditType = 'google' | 'meta' | 'linkedin' | 'reddit' | 'budget' | 'performance' | 'creative' | 'attribution' | 'structure';
@@ -225,7 +232,7 @@ function App() {
       setVisitedAudits(new Set());
     } else {
       localStorage.setItem('kt_active_view', view);
-      if (SEO_AUDIT_VIEWS.has(view) || AD_AUDIT_VIEWS.has(view) || BLOG_VIEWS.has(view)) {
+      if (SEO_AUDIT_VIEWS.has(view) || AD_AUDIT_VIEWS.has(view) || BLOG_VIEWS.has(view) || BUILD_VIEWS.has(view)) {
         setVisitedAudits((prev) => new Set(prev).add(view));
       }
     }
@@ -528,6 +535,14 @@ function App() {
             <BlogAutomateView siteUrl={activeProject.siteUrl} />
           )}
 
+          {/* ── Build Views ── */}
+          {currentView === 'build-rebuild' && activeProject && (
+            <BuildRebuildView siteUrl={activeProject.siteUrl} />
+          )}
+          {currentView === 'build-new' && activeProject && (
+            <BuildNewView siteUrl={activeProject.siteUrl} />
+          )}
+
           {/* ── Scoped Tasklists ── */}
           {currentView === 'organic-tasklist' && activeProject && (
             <TasklistView siteUrl={activeProject.siteUrl} scope="organic" />
@@ -540,6 +555,9 @@ function App() {
           )}
           {currentView === 'blog-tasklist' && activeProject && (
             <TasklistView siteUrl={activeProject.siteUrl} scope="blog" />
+          )}
+          {currentView === 'build-tasklist' && activeProject && (
+            <TasklistView siteUrl={activeProject.siteUrl} scope="all" />
           )}
 
           {/* ── Scoped Activity Logs ── */}
@@ -554,6 +572,9 @@ function App() {
           )}
           {currentView === 'blog-activity' && activeProject && (
             <ActivityLogView siteUrl={activeProject.siteUrl} scope="blog" />
+          )}
+          {currentView === 'build-activity' && activeProject && (
+            <ActivityLogView siteUrl={activeProject.siteUrl} scope="all" />
           )}
         </main>
       </div>

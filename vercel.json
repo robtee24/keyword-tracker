@@ -39,6 +39,15 @@
     },
     "api/blog/generate.js": {
       "maxDuration": 120
+    },
+    "api/build/rebuild.js": {
+      "maxDuration": 120
+    },
+    "api/build/suggest-pages.js": {
+      "maxDuration": 60
+    },
+    "api/build/create-page.js": {
+      "maxDuration": 120
     }
   },
   "rewrites": [
