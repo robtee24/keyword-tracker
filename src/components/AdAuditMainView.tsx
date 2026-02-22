@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
+import { logActivity } from '../utils/activityLog';
 
 type AdAuditType = 'google' | 'meta' | 'linkedin' | 'reddit' | 'budget' | 'performance' | 'creative' | 'attribution' | 'structure';
 type ResultsTab = 'summary' | 'audits' | 'recommendations';
@@ -230,6 +231,8 @@ export default function AdAuditMainView({ siteUrl }: AdAuditMainViewProps) {
     }
     setProgress(prev => ({ ...prev, done: typesWithFiles.length, current: '' }));
     setIsRunning(false);
+    const typesStr = typesWithFiles.map(t => t.type).join(', ');
+    logActivity(siteUrl, 'ad', 'audit', `Advertising audit completed: ${typesStr}`);
   }, [siteUrl, selectedTypes, uploadedFiles]);
 
   const stopAudit = () => { stopRef.current = true; };

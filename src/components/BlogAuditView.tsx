@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_ENDPOINTS } from '../config/api';
+import { logActivity } from '../utils/activityLog';
 
 interface BlogUrl {
   id?: string;
@@ -160,6 +161,8 @@ export default function BlogAuditView({ siteUrl }: BlogAuditViewProps) {
       setResult(data);
       setActiveTab('summary');
       await loadSavedAudits();
+      const postCount = data.posts?.length || 0;
+      logActivity(siteUrl, 'blog', 'audit', `Blog audit completed: ${auditMode === 'full' ? `Full audit (${postCount} posts)` : `Single post: ${targetUrl}`} — Score: ${data.overallScore || data.posts?.[0]?.score || 'N/A'}`);
     } catch (err) {
       console.error('Audit failed:', err);
     }

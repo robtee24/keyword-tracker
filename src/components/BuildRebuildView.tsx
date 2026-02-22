@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { API_ENDPOINTS } from '../config/api';
+import { logActivity } from '../utils/activityLog';
 
 interface RebuildChange {
   area: string;
@@ -137,6 +138,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
           body: JSON.stringify({ siteUrl, pageUrl, buildType: 'rebuild', result: data.result }),
         });
         await loadSavedBuilds();
+        logActivity(siteUrl, 'build', 'rebuild', `Rebuilt page: ${pageUrl} — ${data.result.recommendations?.length || 0} improvements`);
       }
     } catch (err) {
       console.error('Build failed:', err);
@@ -158,6 +160,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
           status: 'pending',
         }),
       });
+      logActivity(siteUrl, 'build', 'task-added', `Added rebuild task: ${change.area} for ${resultPageUrl}`);
     } catch (err) {
       console.error('Failed to add to tasklist:', err);
     }

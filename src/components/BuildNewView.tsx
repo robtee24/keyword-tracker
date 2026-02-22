@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_ENDPOINTS } from '../config/api';
+import { logActivity } from '../utils/activityLog';
 
 interface PageSuggestion {
   title: string;
@@ -115,6 +116,7 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
         const reloadData = await reloadResp.json();
         if (reloadData.id) setDbRecordId(reloadData.id);
       }
+      logActivity(siteUrl, 'build', 'suggestions', `Generated ${newSuggestions.length} new page suggestions`);
     } catch (err) {
       console.error('Failed to generate suggestions:', err);
     }
@@ -164,6 +166,7 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
             result: data.page,
           }),
         });
+        logActivity(siteUrl, 'build', 'page-built', `Built new page: ${suggestion.title} (/${suggestion.slug})`);
       }
     } catch (err) {
       console.error('Build failed:', err);
@@ -203,6 +206,7 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
           }),
         });
         await loadSavedData();
+        logActivity(siteUrl, 'build', 'wizard-built', `Created custom page: ${data.page.title || wizardData.title}`);
       }
     } catch (err) {
       console.error('Wizard build failed:', err);

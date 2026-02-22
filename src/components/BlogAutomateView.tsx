@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_ENDPOINTS } from '../config/api';
+import { logActivity } from '../utils/activityLog';
 
 interface Schedule {
   id: string;
@@ -66,6 +67,7 @@ export default function BlogAutomateView({ siteUrl }: BlogAutomateViewProps) {
         }),
       });
       await loadSchedules();
+      logActivity(siteUrl, 'blog', 'schedule-created', `Created blog schedule: ${newPostsPerBatch} posts ${newFrequency}`);
     } catch (err) {
       console.error('Failed to create schedule:', err);
     }
@@ -82,6 +84,7 @@ export default function BlogAutomateView({ siteUrl }: BlogAutomateViewProps) {
       setSchedules((prev) =>
         prev.map((s) => (s.id === schedule.id ? { ...s, active: !s.active } : s))
       );
+      logActivity(siteUrl, 'blog', 'schedule-toggled', `Blog schedule ${!schedule.active ? 'activated' : 'paused'}`);
     } catch (err) {
       console.error('Failed to toggle schedule:', err);
     }
@@ -95,6 +98,7 @@ export default function BlogAutomateView({ siteUrl }: BlogAutomateViewProps) {
         body: JSON.stringify({ id }),
       });
       setSchedules((prev) => prev.filter((s) => s.id !== id));
+      logActivity(siteUrl, 'blog', 'schedule-deleted', `Deleted blog schedule`);
     } catch (err) {
       console.error('Failed to delete schedule:', err);
     }

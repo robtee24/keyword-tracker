@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
+import { logActivity } from '../utils/activityLog';
 
 type AdAuditType = 'google' | 'meta' | 'linkedin' | 'reddit' | 'budget' | 'performance' | 'creative' | 'attribution' | 'structure';
 
@@ -144,6 +145,7 @@ export default function AdAuditView({ siteUrl, adAuditType, title, description, 
           file_name: uploadedFile.name,
         });
       }
+      logActivity(siteUrl, 'ad', `audit-${adAuditType}`, `${adAuditType} ad audit completed: ${uploadedFile.name}`);
     } catch (err) {
       console.error('Ad audit failed:', err);
     }

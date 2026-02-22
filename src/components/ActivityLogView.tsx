@@ -79,10 +79,11 @@ export default function ActivityLogView({ siteUrl, scope }: ActivityLogViewProps
         if (tasksResp.ok) {
           const data = await tasksResp.json();
           for (const task of data.tasks || []) {
+            const isActivity = task.category === 'activity';
             activities.push({
-              type: 'task_completed',
+              type: isActivity ? 'scan' : 'task_completed',
               keyword: task.keyword,
-              description: task.task_description,
+              description: task.task_text || task.task_description || '',
               timestamp: task.completed_at,
             });
           }
@@ -182,8 +183,8 @@ export default function ActivityLogView({ siteUrl, scope }: ActivityLogViewProps
               className="px-3 py-2 text-apple-sm rounded-apple-sm border border-apple-border bg-white text-apple-text-secondary cursor-pointer"
             >
               <option value="">All Activity</option>
-              <option value="scan">Scans</option>
-              <option value="task_completed">Completed Tasks</option>
+              <option value="scan">Actions & Scans</option>
+              <option value="task_completed">Task Updates</option>
             </select>
             <span className="text-apple-sm text-apple-text-tertiary ml-auto">
               {filtered.length} {filtered.length === 1 ? 'event' : 'events'}

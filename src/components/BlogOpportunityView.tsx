@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_ENDPOINTS } from '../config/api';
+import { logActivity } from '../utils/activityLog';
 
 interface Opportunity {
   id?: string;
@@ -93,6 +94,7 @@ export default function BlogOpportunityView({ siteUrl }: BlogOpportunityViewProp
       if (data.opportunities) {
         await loadOpportunities();
       }
+      logActivity(siteUrl, 'blog', 'opportunities', `Generated blog topic opportunities`);
     } catch (err) {
       console.error('Failed to generate opportunities:', err);
     }
@@ -124,6 +126,7 @@ export default function BlogOpportunityView({ siteUrl }: BlogOpportunityViewProp
             o.id === opp.id ? { ...o, status: 'completed', generated_blog: data.blog } : o
           )
         );
+        logActivity(siteUrl, 'blog', 'post-generated', `Generated blog post: ${opp.title}`);
       }
     } catch (err) {
       console.error('Failed to generate blog:', err);
@@ -143,6 +146,7 @@ export default function BlogOpportunityView({ siteUrl }: BlogOpportunityViewProp
       setOpportunities((prev) =>
         prev.map((o) => (o.id === opp.id ? { ...o, status: newStatus } : o))
       );
+      logActivity(siteUrl, 'blog', 'topic-status', `Marked blog topic "${opp.title}" as ${newStatus}`);
     } catch (err) {
       console.error('Failed to update status:', err);
     }

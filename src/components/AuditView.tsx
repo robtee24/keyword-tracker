@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
+import { logActivity } from '../utils/activityLog';
 
 type AuditType = 'seo' | 'content' | 'aeo' | 'schema' | 'compliance' | 'speed';
 type AuditMode = 'page' | 'keyword' | 'group' | 'site';
@@ -309,6 +310,7 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
     }
     setIsRunning(false);
     setCurrentBatch([]);
+    logActivity(siteUrl, 'seo', `audit-${auditType}`, `${auditType.toUpperCase()} audit completed: ${urls.length} page${urls.length > 1 ? 's' : ''} audited`);
   }, [siteUrl, auditType]);
 
   const handleStartPage = () => { const url = pageUrlInput.trim(); if (!url) return; const fullUrl = url.startsWith('http') ? url : `${siteUrl}${url.startsWith('/') ? '' : '/'}${url}`; runAuditOnUrls([fullUrl], true); };

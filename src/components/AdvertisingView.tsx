@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { API_ENDPOINTS } from '../config/api';
+import { logActivity } from '../utils/activityLog';
 
 type MatchTab = 'broad' | 'phrase' | 'exact' | 'negative';
 
@@ -98,6 +99,8 @@ export default function AdvertisingView({ siteUrl, projectId }: AdvertisingViewP
         throw new Error('Server returned empty results. Check that your site has tracked keywords.');
       }
       setData(body);
+      const totalKw = (body.broad?.length || 0) + (body.phrase?.length || 0) + (body.exact?.length || 0) + (body.negative?.length || 0);
+      logActivity(siteUrl, 'ad', 'keywords-generated', `Generated ${totalKw} advertising keywords (broad, phrase, exact, negative)`);
     } catch (err: any) {
       setError(err.message);
     } finally {

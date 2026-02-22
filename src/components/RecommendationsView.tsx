@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_ENDPOINTS } from '../config/api';
+import { logActivity } from '../utils/activityLog';
 
 type TasklistTab = 'current' | 'completed' | 'rejected';
 
@@ -197,6 +198,9 @@ export default function RecommendationsView({ siteUrl, scope }: RecommendationsV
     try {
       await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ siteUrl, keyword: task.keyword, taskId: task.taskId || task.taskText, taskText: task.taskText, category: task.category, status: newStatus }) });
+      const scopeKey = getScopeLabel(task.keyword).toLowerCase() as 'organic' | 'seo' | 'ad' | 'blog' | 'build';
+      const validScope = ['organic', 'seo', 'ad', 'blog', 'build'].includes(scopeKey) ? scopeKey : 'organic';
+      logActivity(siteUrl, validScope as 'organic' | 'seo' | 'ad' | 'blog' | 'build', `task-${newStatus}`, `Task ${newStatus}: ${task.taskText}`);
     } catch { /* */ }
   }, [siteUrl]);
 
@@ -206,6 +210,7 @@ export default function RecommendationsView({ siteUrl, scope }: RecommendationsV
     try {
       await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ siteUrl, keyword: item.keyword, taskId: item.task, taskText: item.task, category: item.category, status: 'completed' }) });
+      logActivity(siteUrl, 'organic', 'task-completed', `Completed: ${item.task} (${item.keyword})`);
     } catch { /* */ }
   }, [siteUrl]);
 
@@ -215,6 +220,7 @@ export default function RecommendationsView({ siteUrl, scope }: RecommendationsV
     try {
       await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ siteUrl, keyword: item.keyword, taskId: item.task, taskText: item.task, category: item.category, status: 'rejected' }) });
+      logActivity(siteUrl, 'organic', 'task-rejected', `Rejected: ${item.task} (${item.keyword})`);
     } catch { /* */ }
   }, [siteUrl]);
 
