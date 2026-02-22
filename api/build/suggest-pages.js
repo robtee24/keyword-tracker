@@ -20,7 +20,7 @@ export default async function handler(req, res) {
     try { return new URL(u).pathname; } catch { return u; }
   }).join('\n');
 
-  const prompt = `You are an expert website strategist, SEO specialist, and conversion optimizer. Analyze this website and suggest 20 new pages that would significantly improve the site's performance.
+  const prompt = `You are an expert website strategist, SEO specialist, and conversion optimizer. Analyze this website and suggest 20 new WEBSITE PAGES that would significantly improve the site's performance.
 
 WEBSITE: ${siteUrl}
 BUSINESS OBJECTIVES: ${objectives || 'Improve organic traffic, conversions, and user experience'}
@@ -28,10 +28,15 @@ BUSINESS OBJECTIVES: ${objectives || 'Improve organic traffic, conversions, and 
 EXISTING PAGES (paths only, first 100):
 ${existingList || 'No existing pages provided'}
 
+CRITICAL RULES:
+- DO NOT suggest blog posts, articles, or any blog-type content. Blog content is handled separately.
+- ONLY suggest structural website pages and landing pages: service pages, product pages, landing pages, comparison pages, pricing pages, about/team pages, FAQ pages, case study pages, tool/calculator pages, resource hub pages, testimonial/review pages, contact pages, location pages, industry-specific pages, integration pages, partner pages, etc.
+- Every suggestion must be a standalone website PAGE, not a blog article or news post.
+
 REQUIREMENTS:
 1. Suggest exactly 20 new pages the site DOES NOT already have
 2. Each page should serve a clear purpose (traffic, conversion, trust, or user experience)
-3. Mix of page types: landing pages, service pages, resource pages, comparison pages, FAQ pages, case studies, tools/calculators
+3. Mix of page types: landing pages, service pages, product pages, comparison pages, FAQ pages, case studies, tools/calculators, pricing pages, industry pages, location pages, integration pages
 4. Consider the full conversion funnel: awareness → consideration → decision
 5. Prioritize pages with highest potential impact
 6. Each suggestion must explain WHY this page would help and WHAT its purpose is
@@ -44,7 +49,7 @@ Respond with ONLY valid JSON:
     {
       "title": "<page title>",
       "slug": "<url-friendly-slug>",
-      "pageType": "landing" | "service" | "resource" | "comparison" | "faq" | "case-study" | "tool" | "about" | "legal" | "other",
+      "pageType": "landing" | "service" | "product" | "comparison" | "faq" | "case-study" | "tool" | "pricing" | "about" | "industry" | "location" | "integration" | "testimonial" | "legal" | "other",
       "purpose": "<2-3 sentences explaining why this page is needed and what it accomplishes>",
       "targetKeyword": "<primary keyword>",
       "estimatedMonthlySearches": <number>,

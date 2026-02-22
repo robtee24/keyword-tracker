@@ -226,11 +226,19 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
     const colors: Record<string, string> = {
       landing: 'bg-indigo-100 text-indigo-700',
       service: 'bg-teal-100 text-teal-700',
-      resource: 'bg-cyan-100 text-cyan-700',
+      product: 'bg-emerald-100 text-emerald-700',
       comparison: 'bg-orange-100 text-orange-700',
       faq: 'bg-yellow-100 text-yellow-700',
       'case-study': 'bg-pink-100 text-pink-700',
       tool: 'bg-violet-100 text-violet-700',
+      pricing: 'bg-lime-100 text-lime-700',
+      about: 'bg-sky-100 text-sky-700',
+      industry: 'bg-amber-100 text-amber-700',
+      location: 'bg-rose-100 text-rose-700',
+      integration: 'bg-cyan-100 text-cyan-700',
+      testimonial: 'bg-fuchsia-100 text-fuchsia-700',
+      resource: 'bg-slate-100 text-slate-700',
+      legal: 'bg-stone-100 text-stone-700',
     };
     return colors[t] || 'bg-gray-100 text-gray-600';
   };
