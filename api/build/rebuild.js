@@ -53,6 +53,34 @@ FAQ: Address top objections disguised as questions.
 Final CTA: Repeat primary action with urgency or incentive.
 `;
 
+async function callClaude(systemPrompt, userMessage, maxTokens = 16000) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured');
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => 'unknown');
+    throw new Error(`Claude API error (${response.status}): ${detail}`);
+  }
+
+  const data = await response.json();
+  return data.content?.[0]?.text || '';
+}
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -60,8 +88,7 @@ export default async function handler(req, res) {
   const { siteUrl, pageUrl, improvements, objectives } = req.body || {};
   if (!siteUrl || !pageUrl) return res.status(400).json({ error: 'siteUrl and pageUrl required' });
 
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
 
   let pageContent;
   try {
@@ -82,9 +109,25 @@ export default async function handler(req, res) {
     ? improvements.join(', ')
     : 'SEO, content quality, conversion optimization, technical performance, user experience';
 
-  const prompt = `You are a world-class web developer, SEO specialist, copywriter, and conversion optimizer. You have deep expertise in marketing psychology, CRO, and content strategy. Rebuild this page to be exceptional.
+  const systemPrompt = `You are a world-class web developer, UI/UX designer, SEO specialist, copywriter, and conversion optimizer. You build pages that look professionally designed with modern aesthetics — clean typography, proper spacing, visual hierarchy, and polished CSS.
 
 ${MARKETING_SKILLS}
+
+CRITICAL DESIGN RULES:
+- Use modern CSS: flexbox, grid, gradients, shadows, rounded corners, smooth transitions
+- Include a cohesive color palette with primary, secondary, and accent colors
+- Use proper typography: font-size hierarchy, line-height, letter-spacing, font-weight variation
+- Add padding and margins that create breathing room between sections
+- Use cards, dividers, and background color alternation to separate content visually
+- Include hover states for interactive elements (buttons, links, cards)
+- Make it responsive with media queries
+- Add subtle animations or transitions where appropriate
+- Use CSS custom properties (variables) for consistent theming
+- Create visual interest with gradients, patterns, or background shapes
+- Include a proper header/navigation and footer
+- Buttons should look like buttons: padding, background color, border-radius, hover effects`;
+
+  const userMessage = `Rebuild this page to be visually stunning and conversion-optimized.
 
 WEBSITE: ${siteUrl}
 PAGE URL: ${pageUrl}
@@ -97,18 +140,18 @@ CURRENT PAGE ANALYSIS:
 Title: ${pageContent.title || '(none)'}
 Meta Description: ${pageContent.metaDescription || '(none)'}
 H1: ${pageContent.headings.filter(h => h.level === 'H1').map(h => h.text).join(', ') || '(none)'}
-Word Count: ~${pageContent.bodyText.split(/\\s+/).length}
+Word Count: ~${pageContent.bodyText.split(/\s+/).length}
 Images: ${pageContent.imageCount} total, ${pageContent.imagesWithoutAlt} missing alt text
 Internal Links: ${pageContent.internalLinkCount}
 
 HEADINGS:
-${pageContent.headings.map(h => \`\${h.level}: \${h.text}\`).join('\\n') || '(none)'}
+${pageContent.headings.map(h => `${h.level}: ${h.text}`).join('\n') || '(none)'}
 
-BODY TEXT (first 4000 chars):
-${pageContent.bodyText.substring(0, 4000)}
+BODY TEXT (first 5000 chars):
+${pageContent.bodyText.substring(0, 5000)}
 
 REBUILD INSTRUCTIONS:
-1. Apply EVERY marketing skill and framework above to this page
+1. Apply EVERY marketing skill and framework listed in the system prompt
 2. Write REAL, compelling, specific copy — not generic placeholder text
 3. Use proven headline formulas. Every heading must be benefit-driven or outcome-focused
 4. Include specific, quantified CTAs (e.g., "Start Your Free 14-Day Trial" not "Get Started")
@@ -116,10 +159,12 @@ REBUILD INSTRUCTIONS:
 6. Structure page for scanability: short paragraphs, bullet points, subheadings
 7. Add trust signals: suggest where to place testimonials, logos, stats
 8. Include proper heading hierarchy (H1 > H2 > H3), meta tags, and schema markup
-9. Suggest specific image placements with detailed descriptions of what each image should show
-10. Include inline CSS styles that match the existing site's visual design (colors, fonts, spacing)
-11. Ensure every section serves a clear purpose in the conversion funnel
-12. Address likely objections through FAQ or embedded reassurance
+9. Suggest specific image placements with detailed descriptions
+10. Include COMPREHENSIVE inline CSS that creates a visually polished, modern page design
+11. Use a <style> tag at the top with CSS variables, then semantic HTML with proper classes
+12. Ensure every section serves a clear purpose in the conversion funnel
+13. Address likely objections through FAQ or embedded reassurance
+14. The page MUST look professionally designed — not like unstyled HTML
 
 Respond with ONLY valid JSON:
 {
@@ -128,39 +173,19 @@ Respond with ONLY valid JSON:
   "recommendations": [
     {
       "area": "<improvement area>",
-      "current": "<what's wrong now — be specific>",
+      "current": "<what's wrong now>",
       "improved": "<exact change made>",
-      "reason": "<why this improves the page, citing which marketing principle it applies>"
+      "reason": "<why this improves the page>"
     }
   ],
-  "htmlContent": "<complete rebuilt page HTML content (body only). Include inline CSS for styling. Include image placeholders with descriptive alt text. Include structured sections following the CRO framework.>",
+  "htmlContent": "<complete rebuilt page HTML (body content) with a <style> tag containing all CSS at the top, followed by semantic HTML with proper classes. The CSS should create a modern, visually polished design with proper colors, spacing, typography, shadows, rounded corners, and hover effects.>",
   "schemaMarkup": "<complete JSON-LD schema markup>",
-  "suggestedImages": ["<specific image description: what it shows, where it goes, and why>"],
-  "summary": "<2-3 sentence summary of all changes made and which marketing frameworks were applied>"
+  "suggestedImages": ["<specific image description>"],
+  "summary": "<summary of changes made>"
 }`;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: prompt },
-          { role: 'user', content: `Rebuild this page with improvements to: ${improvementAreas}. Apply all marketing skills and frameworks.` },
-        ],
-        temperature: 0.3,
-        max_tokens: 10000,
-      }),
-    });
-
-    if (!response.ok) {
-      const detail = await response.text().catch(() => 'unknown');
-      throw new Error(`OpenAI error (${response.status}): ${detail}`);
-    }
-
-    const data = await response.json();
-    let raw = data.choices?.[0]?.message?.content || '';
+    let raw = await callClaude(systemPrompt, userMessage, 16000);
     raw = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
     let result;
@@ -199,7 +224,7 @@ async function extractHomePageStyles(homeUrl) {
     const allCss = inlineStyles.join('\n');
 
     const colorMatches = allCss.match(/(?:color|background(?:-color)?)\s*:\s*([^;}\n]+)/gi) || [];
-    const uniqueColors = [...new Set(colorMatches.map(c => c.trim()).slice(0, 15))];
+    const uniqueColors = [...new Set(colorMatches.map(c => c.trim()).slice(0, 20))];
     if (uniqueColors.length) styles.push(`Colors used: ${uniqueColors.join('; ')}`);
 
     const fontMatches = allCss.match(/font-family\s*:\s*([^;}\n]+)/gi) || [];
@@ -210,19 +235,20 @@ async function extractHomePageStyles(homeUrl) {
     if (googleFontMatch) styles.push(`Google Fonts: ${decodeURIComponent(googleFontMatch[1])}`);
 
     const borderRadiusMatches = allCss.match(/border-radius\s*:\s*([^;}\n]+)/gi) || [];
-    if (borderRadiusMatches.length) styles.push(`Border radius: ${[...new Set(borderRadiusMatches.slice(0, 3))].join('; ')}`);
+    if (borderRadiusMatches.length) styles.push(`Border radius: ${[...new Set(borderRadiusMatches.slice(0, 5))].join('; ')}`);
 
     const btnStyles = allCss.match(/\.btn[^{]*\{[^}]+\}/gi) || allCss.match(/button[^{]*\{[^}]+\}/gi) || [];
-    if (btnStyles.length) styles.push(`Button styles found: ${btnStyles.length}`);
+    if (btnStyles.length) styles.push(`Button styles: ${btnStyles.slice(0, 3).join('\n')}`);
 
     const cssVars = allCss.match(/--[a-zA-Z0-9-]+\s*:\s*[^;]+/g) || [];
-    if (cssVars.length) styles.push(`CSS variables: ${cssVars.slice(0, 15).join('; ')}`);
+    if (cssVars.length) styles.push(`CSS variables: ${cssVars.slice(0, 20).join('; ')}`);
 
-    const navTag = /<nav[^>]*>([\s\S]*?)<\/nav>/i.exec(html);
-    if (navTag) styles.push('Has nav element');
+    const spacingPatterns = allCss.match(/(?:padding|margin|gap)\s*:\s*([^;}\n]+)/gi) || [];
+    const uniqueSpacing = [...new Set(spacingPatterns.slice(0, 10))];
+    if (uniqueSpacing.length) styles.push(`Spacing patterns: ${uniqueSpacing.join('; ')}`);
 
-    const footerTag = /<footer[^>]*>([\s\S]*?)<\/footer>/i.exec(html);
-    if (footerTag) styles.push('Has footer element');
+    const shadowPatterns = allCss.match(/box-shadow\s*:\s*([^;}\n]+)/gi) || [];
+    if (shadowPatterns.length) styles.push(`Shadows: ${[...new Set(shadowPatterns.slice(0, 3))].join('; ')}`);
 
     return styles.join('\n') || '';
   } catch {

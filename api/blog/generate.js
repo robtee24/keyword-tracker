@@ -2,11 +2,34 @@ import { getSupabase } from '../db.js';
 
 export const config = { maxDuration: 120 };
 
-/**
- * POST /api/blog/generate
- * { siteUrl, title, targetKeyword, relatedKeywords, description, objectives, opportunityId }
- * Generates a full blog post using AI.
- */
+async function callClaude(systemPrompt, userMessage, maxTokens = 16000) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured');
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => 'unknown');
+    throw new Error(`Claude API error (${response.status}): ${detail}`);
+  }
+
+  const data = await response.json();
+  return data.content?.[0]?.text || '';
+}
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -14,10 +37,11 @@ export default async function handler(req, res) {
   const { siteUrl, title, targetKeyword, relatedKeywords, description, objectives, opportunityId } = req.body || {};
   if (!siteUrl || !title) return res.status(400).json({ error: 'siteUrl and title are required' });
 
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
 
-  const prompt = `You are an expert content writer and SEO specialist. Write a complete, publish-ready blog post.
+  const systemPrompt = `You are an expert content writer, SEO specialist, and subject matter authority. You write compelling, well-researched blog posts that rank well in search engines and genuinely help readers. Your writing is authoritative, specific, and full of actionable insights — never generic filler content.`;
+
+  const userMessage = `Write a complete, publish-ready blog post.
 
 WEBSITE: ${siteUrl}
 BUSINESS OBJECTIVES: ${objectives || 'Infer from the website'}
@@ -29,16 +53,18 @@ Related Keywords to Include: ${(relatedKeywords || []).join(', ') || 'None speci
 Topic Context: ${description || 'Write based on the title'}
 
 REQUIREMENTS:
-1. Write 1500-2500 words of high-quality, original content
+1. Write 2000-3000 words of high-quality, original content
 2. Use the target keyword naturally 3-5 times (no keyword stuffing)
-3. Include related keywords where natural
-4. Structure with clear H2 and H3 subheadings
-5. Write a compelling introduction that hooks the reader
-6. Include actionable takeaways and specific examples
-7. End with a clear conclusion and call-to-action
-8. Write in a professional but approachable tone
-9. Include suggestions for images/visuals in [brackets]
-10. Provide a meta description (under 155 characters)
+3. Include related keywords where they fit naturally
+4. Structure with clear H2 and H3 subheadings (at least 5-7 subheadings)
+5. Write a compelling introduction that hooks the reader with a specific problem or insight
+6. Include actionable takeaways, specific examples, data points, and expert insights
+7. Use short paragraphs (2-3 sentences max), bullet points, and numbered lists for scanability
+8. End with a clear conclusion and call-to-action
+9. Write in a professional but approachable tone — authoritative without being dry
+10. Include suggestions for images/visuals in [IMAGE: description] format
+11. Provide a meta description (under 155 characters)
+12. Make every section substantive — no padding or filler content
 
 Respond with ONLY valid JSON:
 {
@@ -52,27 +78,7 @@ Respond with ONLY valid JSON:
 }`;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: prompt },
-          { role: 'user', content: `Write a blog post: "${title}"` },
-        ],
-        temperature: 0.5,
-        max_tokens: 8000,
-      }),
-    });
-
-    if (!response.ok) {
-      const detail = await response.text().catch(() => 'unknown');
-      throw new Error(`OpenAI error (${response.status}): ${detail}`);
-    }
-
-    const data = await response.json();
-    let raw = data.choices?.[0]?.message?.content || '';
+    let raw = await callClaude(systemPrompt, userMessage, 16000);
     raw = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
     let blog;

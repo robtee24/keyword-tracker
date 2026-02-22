@@ -254,9 +254,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: `Invalid auditType: ${auditType}` });
   }
 
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) {
-    return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (!anthropicKey) {
+    return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
   }
 
   // 1. Fetch and extract page content
@@ -276,7 +276,7 @@ export default async function handler(req, res) {
   // 2. Run AI audit
   let auditResult;
   try {
-    auditResult = await runAudit(openaiKey, pageUrl, pageContent, auditType);
+    auditResult = await runAudit(anthropicKey, pageUrl, pageContent, auditType);
   } catch (err) {
     return res.status(200).json({
       pageUrl,
@@ -514,33 +514,28 @@ Return 3-5 strengths — things the page already does correctly.`;
 
   const responseFormat = isCompliance ? complianceResponseFormat : standardResponseFormat;
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: `${AUDIT_PROMPTS[auditType]}\n${responseFormat}\n${sharedRules}`,
-        },
-        { role: 'user', content: pageContext },
-      ],
-      temperature: 0.2,
-      max_tokens: isCompliance ? 4000 : 3000,
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: isCompliance ? 6000 : 4000,
+      system: `${AUDIT_PROMPTS[auditType]}\n${responseFormat}\n${sharedRules}`,
+      messages: [{ role: 'user', content: pageContext }],
     }),
   });
 
   if (!response.ok) {
     const detail = await response.text().catch(() => 'unknown');
-    throw new Error(`OpenAI error (${response.status}): ${detail}`);
+    throw new Error(`Claude API error (${response.status}): ${detail}`);
   }
 
   const data = await response.json();
-  let content_str = data.choices?.[0]?.message?.content || '{}';
+  let content_str = data.content?.[0]?.text || '{}';
 
   let cleaned = content_str.trim();
   if (cleaned.startsWith('```')) {

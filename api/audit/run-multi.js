@@ -330,9 +330,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'No valid audit types provided' });
   }
 
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) {
-    return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (!anthropicKey) {
+    return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
   }
 
   // 1. Fetch page content ONCE
@@ -352,7 +352,7 @@ export default async function handler(req, res) {
   // 2. Run all audit types in parallel against the same content
   const auditPromises = validTypes.map(async (auditType) => {
     try {
-      const result = await runAudit(openaiKey, pageContext, auditType);
+      const result = await runAudit(anthropicKey, pageContext, auditType);
       return { auditType, ...result };
     } catch (err) {
       return {
@@ -478,30 +478,28 @@ async function runAudit(apiKey, pageContext, auditType) {
   const isCompliance = auditType === 'compliance';
   const responseFormat = isCompliance ? COMPLIANCE_RESPONSE_FORMAT : STANDARD_RESPONSE_FORMAT;
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: `${AUDIT_PROMPTS[auditType]}\n${responseFormat}\n${SHARED_RULES}` },
-        { role: 'user', content: pageContext },
-      ],
-      temperature: 0.2,
-      max_tokens: isCompliance ? 4000 : 3000,
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: isCompliance ? 6000 : 4000,
+      system: `${AUDIT_PROMPTS[auditType]}\n${responseFormat}\n${SHARED_RULES}`,
+      messages: [{ role: 'user', content: pageContext }],
     }),
   });
 
   if (!response.ok) {
     const detail = await response.text().catch(() => 'unknown');
-    throw new Error(`OpenAI error (${response.status}): ${detail}`);
+    throw new Error(`Claude API error (${response.status}): ${detail}`);
   }
 
   const data = await response.json();
-  let raw = data.choices?.[0]?.message?.content || '{}';
+  let raw = data.content?.[0]?.text || '{}';
   let cleaned = raw.trim();
   if (cleaned.startsWith('```')) {
     cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');

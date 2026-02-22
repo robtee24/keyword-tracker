@@ -1,11 +1,33 @@
 export const config = { maxDuration: 60 };
 
-/**
- * POST /api/build/suggest-pages
- * { siteUrl, objectives, existingPages }
- *
- * AI-generates 20 suggested new pages that would benefit the site.
- */
+async function callClaude(systemPrompt, userMessage, maxTokens = 8000) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured');
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => 'unknown');
+    throw new Error(`Claude API error (${response.status}): ${detail}`);
+  }
+
+  const data = await response.json();
+  return data.content?.[0]?.text || '';
+}
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -13,14 +35,15 @@ export default async function handler(req, res) {
   const { siteUrl, objectives, existingPages } = req.body || {};
   if (!siteUrl) return res.status(400).json({ error: 'siteUrl required' });
 
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
 
   const existingList = (existingPages || []).slice(0, 100).map(u => {
     try { return new URL(u).pathname; } catch { return u; }
   }).join('\n');
 
-  const prompt = `You are an expert website strategist, SEO specialist, and conversion optimizer. Analyze this website and suggest 20 new WEBSITE PAGES that would significantly improve the site's performance.
+  const systemPrompt = `You are an expert website strategist, SEO specialist, and conversion optimizer. You analyze sites and recommend high-impact new pages that will drive organic traffic, build authority, and convert visitors.`;
+
+  const userMessage = `Analyze this website and suggest 20 new WEBSITE PAGES that would significantly improve the site's performance.
 
 WEBSITE: ${siteUrl}
 BUSINESS OBJECTIVES: ${objectives || 'Improve organic traffic, conversions, and user experience'}
@@ -37,7 +60,7 @@ REQUIREMENTS:
 1. Suggest exactly 20 new pages the site DOES NOT already have
 2. Each page should serve a clear purpose (traffic, conversion, trust, or user experience)
 3. Mix of page types: landing pages, service pages, product pages, comparison pages, FAQ pages, case studies, tools/calculators, pricing pages, industry pages, location pages, integration pages
-4. Consider the full conversion funnel: awareness → consideration → decision
+4. Consider the full conversion funnel: awareness > consideration > decision
 5. Prioritize pages with highest potential impact
 6. Each suggestion must explain WHY this page would help and WHAT its purpose is
 7. Include target keywords for each page
@@ -50,7 +73,7 @@ Respond with ONLY valid JSON:
       "title": "<page title>",
       "slug": "<url-friendly-slug>",
       "pageType": "landing" | "service" | "product" | "comparison" | "faq" | "case-study" | "tool" | "pricing" | "about" | "industry" | "location" | "integration" | "testimonial" | "legal" | "other",
-      "purpose": "<2-3 sentences explaining why this page is needed and what it accomplishes>",
+      "purpose": "<2-3 sentences explaining why this page is needed>",
       "targetKeyword": "<primary keyword>",
       "estimatedMonthlySearches": <number>,
       "funnelStage": "awareness" | "consideration" | "decision",
@@ -61,27 +84,7 @@ Respond with ONLY valid JSON:
 }`;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: prompt },
-          { role: 'user', content: `Suggest 20 new pages for ${siteUrl}` },
-        ],
-        temperature: 0.4,
-        max_tokens: 6000,
-      }),
-    });
-
-    if (!response.ok) {
-      const detail = await response.text().catch(() => 'unknown');
-      throw new Error(`OpenAI error (${response.status}): ${detail}`);
-    }
-
-    const data = await response.json();
-    let raw = data.choices?.[0]?.message?.content || '';
+    let raw = await callClaude(systemPrompt, userMessage, 8000);
     raw = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
     let parsed;

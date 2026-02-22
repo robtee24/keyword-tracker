@@ -19,18 +19,18 @@ const MARKETING_SKILLS = `
 - Differentiation: "The [category] that [key differentiator]"
 
 === PAGE CRO FRAMEWORK ===
-1. VALUE PROPOSITION: Can a visitor understand what this is and why they should care in 5 seconds? Is the primary benefit clear, specific, and differentiated?
-2. HEADLINE: Communicates core value prop. Specific, not generic. Matches traffic source messaging.
-3. CTA: One clear primary action. Visible without scrolling. Button text communicates value ("Start Free Trial" not "Submit"). Repeated at key decision points.
-4. VISUAL HIERARCHY: Scannable layout. Most important elements visually prominent. Enough white space. Images support (not distract from) the message.
-5. TRUST SIGNALS: Customer logos (recognizable ones). Testimonials (specific, attributed). Case study snippets with real numbers. Review scores. Security badges. Place near CTAs.
-6. OBJECTION HANDLING: Address price/value, "will this work for me?", implementation difficulty, "what if it doesn't work?" through FAQ sections, guarantees, comparisons.
-7. FRICTION REDUCTION: Minimal form fields. Clear next steps. Simple navigation. Mobile-optimized.
+1. VALUE PROPOSITION: Can a visitor understand what this is and why they should care in 5 seconds?
+2. HEADLINE: Communicates core value prop. Specific, not generic.
+3. CTA: One clear primary action. Visible without scrolling. Button text communicates value.
+4. VISUAL HIERARCHY: Scannable layout. Most important elements visually prominent.
+5. TRUST SIGNALS: Customer logos, testimonials, case study snippets, review scores.
+6. OBJECTION HANDLING: Address price/value, "will this work for me?", implementation difficulty.
+7. FRICTION REDUCTION: Minimal form fields. Clear next steps. Mobile-optimized.
 
 === MARKETING PSYCHOLOGY ===
 - Jobs to Be Done: Frame product around the outcome, not specifications.
 - Social Proof: People follow the behavior of others. Show numbers, testimonials, logos.
-- Loss Aversion: People feel losses ~2x stronger than equivalent gains. Frame what they'll miss.
+- Loss Aversion: People feel losses ~2x stronger than equivalent gains.
 - Anchoring: The first piece of information anchors all subsequent judgments.
 - Reciprocity: Give value first (free tools, resources, insights).
 - Authority: Demonstrate expertise through data, certifications, press mentions.
@@ -38,20 +38,46 @@ const MARKETING_SKILLS = `
 - Cognitive Ease: Make the desired action the easiest path.
 
 === SCHEMA MARKUP ===
-- Use JSON-LD format (Google recommended). Place in <head> or end of <body>.
-- Implement: Organization, WebPage, BreadcrumbList, FAQ (if Q&A content), Product (if products), Review/AggregateRating.
-- Schema must accurately represent page content. Don't markup nonexistent content.
+- Use JSON-LD format. Implement: Organization, WebPage, BreadcrumbList, FAQ, Product, Review/AggregateRating as applicable.
 
 === SECTION STRUCTURE ===
 Above the Fold: Headline + subheadline + primary CTA + hero visual + social proof hint
-Problem Section: Describe the pain point your audience experiences. Be specific and empathetic.
-Solution Section: Introduce your product/service as the answer. Bridge from problem to solution.
-How It Works: 3-4 simple steps showing the process. Reduces perceived complexity.
+Problem Section: Describe the pain point your audience experiences.
+Solution Section: Introduce your product/service as the answer.
+How It Works: 3-4 simple steps showing the process.
 Benefits (not features): Focus on outcomes and transformations.
 Social Proof: Testimonials, case studies, logos, stats.
 FAQ: Address top objections disguised as questions.
 Final CTA: Repeat primary action with urgency or incentive.
 `;
+
+async function callClaude(systemPrompt, userMessage, maxTokens = 16000) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured');
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => 'unknown');
+    throw new Error(`Claude API error (${response.status}): ${detail}`);
+  }
+
+  const data = await response.json();
+  return data.content?.[0]?.text || '';
+}
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -60,22 +86,39 @@ export default async function handler(req, res) {
   const { siteUrl, title, slug, purpose, targetKeyword, outline, objectives, style } = req.body || {};
   if (!siteUrl || !title) return res.status(400).json({ error: 'siteUrl and title required' });
 
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
 
   let homePageStyles = '';
   try {
     homePageStyles = await extractHomePageStyles(new URL(siteUrl).origin + '/');
   } catch { /* non-critical */ }
 
-  const prompt = `You are a world-class web developer, copywriter, SEO specialist, and conversion optimizer. You have deep expertise in marketing psychology, CRO, and content strategy. Build a complete, publish-ready web page that is exceptional.
+  const systemPrompt = `You are a world-class web developer, UI/UX designer, copywriter, SEO specialist, and conversion optimizer. You build pages that are visually stunning — with modern design, clean typography, proper spacing, polished CSS, and professional aesthetics.
 
 ${MARKETING_SKILLS}
+
+CRITICAL DESIGN RULES:
+- Include a complete <style> tag at the top of htmlContent with all CSS
+- Use CSS custom properties (variables) for a cohesive theme (colors, spacing, fonts)
+- Use modern CSS: flexbox, grid, gradients, box-shadows, border-radius, transitions
+- Create proper typography hierarchy: distinct font sizes for h1/h2/h3/body/small text
+- Add generous padding and margins between sections (min 60px section padding)
+- Alternate section background colors for visual rhythm (white, light gray, brand color)
+- Style buttons with padding, background color, border-radius, hover effects, and transitions
+- Use cards with border-radius, box-shadow, and padding for content blocks
+- Include hover states for all interactive elements
+- Add responsive media queries for mobile/tablet
+- Use max-width containers (1200px) with auto margins for centered content
+- Create visual interest with gradients, subtle patterns, or decorative elements
+- Include proper header/navigation structure and footer
+- The page MUST look like it was built by a professional designer, not plain unstyled HTML`;
+
+  const userMessage = `Build a complete, publish-ready web page that looks professionally designed.
 
 WEBSITE: ${siteUrl}
 BUSINESS OBJECTIVES: ${objectives || 'Maximize organic traffic and conversions'}
 
-${homePageStyles ? `=== EXISTING SITE STYLES (match these exactly) ===\n${homePageStyles}\n` : ''}
+${homePageStyles ? `=== EXISTING SITE STYLES (match these) ===\n${homePageStyles}\n` : ''}
 
 PAGE DETAILS:
 Title: ${title}
@@ -85,54 +128,35 @@ Target Keyword: ${targetKeyword || 'Infer from title'}
 ${style ? `Design Style: ${style}` : ''}
 ${outline ? `Page Sections: ${Array.isArray(outline) ? outline.join(', ') : outline}` : ''}
 
-REQUIREMENTS — Apply ALL marketing skills and frameworks above:
+REQUIREMENTS:
 1. Write REAL, compelling, specific copy — not generic placeholder text
-2. Use proven headline formulas from above. Every heading must be benefit-driven
+2. Use proven headline formulas. Every heading must be benefit-driven
 3. Apply the complete CRO framework: value prop, CTAs, trust signals, objection handling
 4. Apply marketing psychology: social proof, authority, loss aversion, anchoring, reciprocity
 5. Structure for scanability: short paragraphs, bullets, subheadings every 2-3 paragraphs
-6. Include proper HTML with semantic elements and inline CSS matching the site's styling
-7. Include specific image placements with detailed descriptions of what each image should show
-8. Suggest specific, quantified CTAs (not "Get Started" but "Start Your Free 14-Day Trial")
-9. Include a FAQ section addressing likely objections
-10. Include schema markup for the page type
-11. Make content substantive — minimum 1500 words of actual content
-12. Address the complete conversion funnel relevant to this page type
+6. Include a <style> tag with comprehensive CSS at the top of htmlContent, then semantic HTML with classes
+7. The CSS MUST create a modern, polished design: colors, spacing, typography, shadows, rounded corners, hover effects, gradients
+8. Include image placeholders with descriptive alt text
+9. Include specific, quantified CTAs
+10. Include a FAQ section addressing likely objections
+11. Include schema markup
+12. Minimum 1500 words of actual content
+13. The final result must look like a professionally designed webpage
 
 Respond with ONLY valid JSON:
 {
-  "title": "<optimized page title using headline formula>",
+  "title": "<optimized page title>",
   "metaDescription": "<compelling meta description under 155 chars>",
   "slug": "<url-friendly-slug>",
-  "htmlContent": "<complete page HTML content (body section only). Include inline CSS for styling that matches the site. Include image placeholders with descriptive alt text. Follow the section structure framework.>",
+  "htmlContent": "<complete page HTML: start with a <style> tag containing ALL CSS (variables, base styles, component styles, responsive styles), followed by semantic HTML using those classes. Must look professionally designed.>",
   "schemaMarkup": "<complete JSON-LD schema markup>",
-  "suggestedImages": ["<specific image description: what it shows, dimensions, where it goes, and why it helps conversions>"],
-  "internalLinkSuggestions": ["<pages to link to/from with context>"],
-  "summary": "<what was built, which marketing frameworks were applied, and key conversion elements included>"
+  "suggestedImages": ["<specific image description>"],
+  "internalLinkSuggestions": ["<pages to link to/from>"],
+  "summary": "<what was built and key conversion elements included>"
 }`;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: prompt },
-          { role: 'user', content: `Build this page: "${title}". Apply all marketing skills and frameworks to make it exceptional.` },
-        ],
-        temperature: 0.4,
-        max_tokens: 10000,
-      }),
-    });
-
-    if (!response.ok) {
-      const detail = await response.text().catch(() => 'unknown');
-      throw new Error(`OpenAI error (${response.status}): ${detail}`);
-    }
-
-    const data = await response.json();
-    let raw = data.choices?.[0]?.message?.content || '';
+    let raw = await callClaude(systemPrompt, userMessage, 16000);
     raw = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
     let page;
@@ -171,7 +195,7 @@ async function extractHomePageStyles(homeUrl) {
     const allCss = inlineStyles.join('\n');
 
     const colorMatches = allCss.match(/(?:color|background(?:-color)?)\s*:\s*([^;}\n]+)/gi) || [];
-    const uniqueColors = [...new Set(colorMatches.map(c => c.trim()).slice(0, 15))];
+    const uniqueColors = [...new Set(colorMatches.map(c => c.trim()).slice(0, 20))];
     if (uniqueColors.length) styles.push(`Colors used: ${uniqueColors.join('; ')}`);
 
     const fontMatches = allCss.match(/font-family\s*:\s*([^;}\n]+)/gi) || [];
@@ -182,10 +206,13 @@ async function extractHomePageStyles(homeUrl) {
     if (googleFontMatch) styles.push(`Google Fonts: ${decodeURIComponent(googleFontMatch[1])}`);
 
     const borderRadiusMatches = allCss.match(/border-radius\s*:\s*([^;}\n]+)/gi) || [];
-    if (borderRadiusMatches.length) styles.push(`Border radius: ${[...new Set(borderRadiusMatches.slice(0, 3))].join('; ')}`);
+    if (borderRadiusMatches.length) styles.push(`Border radius: ${[...new Set(borderRadiusMatches.slice(0, 5))].join('; ')}`);
 
     const cssVars = allCss.match(/--[a-zA-Z0-9-]+\s*:\s*[^;]+/g) || [];
-    if (cssVars.length) styles.push(`CSS variables: ${cssVars.slice(0, 15).join('; ')}`);
+    if (cssVars.length) styles.push(`CSS variables: ${cssVars.slice(0, 20).join('; ')}`);
+
+    const shadowPatterns = allCss.match(/box-shadow\s*:\s*([^;}\n]+)/gi) || [];
+    if (shadowPatterns.length) styles.push(`Shadows: ${[...new Set(shadowPatterns.slice(0, 3))].join('; ')}`);
 
     return styles.join('\n') || '';
   } catch {
