@@ -20,6 +20,7 @@ import BlogOpportunityView from './components/BlogOpportunityView';
 import BlogAutomateView from './components/BlogAutomateView';
 import BuildRebuildView from './components/BuildRebuildView';
 import BuildNewView from './components/BuildNewView';
+import LandingPage from './components/LandingPage';
 import OAuthModal from './components/OAuthModal';
 import { isAuthenticated, clearTokens, authenticatedFetch } from './services/authService';
 import { API_ENDPOINTS } from './config/api';
@@ -114,6 +115,7 @@ function saveProjects(projects: Project[]) {
 
 function App() {
   const [appState, setAppState] = useState<AppState>('loading');
+  const [showOAuth, setShowOAuth] = useState(false);
 
   const [currentView, setCurrentView] = useState<View>('projects');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -271,7 +273,24 @@ function App() {
   }
 
   if (appState === 'unauthenticated') {
-    return <OAuthModal onAuthenticated={() => setAppState('authenticated')} />;
+    return (
+      <>
+        <LandingPage onOpenApp={() => setShowOAuth(true)} />
+        {showOAuth && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="relative">
+              <button
+                onClick={() => setShowOAuth(false)}
+                className="absolute -top-3 -right-3 z-10 w-8 h-8 rounded-full bg-white shadow-lg flex items-center justify-center text-gray-500 hover:text-gray-800 cursor-pointer transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+              <OAuthModal onAuthenticated={() => setAppState('authenticated')} />
+            </div>
+          </div>
+        )}
+      </>
+    );
   }
 
   return (
