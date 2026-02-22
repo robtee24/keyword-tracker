@@ -272,13 +272,24 @@ Respond with ONLY valid JSON in this format:
     {
       "priority": "high" | "medium" | "low",
       "category": "<short category name>",
-      "issue": "<describe the EXACT problem found — reference the specific element, text, or code>",
-      "recommendation": "<provide the EXACT fix — include specific text to change, code to add, or precise action to take>",
-      "howToFix": "<step-by-step implementation instructions>",
-      "impact": "<expected improvement>"
+      "standard": "<the exact standard ID this recommendation fixes: wcag, section508, gdpr, eprivacy, ccpa, cpra, tls, hsts, csp, or pci_dss>",
+      "issue": "<describe the EXACT compliance violation — reference the specific standard requirement and the specific element, header, or code that violates it>",
+      "recommendation": "<the EXACT action to take to make the page PASS this standard — include specific code, HTML, headers, or configuration to add/change>",
+      "howToFix": "<step-by-step implementation instructions: 1) where to make the change (server config, HTML, CMS, etc.), 2) the exact code/header/config to add or modify, 3) how to verify the fix works>",
+      "impact": "<which compliance standard this makes the page pass>"
     }
   ]
 }
+
+CRITICAL RULES FOR COMPLIANCE RECOMMENDATIONS:
+- Every recommendation MUST fix a FAILING standard. Do NOT include recommendations for standards that already pass.
+- Every recommendation MUST specify which standard it addresses in the "standard" field.
+- Every recommendation MUST provide the EXACT code, HTML, header, or server configuration needed to pass.
+- For accessibility failures: provide the exact HTML elements to add/change (e.g., 'Add alt="Company logo" to the <img src="/logo.png"> tag', 'Add <html lang="en"> to the opening HTML tag').
+- For privacy/cookie failures: specify exactly what consent mechanism to implement, what links to add, and where (e.g., 'Add a footer link: <a href="/privacy-policy">Privacy Policy</a>', 'Install OneTrust or Cookiebot and configure it to block analytics scripts until consent is given').
+- For security/header failures: provide the exact HTTP header to add and how (e.g., 'Add this header to your server/CDN config: Strict-Transport-Security: max-age=31536000; includeSubDomains; preload', 'Add Content-Security-Policy header: default-src self; script-src self https://trusted-cdn.com').
+- Group related fixes for the same standard together in a single recommendation when possible.
+- If a standard fails for multiple reasons, create one recommendation per distinct fix needed.
 
 You MUST include ALL 10 standards in the "standards" array using these exact IDs:
 wcag, section508, gdpr, eprivacy, ccpa, cpra, tls, hsts, csp, pci_dss

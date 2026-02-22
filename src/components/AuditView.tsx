@@ -9,6 +9,7 @@ type ResultsTab = 'summary' | 'pages' | 'recommendations';
 interface Recommendation {
   priority: 'high' | 'medium' | 'low';
   category: string;
+  standard?: string;
   issue: string;
   recommendation: string;
   howToFix?: string;
@@ -853,6 +854,7 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
                                         <div className="flex items-center gap-2 mb-0.5">
                                           <span className={`text-apple-xs font-bold uppercase ${pc.text}`}>{rec.priority}</span>
                                           <span className="text-apple-xs text-apple-text-tertiary">{rec.category}</span>
+                                          {rec.standard && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 font-semibold uppercase">{rec.standard.replace('_', ' ')}</span>}
                                         </div>
                                         <p className={`text-apple-sm font-medium ${isDone ? 'line-through text-apple-text-tertiary' : 'text-apple-text'}`}>{rec.issue}</p>
                                         {!isRecExp && <p className="text-apple-xs text-apple-text-secondary mt-0.5">{rec.recommendation}</p>}
@@ -864,6 +866,7 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
                                     </div>
                                     {isRecExp && (
                                       <div className="px-3 pb-3 border-t border-apple-divider/30 pt-2 space-y-2">
+                                        {rec.standard && <div><p className="text-apple-xs font-semibold text-apple-text-secondary">Compliance Standard</p><p className="text-apple-sm text-red-600 font-medium mt-0.5">{rec.standard.replace('_', ' ').toUpperCase()} — Failing</p></div>}
                                         <div><p className="text-apple-xs font-semibold text-apple-text-secondary">Recommendation</p><p className="text-apple-sm text-apple-text mt-0.5">{rec.recommendation}</p></div>
                                         {rec.howToFix && <div><p className="text-apple-xs font-semibold text-apple-text-secondary">How to Fix</p><p className="text-apple-sm text-apple-text mt-0.5 whitespace-pre-wrap">{rec.howToFix}</p></div>}
                                         {rec.impact && <div><p className="text-apple-xs font-semibold text-apple-text-secondary">Impact</p><p className="text-apple-sm text-apple-text-secondary mt-0.5">{rec.impact}</p></div>}
@@ -928,6 +931,7 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
                           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                             <span className={`text-apple-xs font-bold uppercase ${pc.text}`}>{rec.priority}</span>
                             <span className="text-apple-xs font-medium text-apple-text-secondary">{rec.category}</span>
+                            {rec.standard && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 font-semibold uppercase">{rec.standard.replace('_', ' ')}</span>}
                             {isPending && <span className="px-1.5 py-0.5 rounded-apple-pill text-[10px] font-bold bg-blue-100 text-blue-700">On Tasklist</span>}
                             {isDone && <span className="px-1.5 py-0.5 rounded-apple-pill text-[10px] font-bold bg-green-100 text-green-700">Done</span>}
                             <span className="text-apple-xs text-apple-text-tertiary">·</span>
@@ -943,6 +947,7 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
                       </div>
                       {isExp && (
                         <div className="px-4 pb-4 border-t border-apple-divider/30 pt-2 space-y-2 bg-apple-fill-secondary/20">
+                          {rec.standard && <div><p className="text-apple-xs font-semibold text-apple-text-secondary">Compliance Standard</p><p className="text-apple-sm text-red-600 font-medium mt-0.5">{rec.standard.replace('_', ' ').toUpperCase()} — Failing</p></div>}
                           <div><p className="text-apple-xs font-semibold text-apple-text-secondary">Recommendation</p><p className="text-apple-sm text-apple-text mt-0.5">{rec.recommendation}</p></div>
                           {rec.howToFix && <div><p className="text-apple-xs font-semibold text-apple-text-secondary">How to Fix</p><p className="text-apple-sm text-apple-text mt-0.5 whitespace-pre-wrap">{rec.howToFix}</p></div>}
                           {rec.impact && <div><p className="text-apple-xs font-semibold text-apple-text-secondary">Impact</p><p className="text-apple-sm text-apple-text-secondary mt-0.5">{rec.impact}</p></div>}
