@@ -8,9 +8,25 @@ interface ActivityItem {
   timestamp: string;
 }
 
+export type ActivityScope = 'organic' | 'seo' | 'ad';
+
 interface ActivityLogViewProps {
   siteUrl: string;
+  scope: ActivityScope;
 }
+
+function matchesScope(keyword: string, scope: ActivityScope) {
+  if (scope === 'organic') return !keyword.startsWith('audit:') && !keyword.startsWith('ad-');
+  if (scope === 'seo') return keyword.startsWith('audit:');
+  if (scope === 'ad') return keyword.startsWith('ad-');
+  return true;
+}
+
+const SCOPE_DESCRIPTIONS: Record<ActivityScope, string> = {
+  organic: 'Timeline of keyword scan actions',
+  seo: 'Timeline of SEO audit actions',
+  ad: 'Timeline of advertising audit actions',
+};
 
 function timeAgo(dateStr: string): string {
   const now = Date.now();
@@ -27,7 +43,7 @@ function timeAgo(dateStr: string): string {
   return `${months}mo ago`;
 }
 
-export default function ActivityLogView({ siteUrl }: ActivityLogViewProps) {
+export default function ActivityLogView({ siteUrl, scope }: ActivityLogViewProps) {
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<string>('');
@@ -69,13 +85,14 @@ export default function ActivityLogView({ siteUrl }: ActivityLogViewProps) {
           }
         }
 
-        activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        setItems(activities);
+        const scoped = activities.filter((a) => matchesScope(a.keyword, scope));
+        scoped.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        setItems(scoped);
       } catch { /* ignore */ }
       setLoading(false);
     };
     fetchAll();
-  }, [siteUrl]);
+  }, [siteUrl, scope]);
 
   const filtered = filterType ? items.filter((i) => i.type === filterType) : items;
 
@@ -100,7 +117,7 @@ export default function ActivityLogView({ siteUrl }: ActivityLogViewProps) {
             Activity Log
           </h2>
           <p className="text-apple-base text-apple-text-secondary mt-1">
-            Timeline of all actions taken on recommendations
+            {SCOPE_DESCRIPTIONS[scope]}
           </p>
         </div>
       </div>

@@ -1,12 +1,14 @@
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 
 export type View =
   | 'projects' | 'objectives'
-  | 'overview' | 'keywords' | 'lost-keywords'
-  | 'audit' | 'seo-audit' | 'content-audit' | 'aeo-audit' | 'schema-audit' | 'compliance-audit' | 'speed-audit'
+  | 'overview' | 'keywords' | 'lost-keywords' | 'organic-tasklist' | 'organic-activity'
+  | 'audit' | 'seo-audit' | 'content-audit' | 'aeo-audit' | 'schema-audit' | 'compliance-audit' | 'speed-audit' | 'seo-tasklist' | 'seo-activity'
   | 'ad-audit' | 'ad-audit-google' | 'ad-audit-meta' | 'ad-audit-linkedin' | 'ad-audit-reddit'
   | 'ad-audit-budget' | 'ad-audit-performance' | 'ad-audit-creative' | 'ad-audit-attribution' | 'ad-audit-structure'
-  | 'advertising' | 'tasklist' | 'activity-log';
+  | 'ad-tasklist' | 'ad-activity'
+  | 'advertising';
 
 interface SidebarProps {
   currentView: View;
@@ -17,13 +19,15 @@ interface SidebarProps {
   hasActiveProject: boolean;
 }
 
-const ORGANIC_VIEWS = new Set<View>(['overview', 'keywords', 'lost-keywords']);
-const SEO_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit']);
-const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure']);
+const ORGANIC_VIEWS = new Set<View>(['overview', 'keywords', 'lost-keywords', 'organic-tasklist', 'organic-activity']);
+const SEO_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit', 'seo-tasklist', 'seo-activity']);
+const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure', 'ad-tasklist', 'ad-activity']);
 
 const organicSubItems: Array<{ id: View; label: string }> = [
   { id: 'keywords', label: 'Keywords' },
   { id: 'lost-keywords', label: 'Lost Keywords' },
+  { id: 'organic-tasklist', label: 'Tasklist' },
+  { id: 'organic-activity', label: 'Activity Log' },
 ];
 
 const seoAuditSubItems: Array<{ id: View; label: string }> = [
@@ -33,6 +37,8 @@ const seoAuditSubItems: Array<{ id: View; label: string }> = [
   { id: 'schema-audit', label: 'Schema' },
   { id: 'compliance-audit', label: 'Compliance' },
   { id: 'speed-audit', label: 'Page Speed' },
+  { id: 'seo-tasklist', label: 'Tasklist' },
+  { id: 'seo-activity', label: 'Activity Log' },
 ];
 
 const adAuditSubItems: Array<{ id: View; label: string }> = [
@@ -45,36 +51,8 @@ const adAuditSubItems: Array<{ id: View; label: string }> = [
   { id: 'ad-audit-creative', label: 'Creative & Copy' },
   { id: 'ad-audit-attribution', label: 'Attribution' },
   { id: 'ad-audit-structure', label: 'Account Structure' },
-];
-
-const bottomNavItems: Array<{ id: View; label: string; icon: ReactNode }> = [
-  {
-    id: 'advertising',
-    label: 'Advertising',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
-      </svg>
-    ),
-  },
-  {
-    id: 'tasklist',
-    label: 'Tasklist',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-      </svg>
-    ),
-  },
-  {
-    id: 'activity-log',
-    label: 'Activity Log',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-  },
+  { id: 'ad-tasklist', label: 'Tasklist' },
+  { id: 'ad-activity', label: 'Activity Log' },
 ];
 
 function NavGroup({
@@ -83,6 +61,8 @@ function NavGroup({
   parentView,
   subItems,
   isGroupActive,
+  expanded,
+  onToggleExpand,
   currentView,
   onNavigate,
   collapsed,
@@ -93,15 +73,32 @@ function NavGroup({
   parentView: View;
   subItems: Array<{ id: View; label: string }>;
   isGroupActive: boolean;
+  expanded: boolean;
+  onToggleExpand: () => void;
   currentView: View;
   onNavigate: (v: View) => void;
   collapsed: boolean;
   title?: string;
 }) {
+  const handleClick = () => {
+    if (collapsed) {
+      onNavigate(parentView);
+      return;
+    }
+    if (!expanded) {
+      onToggleExpand();
+      onNavigate(parentView);
+    } else if (currentView === parentView) {
+      onToggleExpand();
+    } else {
+      onNavigate(parentView);
+    }
+  };
+
   return (
     <div>
       <button
-        onClick={() => onNavigate(parentView)}
+        onClick={handleClick}
         className={`w-full flex items-center gap-3 px-3 py-2 rounded-apple-sm text-apple-sm font-medium transition-all duration-150 ${
           isGroupActive
             ? 'bg-apple-blue/10 text-apple-blue'
@@ -110,10 +107,21 @@ function NavGroup({
         title={collapsed ? (title || label) : undefined}
       >
         <span className={`shrink-0 ${isGroupActive ? 'text-apple-blue' : ''}`}>{icon}</span>
-        {!collapsed && <span className="truncate">{label}</span>}
+        {!collapsed && (
+          <>
+            <span className="truncate flex-1">{label}</span>
+            <svg
+              className={`w-3.5 h-3.5 text-apple-text-tertiary transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+              onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </>
+        )}
       </button>
 
-      {!collapsed && (
+      {!collapsed && expanded && (
         <div className="ml-4 mt-0.5 space-y-0.5 border-l border-apple-divider pl-2">
           {subItems.map((sub) => {
             const isSubActive = currentView === sub.id;
@@ -148,6 +156,10 @@ export default function Sidebar({
   const isOrganicActive = ORGANIC_VIEWS.has(currentView);
   const isSeoAuditActive = SEO_AUDIT_VIEWS.has(currentView);
   const isAdAuditActive = AD_AUDIT_VIEWS.has(currentView);
+
+  const [organicExpanded, setOrganicExpanded] = useState(isOrganicActive);
+  const [seoExpanded, setSeoExpanded] = useState(isSeoAuditActive);
+  const [adExpanded, setAdExpanded] = useState(isAdAuditActive);
 
   const renderNavButton = (item: { id: View; label: string; icon: ReactNode }) => {
     const isActive = currentView === item.id;
@@ -202,7 +214,6 @@ export default function Sidebar({
       </div>
 
       <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-        {/* Projects */}
         <button
           onClick={() => onNavigate('projects')}
           className={`w-full flex items-center gap-3 px-3 py-2 rounded-apple-sm text-apple-sm font-medium transition-all duration-150 ${
@@ -231,7 +242,6 @@ export default function Sidebar({
             )}
             {collapsed && <div className="border-t border-apple-divider my-2 mx-2" />}
 
-            {/* Objectives */}
             {renderNavButton({
               id: 'objectives',
               label: 'Objectives',
@@ -242,7 +252,6 @@ export default function Sidebar({
               ),
             })}
 
-            {/* ── Organic Overview Group ── */}
             <NavGroup
               label="Organic Overview"
               icon={
@@ -253,12 +262,13 @@ export default function Sidebar({
               parentView="overview"
               subItems={organicSubItems}
               isGroupActive={isOrganicActive}
+              expanded={organicExpanded}
+              onToggleExpand={() => setOrganicExpanded(!organicExpanded)}
               currentView={currentView}
               onNavigate={onNavigate}
               collapsed={collapsed}
             />
 
-            {/* ── SEO Audit Group ── */}
             <NavGroup
               label="SEO Audit"
               icon={
@@ -269,12 +279,13 @@ export default function Sidebar({
               parentView="audit"
               subItems={seoAuditSubItems}
               isGroupActive={isSeoAuditActive}
+              expanded={seoExpanded}
+              onToggleExpand={() => setSeoExpanded(!seoExpanded)}
               currentView={currentView}
               onNavigate={onNavigate}
               collapsed={collapsed}
             />
 
-            {/* ── Advertising Audit Group ── */}
             <NavGroup
               label="Ad Audit"
               icon={
@@ -285,13 +296,23 @@ export default function Sidebar({
               parentView="ad-audit"
               subItems={adAuditSubItems}
               isGroupActive={isAdAuditActive}
+              expanded={adExpanded}
+              onToggleExpand={() => setAdExpanded(!adExpanded)}
               currentView={currentView}
               onNavigate={onNavigate}
               collapsed={collapsed}
               title="Advertising Audit"
             />
 
-            {bottomNavItems.map(renderNavButton)}
+            {renderNavButton({
+              id: 'advertising',
+              label: 'Advertising',
+              icon: (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+                </svg>
+              ),
+            })}
           </>
         )}
       </nav>

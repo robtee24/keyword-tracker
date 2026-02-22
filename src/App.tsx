@@ -24,14 +24,16 @@ type AppState = 'loading' | 'unauthenticated' | 'authenticated';
 
 const PROJECTS_KEY = 'kt_projects';
 
-const SEO_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit']);
-const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure']);
+const SEO_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit', 'seo-tasklist', 'seo-activity']);
+const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure', 'ad-tasklist', 'ad-activity']);
 
 const BREADCRUMB_LABELS: Record<string, string> = {
   'objectives': 'Objectives',
   'overview': 'Organic Overview',
   'keywords': 'Organic Overview › Keywords',
   'lost-keywords': 'Organic Overview › Lost Keywords',
+  'organic-tasklist': 'Organic Overview › Tasklist',
+  'organic-activity': 'Organic Overview › Activity Log',
   'audit': 'SEO Audit',
   'seo-audit': 'SEO Audit › SEO',
   'content-audit': 'SEO Audit › Content',
@@ -39,6 +41,8 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   'schema-audit': 'SEO Audit › Schema',
   'compliance-audit': 'SEO Audit › Compliance',
   'speed-audit': 'SEO Audit › Page Speed',
+  'seo-tasklist': 'SEO Audit › Tasklist',
+  'seo-activity': 'SEO Audit › Activity Log',
   'ad-audit': 'Ad Audit',
   'ad-audit-google': 'Ad Audit › Google Ads',
   'ad-audit-meta': 'Ad Audit › Meta Ads',
@@ -49,9 +53,9 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   'ad-audit-creative': 'Ad Audit › Creative & Copy',
   'ad-audit-attribution': 'Ad Audit › Attribution',
   'ad-audit-structure': 'Ad Audit › Account Structure',
+  'ad-tasklist': 'Ad Audit › Tasklist',
+  'ad-activity': 'Ad Audit › Activity Log',
   'advertising': 'Advertising',
-  'tasklist': 'Tasklist',
-  'activity-log': 'Activity Log',
 };
 
 type AdAuditType = 'google' | 'meta' | 'linkedin' | 'reddit' | 'budget' | 'performance' | 'creative' | 'attribution' | 'structure';
@@ -504,12 +508,26 @@ function App() {
             <AdvertisingView siteUrl={activeProject.siteUrl} projectId={activeProject.id} />
           )}
 
-          {currentView === 'tasklist' && activeProject && (
-            <TasklistView siteUrl={activeProject.siteUrl} />
+          {/* ── Scoped Tasklists ── */}
+          {currentView === 'organic-tasklist' && activeProject && (
+            <TasklistView siteUrl={activeProject.siteUrl} scope="organic" />
+          )}
+          {currentView === 'seo-tasklist' && activeProject && (
+            <TasklistView siteUrl={activeProject.siteUrl} scope="seo" />
+          )}
+          {currentView === 'ad-tasklist' && activeProject && (
+            <TasklistView siteUrl={activeProject.siteUrl} scope="ad" />
           )}
 
-          {currentView === 'activity-log' && activeProject && (
-            <ActivityLogView siteUrl={activeProject.siteUrl} />
+          {/* ── Scoped Activity Logs ── */}
+          {currentView === 'organic-activity' && activeProject && (
+            <ActivityLogView siteUrl={activeProject.siteUrl} scope="organic" />
+          )}
+          {currentView === 'seo-activity' && activeProject && (
+            <ActivityLogView siteUrl={activeProject.siteUrl} scope="seo" />
+          )}
+          {currentView === 'ad-activity' && activeProject && (
+            <ActivityLogView siteUrl={activeProject.siteUrl} scope="ad" />
           )}
         </main>
       </div>

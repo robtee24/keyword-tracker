@@ -23,13 +23,33 @@ interface RankedItem {
   scannedAt: string;
 }
 
+export type TasklistScope = 'organic' | 'seo' | 'ad';
+
 interface RecommendationsViewProps {
   siteUrl: string;
+  scope: TasklistScope;
 }
+
+function isOrganicKeyword(kw: string) { return !kw.startsWith('audit:') && !kw.startsWith('ad-'); }
+function isSeoKeyword(kw: string) { return kw.startsWith('audit:'); }
+function isAdKeyword(kw: string) { return kw.startsWith('ad-'); }
+
+function matchesScope(keyword: string, scope: TasklistScope) {
+  if (scope === 'organic') return isOrganicKeyword(keyword);
+  if (scope === 'seo') return isSeoKeyword(keyword);
+  if (scope === 'ad') return isAdKeyword(keyword);
+  return true;
+}
+
+const SCOPE_DESCRIPTIONS: Record<TasklistScope, string> = {
+  organic: 'Recommendations from keyword scans',
+  seo: 'Recommendations from SEO page audits',
+  ad: 'Recommendations from advertising audits',
+};
 
 const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
-export default function RecommendationsView({ siteUrl }: RecommendationsViewProps) {
+export default function RecommendationsView({ siteUrl, scope }: RecommendationsViewProps) {
   const [activeTab, setActiveTab] = useState<TasklistTab>('current');
   const [loading, setLoading] = useState(true);
   const [keywordItems, setKeywordItems] = useState<RankedItem[]>([]);
@@ -41,14 +61,20 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
     if (!siteUrl) return;
     setLoading(true);
     try {
-      const [recsResp, tasksResp] = await Promise.all([
-        fetch(`${API_ENDPOINTS.db.recommendations}?site_url=${encodeURIComponent(siteUrl)}`),
+      const fetches: Promise<Response>[] = [
         fetch(`${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}`),
-      ]);
+      ];
+      if (scope === 'organic') {
+        fetches.push(fetch(`${API_ENDPOINTS.db.recommendations}?site_url=${encodeURIComponent(siteUrl)}`));
+      }
+
+      const responses = await Promise.all(fetches);
+      const tasksResp = responses[0];
+      const recsResp = responses[1];
 
       if (tasksResp.ok) {
         const tasksData = await tasksResp.json();
-        setDbTasks((tasksData.tasks || []).map((t: any) => ({
+        const all = (tasksData.tasks || []).map((t: any) => ({
           id: t.id || '',
           keyword: t.keyword || '',
           taskId: t.task_id || '',
@@ -56,11 +82,12 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
           category: t.category || 'general',
           status: t.status || 'completed',
           completedAt: t.completed_at || '',
-          source: (t.keyword || '').startsWith('audit:') ? 'audit' as const : 'keyword' as const,
-        })));
+          source: (t.keyword || '').startsWith('audit:') || (t.keyword || '').startsWith('ad-') ? 'audit' as const : 'keyword' as const,
+        }));
+        setDbTasks(all.filter((t: DbTask) => matchesScope(t.keyword, scope)));
       }
 
-      if (recsResp.ok) {
+      if (scope === 'organic' && recsResp?.ok) {
         const recsData = await recsResp.json();
         const allRecs = recsData.recommendations || [];
         const ranked: RankedItem[] = [];
@@ -80,10 +107,12 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
         }
         ranked.sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 3) - (PRIORITY_ORDER[b.priority] ?? 3));
         setKeywordItems(ranked);
+      } else {
+        setKeywordItems([]);
       }
     } catch { /* ignore */ }
     setLoading(false);
-  }, [siteUrl]);
+  }, [siteUrl, scope]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -189,7 +218,7 @@ export default function RecommendationsView({ siteUrl }: RecommendationsViewProp
     <div className="max-w-5xl mx-auto">
       <div className="mb-6">
         <h2 className="text-xl font-semibold text-apple-text tracking-tight">Tasklist</h2>
-        <p className="text-apple-sm text-apple-text-secondary mt-1">All recommendations from keyword scans and page audits</p>
+        <p className="text-apple-sm text-apple-text-secondary mt-1">{SCOPE_DESCRIPTIONS[scope]}</p>
       </div>
 
       <div className="flex border-b border-apple-divider mb-6">
