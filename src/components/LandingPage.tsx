@@ -71,7 +71,7 @@ export default function LandingPage({ onOpenApp }: LandingPageProps) {
           </div>
 
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.08] mb-6 max-w-4xl mx-auto">
-            Your Entire Marketing Team,{' '}
+            Your Digital Marketing Team,{' '}
             <span className="bg-gradient-to-r from-[#0071E3] to-[#00C2FF] bg-clip-text text-transparent">Automated</span>
           </h1>
 

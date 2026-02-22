@@ -86,11 +86,8 @@ export default function OAuthModal({ onAuthenticated }: OAuthModalProps) {
         {/* Logo / Icon */}
         <div className="mb-8">
           <div className="mx-auto mb-6">
-            <img src="/seauto-logo.svg" alt="SEAUTO" className="h-16 mx-auto object-contain" />
+            <img src="/seauto-logo.svg" alt="SEAUTO" className="h-20 mx-auto object-contain" />
           </div>
-          <h1 className="text-apple-title1 font-bold text-apple-text tracking-tight mb-2">
-            SEAUTO
-          </h1>
           <p className="text-apple-base text-apple-text-secondary">
             Connect your Google Search Console to track keyword rankings, impressions, and clicks.
           </p>
