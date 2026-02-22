@@ -70,8 +70,8 @@ export default function ActivityLogView({ siteUrl, scope }: ActivityLogViewProps
       setLoading(true);
       try {
         const [tasksResp, recsResp] = await Promise.all([
-          fetch(`${API_ENDPOINTS.db.completedTasks}?site_url=${encodeURIComponent(siteUrl)}`),
-          fetch(`${API_ENDPOINTS.db.recommendations}?site_url=${encodeURIComponent(siteUrl)}`),
+          fetch(`${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}`),
+          fetch(`${API_ENDPOINTS.db.recommendations}?siteUrl=${encodeURIComponent(siteUrl)}`),
         ]);
 
         const activities: ActivityItem[] = [];

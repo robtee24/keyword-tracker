@@ -26,6 +26,7 @@ interface ComplianceStandard {
 }
 
 interface PageResult {
+  id?: number;
   page_url: string;
   score: number;
   summary: string;
@@ -272,7 +273,7 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
             error: r.error,
           }));
           for (const r of batchResults) completedUrlsRef.current.add(r.page_url);
-          setResults((prev) => [...prev, ...batchResults]);
+          setResults((prev) => [...batchResults, ...prev]);
         } else {
           // Fallback: run individually
           for (const pageUrl of batch) {
@@ -282,16 +283,15 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
               if (r2.ok) {
                 const result = await r2.json();
                 completedUrlsRef.current.add(pageUrl);
-                setResults((prev) => [...prev, { page_url: result.pageUrl, score: result.score, summary: result.summary || '', strengths: Array.isArray(result.strengths) ? result.strengths : [], recommendations: (result.recommendations || []).map((rec: any) => ({ ...rec, howToFix: rec.howToFix || '' })), audited_at: new Date().toISOString(), error: result.error }]);
+                setResults((prev) => [{ page_url: result.pageUrl, score: result.score, summary: result.summary || '', strengths: Array.isArray(result.strengths) ? result.strengths : [], recommendations: (result.recommendations || []).map((rec: any) => ({ ...rec, howToFix: rec.howToFix || '' })), audited_at: new Date().toISOString(), error: result.error }, ...prev]);
               }
             } catch (err: any) {
               completedUrlsRef.current.add(pageUrl);
-              setResults((prev) => [...prev, { page_url: pageUrl, score: 0, summary: '', strengths: [], recommendations: [], audited_at: new Date().toISOString(), error: err.message }]);
+              setResults((prev) => [{ page_url: pageUrl, score: 0, summary: '', strengths: [], recommendations: [], audited_at: new Date().toISOString(), error: err.message }, ...prev]);
             }
           }
         }
       } catch {
-        // If batch endpoint fails entirely, run sequentially
         for (const pageUrl of batch) {
           if (abortRef.current) break;
           try {
@@ -299,11 +299,11 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
             if (r2.ok) {
               const result = await r2.json();
               completedUrlsRef.current.add(pageUrl);
-              setResults((prev) => [...prev, { page_url: result.pageUrl, score: result.score, summary: result.summary || '', strengths: Array.isArray(result.strengths) ? result.strengths : [], recommendations: (result.recommendations || []).map((rec: any) => ({ ...rec, howToFix: rec.howToFix || '' })), audited_at: new Date().toISOString(), error: result.error }]);
+              setResults((prev) => [{ page_url: result.pageUrl, score: result.score, summary: result.summary || '', strengths: Array.isArray(result.strengths) ? result.strengths : [], recommendations: (result.recommendations || []).map((rec: any) => ({ ...rec, howToFix: rec.howToFix || '' })), audited_at: new Date().toISOString(), error: result.error }, ...prev]);
             }
           } catch (err: any) {
             completedUrlsRef.current.add(pageUrl);
-            setResults((prev) => [...prev, { page_url: pageUrl, score: 0, summary: '', strengths: [], recommendations: [], audited_at: new Date().toISOString(), error: err.message }]);
+            setResults((prev) => [{ page_url: pageUrl, score: 0, summary: '', strengths: [], recommendations: [], audited_at: new Date().toISOString(), error: err.message }, ...prev]);
           }
         }
       }
@@ -313,10 +313,10 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
     logActivity(siteUrl, 'seo', `audit-${auditType}`, `${auditType.toUpperCase()} audit completed: ${urls.length} page${urls.length > 1 ? 's' : ''} audited`);
   }, [siteUrl, auditType]);
 
-  const handleStartPage = () => { const url = pageUrlInput.trim(); if (!url) return; const fullUrl = url.startsWith('http') ? url : `${siteUrl}${url.startsWith('/') ? '' : '/'}${url}`; runAuditOnUrls([fullUrl], true); };
-  const handleStartKeyword = () => { if (keywordPages.length > 0) runAuditOnUrls(keywordPages, true); };
-  const handleStartGroup = () => { if (groupPages.length > 0) runAuditOnUrls(groupPages, true); };
-  const handleStartSite = async () => { const urls = await fetchSitemap(); if (urls.length > 0) { try { await fetch(API_ENDPOINTS.db.pageAudits, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, auditType, action: 'clear' }) }); } catch { /* */ } runAuditOnUrls(urls, true); } };
+  const handleStartPage = () => { const url = pageUrlInput.trim(); if (!url) return; const fullUrl = url.startsWith('http') ? url : `${siteUrl}${url.startsWith('/') ? '' : '/'}${url}`; runAuditOnUrls([fullUrl], false); };
+  const handleStartKeyword = () => { if (keywordPages.length > 0) runAuditOnUrls(keywordPages, false); };
+  const handleStartGroup = () => { if (groupPages.length > 0) runAuditOnUrls(groupPages, false); };
+  const handleStartSite = async () => { const urls = await fetchSitemap(); if (urls.length > 0) runAuditOnUrls(urls, false); };
   const handleResume = () => runAuditOnUrls(targetUrls, false);
   const stopAudit = () => { abortRef.current = true; };
 
@@ -371,6 +371,30 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
     setAddingToTasklist(false);
   }, [selectedForTasklist, completedRecs, pendingRecs, results, siteUrl, auditType]);
 
+  const [deletingPage, setDeletingPage] = useState<string | null>(null);
+
+  const deleteResult = useCallback(async (result: PageResult) => {
+    setDeletingPage(result.page_url + result.audited_at);
+    try {
+      if (result.id) {
+        await fetch(API_ENDPOINTS.db.pageAudits, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: result.id }),
+        });
+      } else {
+        await fetch(API_ENDPOINTS.db.pageAudits, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ siteUrl, pageUrl: result.page_url, auditType: auditType, auditedAt: result.audited_at }),
+        });
+      }
+      setResults((prev) => prev.filter((r) => !(r.page_url === result.page_url && r.audited_at === result.audited_at)));
+      logActivity(siteUrl, 'seo', `delete-${auditType}`, `Deleted ${auditType} audit for ${result.page_url}`);
+    } catch { /* */ }
+    setDeletingPage(null);
+  }, [siteUrl, auditType]);
+
   const toggleRecExpanded = (key: string) => setExpandedRecs((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
 
   const totalPages = targetUrls.length || results.length;
@@ -410,7 +434,7 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
     if (scoreFilter === 'poor') list = list.filter((r) => r.score < 60);
     else if (scoreFilter === 'needs-work') list = list.filter((r) => r.score >= 60 && r.score < 80);
     else if (scoreFilter === 'good') list = list.filter((r) => r.score >= 80);
-    return list.sort((a, b) => a.score - b.score);
+    return list.sort((a, b) => new Date(b.audited_at).getTime() - new Date(a.audited_at).getTime());
   }, [results, pageSearch, scoreFilter]);
 
   const paginatedPages = useMemo(() => filteredPageResults.slice((pagesPage - 1) * PAGES_PER_PAGE, pagesPage * PAGES_PER_PAGE), [filteredPageResults, pagesPage]);
@@ -769,37 +793,49 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
               <div className="text-apple-xs text-apple-text-tertiary mb-3">Showing {paginatedPages.length} of {filteredPageResults.length} pages</div>
               <div className="space-y-3">
                 {paginatedPages.map((result) => {
-                  const isExp = expandedPage === result.page_url;
+                  const isExp = expandedPage === result.page_url + result.audited_at;
                   const activeRecs = pageActiveRecs(result);
                   const pageDone = pageCompletedRecs(result);
                   const pageTotal = activeRecs.length;
                   const pagePct = pageTotal > 0 ? Math.round((pageDone / pageTotal) * 100) : 100;
                   return (
-                    <div key={result.page_url} className="rounded-apple border border-apple-divider bg-white overflow-hidden">
-                      <button className="w-full p-4 text-left hover:bg-apple-fill-secondary/30 transition-colors"
-                        onClick={() => setExpandedPage(isExp ? null : result.page_url)}>
-                        <div className="flex items-center gap-4">
-                          <span className={`text-xl font-bold w-12 text-center shrink-0 ${getScoreColor(result.score)}`}>{result.score}</span>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-apple-xs text-apple-text-tertiary">{AUDIT_TYPE_LABELS[auditType]}</span>
-                              <span className="text-apple-xs text-apple-text-tertiary">·</span>
-                              <span className="text-apple-xs text-apple-text-tertiary">{new Date(result.audited_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                    <div key={result.page_url + result.audited_at} className="rounded-apple border border-apple-divider bg-white overflow-hidden">
+                      <div className="flex items-center">
+                        <button className="flex-1 p-4 text-left hover:bg-apple-fill-secondary/30 transition-colors"
+                          onClick={() => setExpandedPage(isExp ? null : result.page_url + result.audited_at)}>
+                          <div className="flex items-center gap-4">
+                            <span className={`text-xl font-bold w-12 text-center shrink-0 ${getScoreColor(result.score)}`}>{result.score}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-apple-xs text-apple-text-tertiary">{AUDIT_TYPE_LABELS[auditType]}</span>
+                                <span className="text-apple-xs text-apple-text-tertiary">·</span>
+                                <span className="text-apple-xs text-apple-text-tertiary">{new Date(result.audited_at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(result.audited_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              </div>
+                              <a href={result.page_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-apple-sm font-medium text-apple-blue hover:underline truncate block mt-0.5">
+                                {result.page_url.replace(/^https?:\/\/[^/]+/, '') || '/'}
+                              </a>
+                              {result.summary && <p className="text-apple-xs text-apple-text-tertiary truncate mt-0.5">{result.summary}</p>}
                             </div>
-                            <a href={result.page_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-apple-sm font-medium text-apple-blue hover:underline truncate block mt-0.5">
-                              {result.page_url.replace(/^https?:\/\/[^/]+/, '') || '/'}
-                            </a>
-                            {result.summary && <p className="text-apple-xs text-apple-text-tertiary truncate mt-0.5">{result.summary}</p>}
-                          </div>
-                          <div className="shrink-0 w-28">
-                            <div className="text-apple-xs text-apple-text-tertiary text-right">{pageDone}/{pageTotal}</div>
-                            <div className="w-full h-1.5 bg-apple-fill-secondary rounded-full mt-1 overflow-hidden">
-                              <div className={`h-full rounded-full transition-all ${getBarColor(pagePct)}`} style={{ width: `${pagePct}%` }} />
+                            <div className="shrink-0 w-28">
+                              <div className="text-apple-xs text-apple-text-tertiary text-right">{pageDone}/{pageTotal}</div>
+                              <div className="w-full h-1.5 bg-apple-fill-secondary rounded-full mt-1 overflow-hidden">
+                                <div className={`h-full rounded-full transition-all ${getBarColor(pagePct)}`} style={{ width: `${pagePct}%` }} />
+                              </div>
                             </div>
+                            <svg className={`w-4 h-4 text-apple-text-tertiary transition-transform shrink-0 ${isExp ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
                           </div>
-                          <svg className={`w-4 h-4 text-apple-text-tertiary transition-transform shrink-0 ${isExp ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                        </div>
-                      </button>
+                        </button>
+                        <button onClick={() => { if (confirm('Delete this audit result?')) deleteResult(result); }}
+                          disabled={deletingPage === result.page_url + result.audited_at}
+                          className="p-3 mr-2 rounded-apple-sm hover:bg-red-50 text-apple-text-tertiary hover:text-red-500 transition-colors shrink-0 disabled:opacity-50"
+                          title="Delete audit">
+                          {deletingPage === result.page_url + result.audited_at ? (
+                            <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                          )}
+                        </button>
+                      </div>
                       {isExp && (
                         <div className="px-4 pb-4 border-t border-apple-divider/50 bg-apple-fill-secondary/20">
                           {result.summary && <div className={`rounded-apple-sm border p-3 mt-3 mb-3 ${getScoreBg(result.score)}`}><p className="text-apple-sm text-apple-text">{result.summary}</p></div>}

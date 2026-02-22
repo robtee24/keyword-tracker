@@ -381,17 +381,23 @@ export default async function handler(req, res) {
         audited_at: new Date().toISOString(),
       };
       try {
-        const { error: upsertErr } = await supabase
+        const { error: insertErr } = await supabase
           .from('page_audits')
-          .upsert(row, { onConflict: 'site_url,page_url,audit_type' });
+          .insert(row);
 
-        if (upsertErr) {
-          await supabase.from('page_audits')
-            .delete()
-            .eq('site_url', siteUrl)
-            .eq('page_url', pageUrl)
-            .eq('audit_type', result.auditType);
-          await supabase.from('page_audits').insert(row);
+        if (insertErr) {
+          // Unique constraint may still exist; fall back to upsert
+          const { error: upsertErr } = await supabase
+            .from('page_audits')
+            .upsert(row, { onConflict: 'site_url,page_url,audit_type' });
+          if (upsertErr) {
+            await supabase.from('page_audits')
+              .delete()
+              .eq('site_url', siteUrl)
+              .eq('page_url', pageUrl)
+              .eq('audit_type', result.auditType);
+            await supabase.from('page_audits').insert(row);
+          }
         }
       } catch (err) {
         console.error(`[MultiAudit] DB save error for ${result.auditType}:`, err.message);

@@ -5,7 +5,6 @@ import { logActivity } from '../utils/activityLog';
 
 type AuditType = 'seo' | 'content' | 'aeo' | 'schema' | 'compliance' | 'speed';
 type AuditMode = 'page' | 'keyword' | 'group' | 'site';
-type ResultsTab = 'summary' | 'pages' | 'recommendations';
 
 interface Recommendation {
   priority: 'high' | 'medium' | 'low';
@@ -17,6 +16,7 @@ interface Recommendation {
 }
 
 interface PageAuditResult {
+  id?: number;
   page_url: string;
   audit_type: AuditType;
   score: number;
@@ -67,7 +67,6 @@ const AUDIT_TYPE_COLORS: Record<AuditType, string> = {
 
 function getScoreColor(s: number) { return s >= 80 ? 'text-green-600' : s >= 60 ? 'text-amber-600' : 'text-red-600'; }
 function getScoreBg(s: number) { return s >= 80 ? 'bg-green-50 border-green-200' : s >= 60 ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'; }
-function getBarColor(s: number) { return s >= 80 ? 'bg-green-500' : s >= 60 ? 'bg-amber-500' : 'bg-red-500'; }
 
 const MODE_INFO: Record<AuditMode, { label: string; icon: string; desc: string }> = {
   page: { label: 'By Page', icon: '📄', desc: 'Audit a specific URL' },
@@ -76,16 +75,31 @@ const MODE_INFO: Record<AuditMode, { label: string; icon: string; desc: string }
   site: { label: 'Full Site', icon: '🌐', desc: 'Audit every page in your sitemap' },
 };
 
-const PAGES_PER_PAGE = 20;
-const RECS_PER_PAGE = 30;
-
 function recKey(pageUrl: string, auditType: string, idx: number) { return `${auditType}::${pageUrl}::${idx}`; }
 
-export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
-  // Audit type selection
-  const [selectedTypes, setSelectedTypes] = useState<Set<AuditType>>(new Set(['seo', 'content', 'aeo', 'schema', 'compliance', 'speed']));
+// Group audit results into "runs" by clustering timestamps within 5 minutes of each other
+function groupIntoRuns(results: PageAuditResult[]): PageAuditResult[][] {
+  if (results.length === 0) return [];
+  const sorted = [...results].sort((a, b) => new Date(b.audited_at).getTime() - new Date(a.audited_at).getTime());
+  const runs: PageAuditResult[][] = [];
+  let currentRun: PageAuditResult[] = [sorted[0]];
 
-  // Mode selection
+  for (let i = 1; i < sorted.length; i++) {
+    const prevTime = new Date(sorted[i - 1].audited_at).getTime();
+    const currTime = new Date(sorted[i].audited_at).getTime();
+    if (prevTime - currTime < 5 * 60 * 1000) {
+      currentRun.push(sorted[i]);
+    } else {
+      runs.push(currentRun);
+      currentRun = [sorted[i]];
+    }
+  }
+  runs.push(currentRun);
+  return runs;
+}
+
+export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
+  const [selectedTypes, setSelectedTypes] = useState<Set<AuditType>>(new Set(['seo', 'content', 'aeo', 'schema', 'compliance', 'speed']));
   const [mode, setMode] = useState<AuditMode | null>(null);
   const [pageUrlInput, setPageUrlInput] = useState('');
   const [keywordSearch, setKeywordSearch] = useState('');
@@ -98,7 +112,6 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
   const [groupPages, setGroupPages] = useState<string[]>([]);
   const [loadingGroupPages, setLoadingGroupPages] = useState(false);
 
-  // Audit state
   const [results, setResults] = useState<PageAuditResult[]>([]);
   const [targetUrls, setTargetUrls] = useState<string[]>([]);
   const [isRunning, setIsRunning] = useState(false);
@@ -109,59 +122,40 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
   const abortRef = useRef(false);
   const completedUrlsRef = useRef<Set<string>>(new Set());
 
-  // UI state
-  const [resultsTab, setResultsTab] = useState<ResultsTab>('summary');
+  const [expandedRun, setExpandedRun] = useState<number | null>(null);
   const [expandedPage, setExpandedPage] = useState<string | null>(null);
   const [expandedRecs, setExpandedRecs] = useState<Set<string>>(new Set());
-  const [pageSearch, setPageSearch] = useState('');
-  const [scoreFilter, setScoreFilter] = useState<'' | 'poor' | 'needs-work' | 'good'>('');
-  const [priorityFilter, setPriorityFilter] = useState<'' | 'high' | 'medium' | 'low'>('');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [auditTypeFilter, setAuditTypeFilter] = useState<AuditType | ''>('');
-  const [pagesPage, setPagesPage] = useState(1);
-  const [recsPage, setRecsPage] = useState(1);
-  const [summaryExpanded, setSummaryExpanded] = useState(true);
+  const [deletingRun, setDeletingRun] = useState<number | null>(null);
 
   // Task tracking
   const [pendingRecs, setPendingRecs] = useState<Set<string>>(new Set());
   const [completedRecs, setCompletedRecs] = useState<Set<string>>(new Set());
   const [rejectedRecs, setRejectedRecs] = useState<Set<string>>(new Set());
-  const [selectedForTasklist, setSelectedForTasklist] = useState<Set<string>>(new Set());
-  const [addingToTasklist, setAddingToTasklist] = useState(false);
 
-  // Load saved results for ALL audit types
-  useEffect(() => {
+  const loadResults = useCallback(async () => {
     if (!siteUrl) return;
     setLoadingResults(true);
-    const loadAll = async () => {
-      const allResults: PageAuditResult[] = [];
-      for (const auditType of ALL_AUDIT_TYPES.map((t) => t.id)) {
-        try {
-          const resp = await fetch(`${API_ENDPOINTS.db.pageAudits}?siteUrl=${encodeURIComponent(siteUrl)}&auditType=${auditType}`);
-          if (resp.ok) {
-            const data = await resp.json();
-            if (data?.results) {
-              for (const r of data.results) {
-                allResults.push({
-                  ...r,
-                  audit_type: auditType,
-                  strengths: Array.isArray(r.strengths) ? r.strengths : [],
-                });
-              }
-            }
-          }
-        } catch { /* ignore */ }
+    try {
+      const resp = await fetch(`${API_ENDPOINTS.db.pageAudits}?siteUrl=${encodeURIComponent(siteUrl)}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data?.results) {
+          const mapped = data.results.map((r: any) => ({
+            ...r,
+            strengths: Array.isArray(r.strengths) ? r.strengths : [],
+          }));
+          setResults(mapped);
+          const urls = new Set<string>();
+          for (const r of mapped) urls.add(r.page_url);
+          completedUrlsRef.current = urls;
+        }
       }
-      setResults(allResults);
-      const urls = new Set<string>();
-      for (const r of allResults) urls.add(r.page_url);
-      completedUrlsRef.current = urls;
-      setLoadingResults(false);
-    };
-    loadAll();
+    } catch { /* ignore */ }
+    setLoadingResults(false);
   }, [siteUrl]);
 
-  // Load task statuses for all audit types
+  useEffect(() => { loadResults(); }, [loadResults]);
+
   useEffect(() => {
     if (!siteUrl) return;
     const loadTasks = async () => {
@@ -190,7 +184,6 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
     loadTasks();
   }, [siteUrl]);
 
-  // Load keywords and groups
   useEffect(() => {
     if (!siteUrl) return;
     fetch(`${API_ENDPOINTS.db.keywords}?siteUrl=${encodeURIComponent(siteUrl)}`)
@@ -269,17 +262,17 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
     finally { setLoadingSitemap(false); }
   }, [siteUrl]);
 
-  // Multi-audit runner: crawls each page once, runs all selected audit types
   const runMultiAudit = useCallback(async (urls: string[], clearPrevious: boolean) => {
     if (urls.length === 0 || selectedTypes.size === 0) return;
     abortRef.current = false;
     setIsRunning(true);
     setError(null);
     setTargetUrls(urls);
-    if (clearPrevious) { setResults([]); completedUrlsRef.current = new Set(); }
+    if (clearPrevious) { completedUrlsRef.current = new Set(); }
 
     const typesArray = [...selectedTypes];
     const remaining = urls.filter((u) => !completedUrlsRef.current.has(u));
+    const newResults: PageAuditResult[] = [];
 
     for (let i = 0; i < remaining.length; i += 3) {
       if (abortRef.current) break;
@@ -296,6 +289,7 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
           const data = await resp.json();
           return (data.results || []).map((r: any) => ({
+            id: r.id,
             page_url: r.pageUrl || r.page_url || pageUrl,
             audit_type: r.auditType || r.audit_type,
             score: r.score || 0,
@@ -322,57 +316,71 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
       const batchResults = await Promise.all(batchPromises);
       const flat = batchResults.flat();
       for (const r of flat) completedUrlsRef.current.add(r.page_url);
-      setResults((prev) => [...prev, ...flat]);
+      newResults.push(...flat);
+      setResults((prev) => [...flat, ...prev]);
     }
 
     setIsRunning(false);
     setCurrentBatch([]);
     const totalAudited = completedUrlsRef.current.size;
     const typesStr = [...selectedTypes].join(', ');
-    logActivity(siteUrl, 'seo', 'full-audit', `SEO audit completed: ${totalAudited} pages, types: ${typesStr}`);
+    logActivity(siteUrl, 'seo', 'full-audit', `Full audit completed: ${totalAudited} pages, types: ${typesStr}`);
   }, [siteUrl, selectedTypes]);
 
   const handleStartPage = () => {
     const url = pageUrlInput.trim();
     if (!url) return;
     const fullUrl = url.startsWith('http') ? url : `${siteUrl}${url.startsWith('/') ? '' : '/'}${url}`;
-    runMultiAudit([fullUrl], true);
+    runMultiAudit([fullUrl], false);
   };
-  const handleStartKeyword = () => { if (keywordPages.length > 0) runMultiAudit(keywordPages, true); };
-  const handleStartGroup = () => { if (groupPages.length > 0) runMultiAudit(groupPages, true); };
+  const handleStartKeyword = () => { if (keywordPages.length > 0) runMultiAudit(keywordPages, false); };
+  const handleStartGroup = () => { if (groupPages.length > 0) runMultiAudit(groupPages, false); };
   const handleStartSite = async () => {
     const urls = await fetchSitemap();
-    if (urls.length > 0) {
-      for (const auditType of selectedTypes) {
-        try {
-          await fetch(API_ENDPOINTS.db.pageAudits, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ siteUrl, auditType, action: 'clear' }),
-          });
-        } catch { /* */ }
-      }
-      runMultiAudit(urls, true);
-    }
+    if (urls.length > 0) runMultiAudit(urls, false);
   };
   const handleResume = () => runMultiAudit(targetUrls, false);
   const stopAudit = () => { abortRef.current = true; };
+
+  const deleteRun = useCallback(async (runResults: PageAuditResult[], runIdx: number) => {
+    setDeletingRun(runIdx);
+    for (const r of runResults) {
+      try {
+        if (r.id) {
+          await fetch(API_ENDPOINTS.db.pageAudits, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: r.id }),
+          });
+        } else {
+          await fetch(API_ENDPOINTS.db.pageAudits, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ siteUrl, pageUrl: r.page_url, auditType: r.audit_type, auditedAt: r.audited_at }),
+          });
+        }
+      } catch { /* */ }
+    }
+    setResults((prev) => {
+      const idsToRemove = new Set(runResults.map((r) => `${r.page_url}::${r.audit_type}::${r.audited_at}`));
+      return prev.filter((r) => !idsToRemove.has(`${r.page_url}::${r.audit_type}::${r.audited_at}`));
+    });
+    setDeletingRun(null);
+    if (expandedRun === runIdx) setExpandedRun(null);
+    logActivity(siteUrl, 'seo', 'delete-audit', `Deleted audit run with ${runResults.length} results`);
+  }, [siteUrl, expandedRun]);
 
   const toggleRecDone = useCallback(async (key: string, taskText: string, auditType: AuditType) => {
     const isDone = completedRecs.has(key);
     if (isDone) {
       setCompletedRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
-      if (pendingRecs.has(key)) {
-        setPendingRecs((prev) => new Set(prev).add(key));
-        try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'pending' }) }); } catch { /* */ }
-      } else {
-        try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key }) }); } catch { /* */ }
-      }
+      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key }) }); } catch { /* */ }
     } else {
       setCompletedRecs((prev) => new Set(prev).add(key));
       setPendingRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
       try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'completed' }) }); } catch { /* */ }
     }
-  }, [siteUrl, completedRecs, pendingRecs]);
+  }, [siteUrl, completedRecs]);
 
   const rejectRec = useCallback(async (key: string, taskText: string, auditType: AuditType) => {
     const isRejected = rejectedRecs.has(key);
@@ -387,135 +395,19 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
     }
   }, [siteUrl, rejectedRecs]);
 
-  const addSelectedToTasklist = useCallback(async () => {
-    if (selectedForTasklist.size === 0) return;
-    setAddingToTasklist(true);
-    for (const key of selectedForTasklist) {
-      if (completedRecs.has(key) || pendingRecs.has(key)) continue;
-      const [auditType, pageUrl, idxStr] = key.split('::');
-      const idx = parseInt(idxStr, 10);
-      const page = results.find((r) => r.page_url === pageUrl && r.audit_type === auditType);
-      const rec = page?.recommendations[idx];
-      if (!rec) continue;
-      setPendingRecs((prev) => new Set(prev).add(key));
-      try {
-        await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText: `[${AUDIT_TYPE_LABELS[auditType as AuditType]}] ${rec.issue} — ${rec.recommendation}`, category: rec.category, status: 'pending' }) });
-      } catch { /* */ }
-    }
-    setSelectedForTasklist(new Set());
-    setAddingToTasklist(false);
-  }, [selectedForTasklist, completedRecs, pendingRecs, results, siteUrl]);
-
   const toggleRecExpanded = (key: string) => setExpandedRecs((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
 
-  // Aggregate unique pages
-  const uniquePageUrls = useMemo(() => [...new Set(results.map((r) => r.page_url))], [results]);
-  const completedPageCount = uniquePageUrls.length;
-  const totalPages = targetUrls.length || completedPageCount;
-  const progressPct = totalPages > 0 ? Math.round((completedPageCount / totalPages) * 100) : 0;
-  const hasResumable = completedPageCount > 0 && completedPageCount < totalPages && !isRunning;
+  const auditRuns = useMemo(() => groupIntoRuns(results), [results]);
 
-  // Per-type scores
-  const typeScores = useMemo(() => {
-    const map: Record<string, { total: number; count: number }> = {};
-    for (const r of results) {
-      if (!map[r.audit_type]) map[r.audit_type] = { total: 0, count: 0 };
-      map[r.audit_type].total += r.score;
-      map[r.audit_type].count++;
-    }
-    return Object.entries(map).map(([type, v]) => ({ type: type as AuditType, avg: Math.round(v.total / v.count), count: v.count }));
-  }, [results]);
-
-  const avgScore = useMemo(() => {
-    if (results.length === 0) return 0;
-    return Math.round(results.reduce((s, r) => s + r.score, 0) / results.length);
-  }, [results]);
-
-  const allRecs = useMemo(() => {
-    const flat: Array<Recommendation & { page_url: string; audit_type: AuditType; recIdx: number }> = [];
-    for (const r of results) {
-      r.recommendations.forEach((rec, i) => {
-        const key = recKey(r.page_url, r.audit_type, i);
-        if (!rejectedRecs.has(key)) flat.push({ ...rec, page_url: r.page_url, audit_type: r.audit_type, recIdx: i });
-      });
-    }
-    return flat;
-  }, [results, rejectedRecs]);
-
-  const totalRecsCount = allRecs.length;
-  const completedRecsCount = useMemo(() => {
-    let count = 0;
-    for (const rec of allRecs) { if (completedRecs.has(recKey(rec.page_url, rec.audit_type, rec.recIdx))) count++; }
-    return count;
-  }, [allRecs, completedRecs]);
-  const recProgressPct = totalRecsCount > 0 ? Math.round((completedRecsCount / totalRecsCount) * 100) : 0;
-
-  const topIssues = useMemo(() => {
-    const map = new Map<string, { count: number; priority: string; example: string }>();
-    for (const rec of allRecs) { const e = map.get(rec.category); if (e) e.count++; else map.set(rec.category, { count: 1, priority: rec.priority, example: rec.issue }); }
-    return [...map.entries()].map(([cat, v]) => ({ category: cat, ...v })).sort((a, b) => b.count - a.count);
-  }, [allRecs]);
-
-  const allCategories = useMemo(() => { const c = new Set<string>(); for (const rec of allRecs) c.add(rec.category); return [...c].sort(); }, [allRecs]);
-
-  // Page-level aggregated results (group by page_url)
-  const pageGroups = useMemo(() => {
-    const map = new Map<string, PageAuditResult[]>();
-    for (const r of results) {
-      const list = map.get(r.page_url) || [];
-      list.push(r);
-      map.set(r.page_url, list);
-    }
-    return [...map.entries()].map(([url, audits]) => ({
-      page_url: url,
-      audits,
-      avgScore: Math.round(audits.reduce((s, a) => s + a.score, 0) / audits.length),
-      totalRecs: audits.reduce((s, a) => s + a.recommendations.filter((_, i) => !rejectedRecs.has(recKey(a.page_url, a.audit_type, i))).length, 0),
-      latestDate: audits.reduce((latest, a) => a.audited_at > latest ? a.audited_at : latest, audits[0].audited_at),
-    })).sort((a, b) => a.avgScore - b.avgScore);
-  }, [results, rejectedRecs]);
-
-  const filteredPageGroups = useMemo(() => {
-    let list = pageGroups;
-    if (pageSearch) { const q = pageSearch.toLowerCase(); list = list.filter((p) => p.page_url.toLowerCase().includes(q)); }
-    if (scoreFilter === 'poor') list = list.filter((p) => p.avgScore < 60);
-    else if (scoreFilter === 'needs-work') list = list.filter((p) => p.avgScore >= 60 && p.avgScore < 80);
-    else if (scoreFilter === 'good') list = list.filter((p) => p.avgScore >= 80);
-    return list;
-  }, [pageGroups, pageSearch, scoreFilter]);
-
-  const paginatedPages = useMemo(() => filteredPageGroups.slice((pagesPage - 1) * PAGES_PER_PAGE, pagesPage * PAGES_PER_PAGE), [filteredPageGroups, pagesPage]);
-  const totalPagesPages = Math.ceil(filteredPageGroups.length / PAGES_PER_PAGE);
-
-  const filteredRecs = useMemo(() => {
-    let list = allRecs;
-    if (priorityFilter) list = list.filter((r) => r.priority === priorityFilter);
-    if (categoryFilter) list = list.filter((r) => r.category === categoryFilter);
-    if (auditTypeFilter) list = list.filter((r) => r.audit_type === auditTypeFilter);
-    return list.sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.priority] || 2) - ({ high: 0, medium: 1, low: 2 }[b.priority] || 2));
-  }, [allRecs, priorityFilter, categoryFilter, auditTypeFilter]);
-
-  const paginatedRecs = useMemo(() => filteredRecs.slice((recsPage - 1) * RECS_PER_PAGE, recsPage * RECS_PER_PAGE), [filteredRecs, recsPage]);
-  const totalRecsPages = Math.ceil(filteredRecs.length / RECS_PER_PAGE);
-
-  useEffect(() => { setPagesPage(1); }, [pageSearch, scoreFilter]);
-  useEffect(() => { setRecsPage(1); }, [priorityFilter, categoryFilter, auditTypeFilter]);
-
-  const latestAuditDate = useMemo(() => {
-    if (results.length === 0) return '';
-    return results.reduce((latest, r) => r.audited_at > latest ? r.audited_at : latest, results[0].audited_at);
-  }, [results]);
-
-  const scoreBuckets = useMemo(() => ({
-    poor: pageGroups.filter((p) => p.avgScore < 60).length,
-    mid: pageGroups.filter((p) => p.avgScore >= 60 && p.avgScore < 80).length,
-    good: pageGroups.filter((p) => p.avgScore >= 80).length,
-  }), [pageGroups]);
+  const runningPageCount = completedUrlsRef.current.size;
+  const totalPages = targetUrls.length || runningPageCount;
+  const progressPct = totalPages > 0 ? Math.round((runningPageCount / totalPages) * 100) : 0;
+  const hasResumable = runningPageCount > 0 && runningPageCount < totalPages && !isRunning;
 
   return (
     <div className="max-w-6xl mx-auto">
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-apple-text mb-1">SEO Audit</h2>
+        <h2 className="text-xl font-semibold text-apple-text mb-1">Full Audit</h2>
         <p className="text-apple-sm text-apple-text-secondary">
           Run comprehensive audits across multiple frameworks. Each page is crawled once and analyzed for all selected audit types simultaneously.
         </p>
@@ -531,7 +423,7 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
               {allSelected ? 'Deselect All' : 'Select All'}
             </button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {ALL_AUDIT_TYPES.map((type) => {
               const isChecked = selectedTypes.has(type.id);
               return (
@@ -648,7 +540,7 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
             <button onClick={stopAudit} className="px-3 py-1.5 rounded-apple-sm border border-apple-red text-apple-red text-apple-xs font-medium hover:bg-red-50 transition-colors">Stop</button>
           </div>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-apple-xs text-apple-text-secondary">{completedPageCount} / {totalPages} pages</span>
+            <span className="text-apple-xs text-apple-text-secondary">{runningPageCount} / {totalPages} pages</span>
             <span className="text-apple-xs text-apple-text-tertiary">{progressPct}%</span>
           </div>
           <div className="w-full h-2 bg-apple-fill-secondary rounded-full overflow-hidden">
@@ -659,308 +551,195 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
       )}
       {hasResumable && !isRunning && (
         <div className="rounded-apple border border-amber-200 bg-amber-50/40 px-4 py-3 mb-6 flex items-center justify-between">
-          <span className="text-apple-sm text-amber-800">Audit paused — {totalPages - completedPageCount} remaining</span>
+          <span className="text-apple-sm text-amber-800">Audit paused — {totalPages - runningPageCount} remaining</span>
           <button onClick={handleResume} className="px-3 py-1.5 rounded-apple-sm border border-apple-blue text-apple-blue text-apple-xs font-medium hover:bg-apple-blue/5 transition-colors">Resume</button>
         </div>
       )}
       {loadingResults && results.length === 0 && (<div className="flex items-center justify-center py-16"><div className="w-6 h-6 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" /><span className="ml-3 text-apple-sm text-apple-text-secondary">Loading saved results…</span></div>)}
       {error && <div className="rounded-apple border border-apple-red/20 bg-red-50/30 px-4 py-3 mb-6 text-apple-sm text-apple-red">{error}</div>}
 
-      {/* ═══════ RESULTS ═══════ */}
-      {results.length > 0 && (
-        <>
-          <div className="flex border-b border-apple-divider mb-6">
-            {([
-              { id: 'summary' as const, label: 'Summary' },
-              { id: 'pages' as const, label: `By Page (${pageGroups.length})` },
-              { id: 'recommendations' as const, label: `All Recommendations (${allRecs.length})` },
-            ]).map((tab) => (
-              <button key={tab.id} onClick={() => setResultsTab(tab.id)}
-                className={`px-4 py-2.5 text-apple-sm font-medium border-b-2 transition-colors -mb-px ${resultsTab === tab.id ? 'border-apple-blue text-apple-blue' : 'border-transparent text-apple-text-secondary hover:text-apple-text'}`}>{tab.label}</button>
-            ))}
+      {/* ═══════ AUDIT RUN CARDS ═══════ */}
+      {auditRuns.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-apple-sm font-semibold text-apple-text-secondary uppercase tracking-wider">
+              Audit History ({auditRuns.length} audit{auditRuns.length !== 1 ? 's' : ''})
+            </h3>
           </div>
 
-          {/* ─── Summary Tab ─── */}
-          {resultsTab === 'summary' && (
-            <div className="space-y-4">
-              <button onClick={() => setSummaryExpanded(!summaryExpanded)}
-                className="w-full rounded-apple border border-apple-divider bg-white p-4 text-left hover:bg-apple-fill-secondary/30 transition-colors">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className={`text-2xl font-bold ${getScoreColor(avgScore)}`}>{avgScore}</span>
-                    <div>
-                      <div className="text-apple-sm font-semibold text-apple-text">Combined Audit</div>
-                      <div className="text-apple-xs text-apple-text-tertiary">{latestAuditDate ? new Date(latestAuditDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : ''} · {pageGroups.length} pages · {typeScores.length} audit types</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <div className="text-apple-xs text-apple-text-tertiary">{completedRecsCount}/{totalRecsCount} implemented</div>
-                      <div className="w-32 h-1.5 bg-apple-fill-secondary rounded-full mt-1 overflow-hidden">
-                        <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${recProgressPct}%` }} />
-                      </div>
-                    </div>
-                    <svg className={`w-4 h-4 text-apple-text-tertiary transition-transform ${summaryExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                  </div>
-                </div>
-              </button>
+          {auditRuns.map((run, runIdx) => {
+            const isExp = expandedRun === runIdx;
+            const latestDate = run[0].audited_at;
+            const uniquePages = [...new Set(run.map((r) => r.page_url))];
+            const uniqueTypes = [...new Set(run.map((r) => r.audit_type))];
+            const avgScore = Math.round(run.reduce((s, r) => s + r.score, 0) / run.length);
+            const totalRecs = run.reduce((s, r) => s + r.recommendations.length, 0);
+            const isDeleting = deletingRun === runIdx;
 
-              {summaryExpanded && (
-                <div className="space-y-4 pl-2">
-                  {/* Per-type scores */}
-                  {typeScores.length > 0 && (
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                      {typeScores.map((ts) => (
-                        <div key={ts.type} className={`rounded-apple border p-3 text-center ${getScoreBg(ts.avg)}`}>
-                          <div className={`text-xl font-bold ${getScoreColor(ts.avg)}`}>{ts.avg}</div>
-                          <div className="text-apple-xs font-medium text-apple-text mt-0.5">{AUDIT_TYPE_LABELS[ts.type]}</div>
-                          <div className="text-[10px] text-apple-text-tertiary">{ts.count} pages</div>
-                        </div>
+            // Group by page within this run
+            const pageMap = new Map<string, PageAuditResult[]>();
+            for (const r of run) {
+              const list = pageMap.get(r.page_url) || [];
+              list.push(r);
+              pageMap.set(r.page_url, list);
+            }
+            const pageEntries = [...pageMap.entries()].sort((a, b) => {
+              const scoreA = Math.round(a[1].reduce((s, r) => s + r.score, 0) / a[1].length);
+              const scoreB = Math.round(b[1].reduce((s, r) => s + r.score, 0) / b[1].length);
+              return scoreA - scoreB;
+            });
+
+            return (
+              <div key={runIdx} className="rounded-apple border border-apple-divider bg-white overflow-hidden shadow-sm">
+                {/* Card Header */}
+                <div className="p-4 flex items-center gap-4 cursor-pointer hover:bg-apple-fill-secondary/30 transition-colors"
+                  onClick={() => setExpandedRun(isExp ? null : runIdx)}>
+                  <div className={`w-14 h-14 rounded-apple-sm border-2 flex items-center justify-center shrink-0 ${getScoreBg(avgScore)}`}>
+                    <span className={`text-xl font-bold ${getScoreColor(avgScore)}`}>{avgScore}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      {uniqueTypes.map((t) => (
+                        <span key={t} className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${AUDIT_TYPE_COLORS[t]}`}>{AUDIT_TYPE_LABELS[t]}</span>
                       ))}
                     </div>
-                  )}
-
-                  {/* Score distribution */}
-                  <div className="grid grid-cols-3 gap-3">
-                    {[{ label: 'Poor (<60)', count: scoreBuckets.poor, color: 'red', filter: 'poor' as const }, { label: 'Needs Work (60-79)', count: scoreBuckets.mid, color: 'amber', filter: 'needs-work' as const }, { label: 'Good (80+)', count: scoreBuckets.good, color: 'green', filter: 'good' as const }].map((b) => (
-                      <div key={b.filter} onClick={() => { setScoreFilter(b.filter); setResultsTab('pages'); }} className={`rounded-apple border border-${b.color}-200 bg-${b.color}-50 p-3 text-center cursor-pointer hover:ring-1 hover:ring-${b.color}-300 transition-all`}>
-                        <div className={`text-xl font-bold text-${b.color}-600`}>{b.count}</div>
-                        <div className="text-apple-xs text-apple-text-secondary mt-0.5">{b.label}</div>
-                      </div>
-                    ))}
+                    <div className="text-apple-sm font-medium text-apple-text">
+                      {uniquePages.length} page{uniquePages.length !== 1 ? 's' : ''} audited · {totalRecs} recommendation{totalRecs !== 1 ? 's' : ''}
+                    </div>
+                    <div className="text-apple-xs text-apple-text-tertiary mt-0.5">
+                      {new Date(latestDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(latestDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </div>
                   </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={(e) => { e.stopPropagation(); if (confirm('Delete this entire audit run?')) deleteRun(run, runIdx); }}
+                      disabled={isDeleting}
+                      className="p-2 rounded-apple-sm hover:bg-red-50 text-apple-text-tertiary hover:text-red-500 transition-colors disabled:opacity-50"
+                      title="Delete audit run">
+                      {isDeleting ? (
+                        <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      )}
+                    </button>
+                    <svg className={`w-4 h-4 text-apple-text-tertiary transition-transform ${isExp ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                  </div>
+                </div>
 
-                  {/* Top issues */}
-                  {topIssues.length > 0 && (
-                    <div className="rounded-apple border border-apple-divider bg-white overflow-hidden">
-                      <div className="px-4 py-2.5 border-b border-apple-divider bg-apple-fill-secondary/50">
-                        <span className="text-apple-xs font-semibold text-apple-text-secondary uppercase tracking-wider">Most Common Issues</span>
-                      </div>
-                      <div className="divide-y divide-apple-divider">
-                        {topIssues.slice(0, 10).map((issue) => {
-                          const pc = PRIORITY_COLORS[issue.priority as keyof typeof PRIORITY_COLORS] || PRIORITY_COLORS.low;
-                          const issueKey = `issue:${issue.category}`;
-                          const isExpanded = expandedRecs.has(issueKey);
-                          const issueRecs = allRecs.filter((r) => r.category === issue.category);
+                {/* Expanded Content */}
+                {isExp && (
+                  <div className="border-t border-apple-divider bg-apple-fill-secondary/20">
+                    {/* Per-type score bar */}
+                    {uniqueTypes.length > 1 && (
+                      <div className="px-4 py-3 flex gap-3 flex-wrap border-b border-apple-divider/50">
+                        {uniqueTypes.map((t) => {
+                          const typeResults = run.filter((r) => r.audit_type === t);
+                          const typeAvg = Math.round(typeResults.reduce((s, r) => s + r.score, 0) / typeResults.length);
                           return (
-                            <div key={issue.category}>
-                              <button onClick={() => toggleRecExpanded(issueKey)} className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-apple-fill-secondary/30 transition-colors text-left">
-                                <span className={`w-2 h-2 rounded-full shrink-0 ${pc.dot}`} />
-                                <span className="text-apple-sm font-medium text-apple-text flex-1">{issue.category}</span>
-                                <span className="text-apple-xs text-apple-text-tertiary">{issue.count} issue{issue.count !== 1 ? 's' : ''}</span>
-                                <svg className={`w-3.5 h-3.5 text-apple-text-tertiary transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                              </button>
-                              {isExpanded && (
-                                <div className="px-4 pb-3 space-y-2">
-                                  {issueRecs.slice(0, 10).map((rec, i) => (
-                                    <div key={i} className={`rounded-apple-sm border ${pc.border} ${pc.bg} p-2.5 text-apple-xs`}>
-                                      <div className="flex items-center gap-2 mb-0.5">
-                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${AUDIT_TYPE_COLORS[rec.audit_type]}`}>{AUDIT_TYPE_LABELS[rec.audit_type]}</span>
-                                      </div>
-                                      <div className="font-medium text-apple-text">{rec.issue}</div>
-                                      <div className="text-apple-text-secondary mt-1">{rec.recommendation}</div>
-                                      <div className="text-apple-text-tertiary mt-0.5 truncate">{rec.page_url.replace(/^https?:\/\/[^/]+/, '')}</div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
+                            <div key={t} className={`rounded-apple-sm border px-3 py-2 text-center min-w-[80px] ${getScoreBg(typeAvg)}`}>
+                              <div className={`text-lg font-bold ${getScoreColor(typeAvg)}`}>{typeAvg}</div>
+                              <div className="text-[10px] font-medium text-apple-text-secondary">{AUDIT_TYPE_LABELS[t]}</div>
                             </div>
                           );
                         })}
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+                    )}
 
-          {/* ─── By Page Tab ─── */}
-          {resultsTab === 'pages' && (
-            <div>
-              <div className="flex flex-wrap items-center gap-2 mb-4">
-                <div className="relative flex-1 min-w-[200px]">
-                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                  <input type="text" value={pageSearch} onChange={(e) => setPageSearch(e.target.value)} placeholder="Search pages…"
-                    className="w-full pl-9 pr-3 py-2 rounded-apple-sm border border-apple-border text-apple-sm focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue" />
-                </div>
-                {(['poor', 'needs-work', 'good'] as const).map((f) => (
-                  <button key={f} onClick={() => setScoreFilter(scoreFilter === f ? '' : f)}
-                    className={`px-2.5 py-1.5 rounded-apple-pill text-apple-xs font-medium transition-colors border ${scoreFilter === f ? ({ poor: 'text-red-700 bg-red-50 border-red-200', 'needs-work': 'text-amber-700 bg-amber-50 border-amber-200', good: 'text-green-700 bg-green-50 border-green-200' })[f] : 'bg-apple-fill-secondary text-apple-text-secondary border-transparent hover:bg-gray-200'}`}>
-                    {{ poor: 'Poor', 'needs-work': 'Needs Work', good: 'Good' }[f]}
-                  </button>
-                ))}
-              </div>
-              <div className="text-apple-xs text-apple-text-tertiary mb-3">Showing {paginatedPages.length} of {filteredPageGroups.length} pages</div>
-              <div className="space-y-3">
-                {paginatedPages.map((pg) => {
-                  const isExp = expandedPage === pg.page_url;
-                  return (
-                    <div key={pg.page_url} className="rounded-apple border border-apple-divider bg-white overflow-hidden">
-                      <button className="w-full p-4 text-left hover:bg-apple-fill-secondary/30 transition-colors"
-                        onClick={() => setExpandedPage(isExp ? null : pg.page_url)}>
-                        <div className="flex items-center gap-4">
-                          <span className={`text-xl font-bold w-12 text-center shrink-0 ${getScoreColor(pg.avgScore)}`}>{pg.avgScore}</span>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                              {pg.audits.map((a) => (
-                                <span key={a.audit_type} className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${AUDIT_TYPE_COLORS[a.audit_type]}`}>
-                                  {AUDIT_TYPE_LABELS[a.audit_type]} {a.score}
-                                </span>
-                              ))}
-                            </div>
-                            <a href={pg.page_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-apple-sm font-medium text-apple-blue hover:underline truncate block">
-                              {pg.page_url.replace(/^https?:\/\/[^/]+/, '') || '/'}
-                            </a>
-                            <span className="text-apple-xs text-apple-text-tertiary">{new Date(pg.latestDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-                          </div>
-                          <div className="shrink-0 w-24 text-right">
-                            <div className="text-apple-xs text-apple-text-tertiary">{pg.totalRecs} recs</div>
-                          </div>
-                          <svg className={`w-4 h-4 text-apple-text-tertiary transition-transform shrink-0 ${isExp ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                        </div>
-                      </button>
-                      {isExp && (
-                        <div className="px-4 pb-4 border-t border-apple-divider/50 bg-apple-fill-secondary/20 space-y-4">
-                          {pg.audits.map((audit) => (
-                            <div key={audit.audit_type} className="mt-3">
-                              <div className="flex items-center gap-2 mb-2">
-                                <span className={`px-2 py-0.5 rounded text-apple-xs font-bold ${AUDIT_TYPE_COLORS[audit.audit_type]}`}>{AUDIT_TYPE_LABELS[audit.audit_type]}</span>
-                                <span className={`text-apple-sm font-bold ${getScoreColor(audit.score)}`}>{audit.score}/100</span>
+                    {/* Pages within this run */}
+                    <div className="divide-y divide-apple-divider/50">
+                      {pageEntries.map(([pageUrl, audits]) => {
+                        const pageAvg = Math.round(audits.reduce((s, a) => s + a.score, 0) / audits.length);
+                        const isPageExp = expandedPage === `${runIdx}::${pageUrl}`;
+                        const pageKey = `${runIdx}::${pageUrl}`;
+                        return (
+                          <div key={pageUrl}>
+                            <button className="w-full px-4 py-3 text-left hover:bg-apple-fill-secondary/50 transition-colors flex items-center gap-3"
+                              onClick={() => setExpandedPage(isPageExp ? null : pageKey)}>
+                              <span className={`text-lg font-bold w-10 text-center shrink-0 ${getScoreColor(pageAvg)}`}>{pageAvg}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                                  {audits.map((a) => (
+                                    <span key={a.audit_type} className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${AUDIT_TYPE_COLORS[a.audit_type]}`}>
+                                      {AUDIT_TYPE_LABELS[a.audit_type]} {a.score}
+                                    </span>
+                                  ))}
+                                </div>
+                                <a href={pageUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-apple-sm text-apple-blue hover:underline truncate block">
+                                  {pageUrl.replace(/^https?:\/\/[^/]+/, '') || '/'}
+                                </a>
                               </div>
-                              {audit.summary && <div className={`rounded-apple-sm border p-3 mb-2 ${getScoreBg(audit.score)}`}><p className="text-apple-xs text-apple-text">{audit.summary}</p></div>}
-                              {audit.recommendations.filter((_, i) => !rejectedRecs.has(recKey(audit.page_url, audit.audit_type, i))).map((rec, i) => {
-                                const key = recKey(audit.page_url, audit.audit_type, i);
-                                const pc = PRIORITY_COLORS[rec.priority] || PRIORITY_COLORS.low;
-                                const isDone = completedRecs.has(key);
-                                const isRecExp = expandedRecs.has(key);
-                                return (
-                                  <div key={i} className={`rounded-apple-sm border ${pc.border} ${isDone ? 'opacity-50' : ''} ${pc.bg} overflow-hidden mb-2`}>
-                                    <div className="p-2.5 flex items-start gap-2">
-                                      <input type="checkbox" checked={isDone} onChange={() => toggleRecDone(key, `${rec.issue} — ${rec.recommendation}`, audit.audit_type)} className="mt-1 shrink-0 rounded" />
-                                      <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleRecExpanded(key)}>
-                                        <div className="flex items-center gap-2 mb-0.5">
-                                          <span className={`text-[10px] font-bold uppercase ${pc.text}`}>{rec.priority}</span>
-                                          <span className="text-[10px] text-apple-text-tertiary">{rec.category}</span>
-                                        </div>
-                                        <p className={`text-apple-xs font-medium ${isDone ? 'line-through text-apple-text-tertiary' : 'text-apple-text'}`}>{rec.issue}</p>
-                                      </div>
-                                      <button onClick={() => rejectRec(key, `${rec.issue} — ${rec.recommendation}`, audit.audit_type)} title="Reject" className="p-1 rounded hover:bg-red-100 text-apple-text-tertiary hover:text-red-500 transition-colors shrink-0">
-                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
-                                      </button>
-                                      <svg className={`w-3 h-3 mt-1 text-apple-text-tertiary transition-transform shrink-0 cursor-pointer ${isRecExp ? 'rotate-180' : ''}`} onClick={() => toggleRecExpanded(key)} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                                    </div>
-                                    {isRecExp && (
-                                      <div className="px-2.5 pb-2.5 border-t border-apple-divider/30 pt-2 space-y-1.5">
-                                        <div><p className="text-[10px] font-semibold text-apple-text-secondary">Recommendation</p><p className="text-apple-xs text-apple-text mt-0.5">{rec.recommendation}</p></div>
-                                        {rec.howToFix && <div><p className="text-[10px] font-semibold text-apple-text-secondary">How to Fix</p><p className="text-apple-xs text-apple-text mt-0.5 whitespace-pre-wrap">{rec.howToFix}</p></div>}
-                                        {rec.impact && <div><p className="text-[10px] font-semibold text-apple-text-secondary">Impact</p><p className="text-apple-xs text-apple-text-secondary mt-0.5">{rec.impact}</p></div>}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              {totalPagesPages > 1 && <Pagination current={pagesPage} total={totalPagesPages} onChange={setPagesPage} />}
-            </div>
-          )}
+                              <span className="text-apple-xs text-apple-text-tertiary shrink-0">{audits.reduce((s, a) => s + a.recommendations.length, 0)} recs</span>
+                              <svg className={`w-3.5 h-3.5 text-apple-text-tertiary transition-transform shrink-0 ${isPageExp ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                            </button>
 
-          {/* ─── All Recommendations Tab ─── */}
-          {resultsTab === 'recommendations' && (
-            <div>
-              <div className="flex flex-wrap items-center gap-2 mb-4">
-                <span className="text-apple-xs text-apple-text-tertiary">Type:</span>
-                {ALL_AUDIT_TYPES.map((t) => (
-                  <button key={t.id} onClick={() => setAuditTypeFilter(auditTypeFilter === t.id ? '' : t.id)}
-                    className={`px-2 py-1 rounded-apple-pill text-apple-xs font-medium transition-colors border ${auditTypeFilter === t.id ? AUDIT_TYPE_COLORS[t.id] + ' border-current' : 'bg-apple-fill-secondary text-apple-text-secondary border-transparent hover:bg-gray-200'}`}>
-                    {t.label} ({allRecs.filter((r) => r.audit_type === t.id).length})
-                  </button>
-                ))}
-                <span className="text-apple-xs text-apple-text-tertiary ml-2">Priority:</span>
-                {(['high', 'medium', 'low'] as const).map((p) => (
-                  <button key={p} onClick={() => setPriorityFilter(priorityFilter === p ? '' : p)}
-                    className={`px-2 py-1 rounded-apple-pill text-apple-xs font-medium transition-colors border ${priorityFilter === p ? `${PRIORITY_COLORS[p].bg} ${PRIORITY_COLORS[p].text} ${PRIORITY_COLORS[p].border}` : 'bg-apple-fill-secondary text-apple-text-secondary border-transparent hover:bg-gray-200'}`}>
-                    {p.charAt(0).toUpperCase() + p.slice(1)}
-                  </button>
-                ))}
-                {(priorityFilter || categoryFilter || auditTypeFilter) && <button onClick={() => { setPriorityFilter(''); setCategoryFilter(''); setAuditTypeFilter(''); }} className="text-apple-xs text-apple-text-tertiary hover:text-apple-text ml-1">Clear all</button>}
-                {selectedForTasklist.size > 0 && (
-                  <button onClick={addSelectedToTasklist} disabled={addingToTasklist}
-                    className="ml-auto px-3 py-1 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50">
-                    {addingToTasklist ? 'Adding…' : `Add ${selectedForTasklist.size} to Tasklist`}
-                  </button>
+                            {isPageExp && (
+                              <div className="px-4 pb-4 space-y-4 bg-white/50">
+                                {audits.map((audit) => (
+                                  <div key={audit.audit_type} className="mt-1">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <span className={`px-2 py-0.5 rounded text-apple-xs font-bold ${AUDIT_TYPE_COLORS[audit.audit_type]}`}>{AUDIT_TYPE_LABELS[audit.audit_type]}</span>
+                                      <span className={`text-apple-sm font-bold ${getScoreColor(audit.score)}`}>{audit.score}/100</span>
+                                    </div>
+                                    {audit.summary && <div className={`rounded-apple-sm border p-3 mb-2 ${getScoreBg(audit.score)}`}><p className="text-apple-xs text-apple-text">{audit.summary}</p></div>}
+                                    {audit.recommendations.filter((_, i) => !rejectedRecs.has(recKey(audit.page_url, audit.audit_type, i))).map((rec, i) => {
+                                      const key = recKey(audit.page_url, audit.audit_type, i);
+                                      const pc = PRIORITY_COLORS[rec.priority] || PRIORITY_COLORS.low;
+                                      const isDone = completedRecs.has(key);
+                                      const isRecExp = expandedRecs.has(key);
+                                      return (
+                                        <div key={i} className={`rounded-apple-sm border ${pc.border} ${isDone ? 'opacity-50' : ''} ${pc.bg} overflow-hidden mb-2`}>
+                                          <div className="p-2.5 flex items-start gap-2">
+                                            <input type="checkbox" checked={isDone} onChange={() => toggleRecDone(key, `${rec.issue} — ${rec.recommendation}`, audit.audit_type)} className="mt-1 shrink-0 rounded" />
+                                            <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleRecExpanded(key)}>
+                                              <div className="flex items-center gap-2 mb-0.5">
+                                                <span className={`text-[10px] font-bold uppercase ${pc.text}`}>{rec.priority}</span>
+                                                <span className="text-[10px] text-apple-text-tertiary">{rec.category}</span>
+                                              </div>
+                                              <p className={`text-apple-xs font-medium ${isDone ? 'line-through text-apple-text-tertiary' : 'text-apple-text'}`}>{rec.issue}</p>
+                                            </div>
+                                            <button onClick={() => rejectRec(key, `${rec.issue} — ${rec.recommendation}`, audit.audit_type)} title="Reject" className="p-1 rounded hover:bg-red-100 text-apple-text-tertiary hover:text-red-500 transition-colors shrink-0">
+                                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                                            </button>
+                                            <svg className={`w-3 h-3 mt-1 text-apple-text-tertiary transition-transform shrink-0 cursor-pointer ${isRecExp ? 'rotate-180' : ''}`} onClick={() => toggleRecExpanded(key)} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                                          </div>
+                                          {isRecExp && (
+                                            <div className="px-2.5 pb-2.5 border-t border-apple-divider/30 pt-2 space-y-1.5">
+                                              <div><p className="text-[10px] font-semibold text-apple-text-secondary">Recommendation</p><p className="text-apple-xs text-apple-text mt-0.5">{rec.recommendation}</p></div>
+                                              {rec.howToFix && <div><p className="text-[10px] font-semibold text-apple-text-secondary">How to Fix</p><p className="text-apple-xs text-apple-text mt-0.5 whitespace-pre-wrap">{rec.howToFix}</p></div>}
+                                              {rec.impact && <div><p className="text-[10px] font-semibold text-apple-text-secondary">Impact</p><p className="text-apple-xs text-apple-text-secondary mt-0.5">{rec.impact}</p></div>}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
               </div>
-              <div className="text-apple-xs text-apple-text-tertiary mb-3">Showing {paginatedRecs.length} of {filteredRecs.length} recommendations</div>
-              <div className="rounded-apple border border-apple-divider bg-white overflow-hidden divide-y divide-apple-divider">
-                {paginatedRecs.map((rec) => {
-                  const pc = PRIORITY_COLORS[rec.priority] || PRIORITY_COLORS.low;
-                  const key = recKey(rec.page_url, rec.audit_type, rec.recIdx);
-                  const isDone = completedRecs.has(key);
-                  const isPending = pendingRecs.has(key);
-                  const isExp = expandedRecs.has(key);
-                  const isSelected = selectedForTasklist.has(key);
-                  const isActioned = isDone || isPending;
-                  return (
-                    <div key={key} className={`${isDone ? 'opacity-50' : ''}`}>
-                      <div className="p-4 flex items-start gap-2">
-                        <input type="checkbox" checked={isSelected || isActioned} disabled={isActioned}
-                          onChange={() => { if (isActioned) return; setSelectedForTasklist((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; }); }}
-                          className="mt-1 shrink-0 rounded" />
-                        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleRecExpanded(key)}>
-                          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${AUDIT_TYPE_COLORS[rec.audit_type]}`}>{AUDIT_TYPE_LABELS[rec.audit_type]}</span>
-                            <span className={`text-apple-xs font-bold uppercase ${pc.text}`}>{rec.priority}</span>
-                            <span className="text-apple-xs font-medium text-apple-text-secondary">{rec.category}</span>
-                            {isPending && <span className="px-1.5 py-0.5 rounded-apple-pill text-[10px] font-bold bg-blue-100 text-blue-700">On Tasklist</span>}
-                            {isDone && <span className="px-1.5 py-0.5 rounded-apple-pill text-[10px] font-bold bg-green-100 text-green-700">Done</span>}
-                            <span className="text-apple-xs text-apple-text-tertiary">·</span>
-                            <a href={rec.page_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-apple-xs text-apple-blue hover:underline truncate">{rec.page_url.replace(/^https?:\/\/[^/]+/, '') || '/'}</a>
-                          </div>
-                          <p className={`text-apple-sm font-medium ${isDone ? 'line-through text-apple-text-tertiary' : 'text-apple-text'}`}>{rec.issue}</p>
-                          {!isExp && <p className="text-apple-xs text-apple-text-secondary mt-0.5">{rec.recommendation}</p>}
-                        </div>
-                        <button onClick={() => rejectRec(key, `${rec.issue} — ${rec.recommendation}`, rec.audit_type)} title="Reject & archive" className="mt-0.5 p-1 rounded hover:bg-red-100 text-apple-text-tertiary hover:text-red-500 transition-colors shrink-0">
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
-                        </button>
-                        <svg className={`w-3.5 h-3.5 mt-1 text-apple-text-tertiary transition-transform shrink-0 cursor-pointer ${isExp ? 'rotate-180' : ''}`} onClick={() => toggleRecExpanded(key)} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                      </div>
-                      {isExp && (
-                        <div className="px-4 pb-4 border-t border-apple-divider/30 pt-2 space-y-2 bg-apple-fill-secondary/20">
-                          <div><p className="text-apple-xs font-semibold text-apple-text-secondary">Recommendation</p><p className="text-apple-sm text-apple-text mt-0.5">{rec.recommendation}</p></div>
-                          {rec.howToFix && <div><p className="text-apple-xs font-semibold text-apple-text-secondary">How to Fix</p><p className="text-apple-sm text-apple-text mt-0.5 whitespace-pre-wrap">{rec.howToFix}</p></div>}
-                          {rec.impact && <div><p className="text-apple-xs font-semibold text-apple-text-secondary">Impact</p><p className="text-apple-sm text-apple-text-secondary mt-0.5">{rec.impact}</p></div>}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              {totalRecsPages > 1 && <Pagination current={recsPage} total={totalRecsPages} onChange={setRecsPage} />}
-            </div>
-          )}
-        </>
+            );
+          })}
+        </div>
       )}
-    </div>
-  );
-}
 
-function Pagination({ current, total, onChange }: { current: number; total: number; onChange: (p: number) => void }) {
-  const pages: (number | '…')[] = [];
-  if (total <= 7) { for (let i = 1; i <= total; i++) pages.push(i); }
-  else { pages.push(1); if (current > 3) pages.push('…'); for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) pages.push(i); if (current < total - 2) pages.push('…'); pages.push(total); }
-  return (
-    <div className="flex items-center justify-center gap-1 mt-4">
-      <button onClick={() => onChange(Math.max(1, current - 1))} disabled={current === 1} className="px-2.5 py-1.5 rounded-apple-sm text-apple-xs text-apple-text-secondary hover:bg-apple-fill-secondary disabled:opacity-30 transition-colors">← Prev</button>
-      {pages.map((p, i) => p === '…' ? <span key={`e${i}`} className="px-2 text-apple-xs text-apple-text-tertiary">…</span> : <button key={p} onClick={() => onChange(p)} className={`w-8 h-8 rounded-apple-sm text-apple-xs font-medium transition-colors ${current === p ? 'bg-apple-blue text-white' : 'text-apple-text-secondary hover:bg-apple-fill-secondary'}`}>{p}</button>)}
-      <button onClick={() => onChange(Math.min(total, current + 1))} disabled={current === total} className="px-2.5 py-1.5 rounded-apple-sm text-apple-xs text-apple-text-secondary hover:bg-apple-fill-secondary disabled:opacity-30 transition-colors">Next →</button>
+      {!loadingResults && results.length === 0 && !isRunning && (
+        <div className="card p-16 text-center">
+          <div className="w-16 h-16 rounded-full bg-apple-fill-secondary mx-auto mb-4 flex items-center justify-center">
+            <svg className="w-8 h-8 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+          </div>
+          <h3 className="text-apple-title3 font-semibold text-apple-text mb-2">No audits yet</h3>
+          <p className="text-apple-base text-apple-text-secondary max-w-md mx-auto">
+            Select audit types and a mode above to run your first audit.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

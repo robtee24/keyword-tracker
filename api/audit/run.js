@@ -302,21 +302,23 @@ export default async function handler(req, res) {
       audited_at: new Date().toISOString(),
     };
     try {
-      // Try upsert first (requires unique constraint)
-      const { error: upsertErr } = await supabase
+      const { error: insertErr } = await supabase
         .from('page_audits')
-        .upsert(row, { onConflict: 'site_url,page_url,audit_type' });
+        .insert(row);
 
-      if (upsertErr) {
-        console.error('[Audit] Upsert failed, trying delete+insert:', upsertErr.message);
-        // Fallback: delete existing then insert
-        await supabase.from('page_audits')
-          .delete()
-          .eq('site_url', siteUrl)
-          .eq('page_url', pageUrl)
-          .eq('audit_type', auditType);
-        const { error: insertErr } = await supabase.from('page_audits').insert(row);
-        if (insertErr) console.error('[Audit] Insert also failed:', insertErr.message);
+      if (insertErr) {
+        // Unique constraint may still exist; fall back to upsert
+        const { error: upsertErr } = await supabase
+          .from('page_audits')
+          .upsert(row, { onConflict: 'site_url,page_url,audit_type' });
+        if (upsertErr) {
+          await supabase.from('page_audits')
+            .delete()
+            .eq('site_url', siteUrl)
+            .eq('page_url', pageUrl)
+            .eq('audit_type', auditType);
+          await supabase.from('page_audits').insert(row);
+        }
       }
     } catch (err) {
       console.error('[Audit] DB save exception:', err.message);
