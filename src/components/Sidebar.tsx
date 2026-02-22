@@ -21,9 +21,10 @@ interface SidebarProps {
 
 const ORGANIC_VIEWS = new Set<View>(['overview', 'keywords', 'lost-keywords', 'organic-tasklist', 'organic-activity']);
 const SEO_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit', 'seo-tasklist', 'seo-activity']);
-const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure', 'ad-tasklist', 'ad-activity']);
+const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure', 'ad-tasklist', 'ad-activity', 'advertising']);
 
 const organicSubItems: Array<{ id: View; label: string }> = [
+  { id: 'overview', label: 'Overview' },
   { id: 'keywords', label: 'Keywords' },
   { id: 'lost-keywords', label: 'Lost Keywords' },
   { id: 'organic-tasklist', label: 'Tasklist' },
@@ -31,6 +32,7 @@ const organicSubItems: Array<{ id: View; label: string }> = [
 ];
 
 const seoAuditSubItems: Array<{ id: View; label: string }> = [
+  { id: 'audit', label: 'Full Audit' },
   { id: 'seo-audit', label: 'SEO' },
   { id: 'content-audit', label: 'Content' },
   { id: 'aeo-audit', label: 'AEO' },
@@ -42,6 +44,8 @@ const seoAuditSubItems: Array<{ id: View; label: string }> = [
 ];
 
 const adAuditSubItems: Array<{ id: View; label: string }> = [
+  { id: 'ad-audit', label: 'Full Audit' },
+  { id: 'advertising', label: 'Google Keywords' },
   { id: 'ad-audit-google', label: 'Google Ads' },
   { id: 'ad-audit-meta', label: 'Meta Ads' },
   { id: 'ad-audit-linkedin', label: 'LinkedIn Ads' },
@@ -253,7 +257,7 @@ export default function Sidebar({
             })}
 
             <NavGroup
-              label="Organic Overview"
+              label="Organic"
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
@@ -270,7 +274,7 @@ export default function Sidebar({
             />
 
             <NavGroup
-              label="SEO Audit"
+              label="SEO"
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
@@ -287,10 +291,10 @@ export default function Sidebar({
             />
 
             <NavGroup
-              label="Ad Audit"
+              label="Advertising"
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
                 </svg>
               }
               parentView="ad-audit"
@@ -301,18 +305,7 @@ export default function Sidebar({
               currentView={currentView}
               onNavigate={onNavigate}
               collapsed={collapsed}
-              title="Advertising Audit"
             />
-
-            {renderNavButton({
-              id: 'advertising',
-              label: 'Advertising',
-              icon: (
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
-                </svg>
-              ),
-            })}
           </>
         )}
       </nav>
