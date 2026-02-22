@@ -51,7 +51,8 @@
     }
   },
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/:path*" }
+    { "source": "/api/:path*", "destination": "/api/:path*" },
+    { "source": "/((?!api|assets|seauto-logo).*)", "destination": "/index.html" }
   ],
   "headers": [
     {

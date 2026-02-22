@@ -20,7 +20,19 @@ import BlogOpportunityView from './components/BlogOpportunityView';
 import BlogAutomateView from './components/BlogAutomateView';
 import BuildRebuildView from './components/BuildRebuildView';
 import BuildNewView from './components/BuildNewView';
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import LandingPage from './components/LandingPage';
+import SeoAuditToolPage from './components/website/SeoAuditToolPage';
+import KeywordRankTrackerPage from './components/website/KeywordRankTrackerPage';
+import AiContentGeneratorPage from './components/website/AiContentGeneratorPage';
+import ComplianceCheckerPage from './components/website/ComplianceCheckerPage';
+import SmallBusinessSeoPage from './components/website/SmallBusinessSeoPage';
+import SeoAgencySoftwarePage from './components/website/SeoAgencySoftwarePage';
+import AiWebsiteBuilderPage from './components/website/AiWebsiteBuilderPage';
+import GoogleAdsOptimizationPage from './components/website/GoogleAdsOptimizationPage';
+import AutomatedSeoPage from './components/website/AutomatedSeoPage';
+import SeautoVsHiringPage from './components/website/SeautoVsHiringPage';
+import PricingPage from './components/website/PricingPage';
 import OAuthModal from './components/OAuthModal';
 import { isAuthenticated, clearTokens, authenticatedFetch } from './services/authService';
 import { API_ENDPOINTS } from './config/api';
@@ -273,9 +285,23 @@ function App() {
   }
 
   if (appState === 'unauthenticated') {
+    const openApp = () => setShowOAuth(true);
     return (
       <>
-        <LandingPage onOpenApp={() => setShowOAuth(true)} />
+        <Routes>
+          <Route path="/features/seo-audit-tool" element={<SeoAuditToolPage onOpenApp={openApp} />} />
+          <Route path="/features/keyword-rank-tracker" element={<KeywordRankTrackerPage onOpenApp={openApp} />} />
+          <Route path="/features/ai-content-generator" element={<AiContentGeneratorPage onOpenApp={openApp} />} />
+          <Route path="/features/compliance-checker" element={<ComplianceCheckerPage onOpenApp={openApp} />} />
+          <Route path="/features/ai-website-builder" element={<AiWebsiteBuilderPage onOpenApp={openApp} />} />
+          <Route path="/features/google-ads-optimization" element={<GoogleAdsOptimizationPage onOpenApp={openApp} />} />
+          <Route path="/solutions/small-business-seo" element={<SmallBusinessSeoPage onOpenApp={openApp} />} />
+          <Route path="/solutions/seo-agency-software" element={<SeoAgencySoftwarePage onOpenApp={openApp} />} />
+          <Route path="/resources/automated-seo" element={<AutomatedSeoPage onOpenApp={openApp} />} />
+          <Route path="/compare/seauto-vs-hiring" element={<SeautoVsHiringPage onOpenApp={openApp} />} />
+          <Route path="/pricing" element={<PricingPage onOpenApp={openApp} />} />
+          <Route path="*" element={<LandingPage onOpenApp={openApp} />} />
+        </Routes>
         {showOAuth && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
             <div className="relative">

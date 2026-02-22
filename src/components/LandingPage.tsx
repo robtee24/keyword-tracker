@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 interface LandingPageProps {
   onOpenApp: () => void;
@@ -18,17 +19,15 @@ export default function LandingPage({ onOpenApp }: LandingPageProps) {
       {/* ─── HEADER ─── */}
       <header className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-white/80 border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => scrollTo('hero')}>
-            <img src="/seauto-logo.svg" alt="SEAUTO" className="h-8 w-auto" />
-            <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-[#0071E3] to-[#00C2FF] bg-clip-text text-transparent">SEAUTO</span>
+          <div className="flex items-center cursor-pointer" onClick={() => scrollTo('hero')}>
+            <img src="/seauto-logo.svg" alt="SEAUTO" className="h-10 w-auto" />
           </div>
 
           <nav className="hidden lg:flex items-center gap-8">
-            {['Features', 'Pricing', 'How It Works', 'FAQ'].map((item) => (
-              <button key={item} onClick={() => scrollTo(item.toLowerCase().replace(/\s+/g, '-'))} className="text-sm font-medium text-[#6E6E73] hover:text-[#1D1D1F] transition-colors cursor-pointer">
-                {item}
-              </button>
-            ))}
+            <button onClick={() => scrollTo('features')} className="text-sm font-medium text-[#6E6E73] hover:text-[#1D1D1F] transition-colors cursor-pointer">Features</button>
+            <Link to="/pricing" className="text-sm font-medium text-[#6E6E73] hover:text-[#1D1D1F] transition-colors">Pricing</Link>
+            <Link to="/solutions/small-business-seo" className="text-sm font-medium text-[#6E6E73] hover:text-[#1D1D1F] transition-colors">Solutions</Link>
+            <button onClick={() => scrollTo('faq')} className="text-sm font-medium text-[#6E6E73] hover:text-[#1D1D1F] transition-colors cursor-pointer">FAQ</button>
           </nav>
 
           <div className="flex items-center gap-3">
@@ -50,11 +49,10 @@ export default function LandingPage({ onOpenApp }: LandingPageProps) {
 
         {mobileMenuOpen && (
           <div className="lg:hidden bg-white/95 backdrop-blur-xl border-t border-gray-100 px-6 py-4 space-y-3">
-            {['Features', 'Pricing', 'How It Works', 'FAQ'].map((item) => (
-              <button key={item} onClick={() => scrollTo(item.toLowerCase().replace(/\s+/g, '-'))} className="block text-base font-medium text-[#6E6E73] hover:text-[#1D1D1F] cursor-pointer w-full text-left">
-                {item}
-              </button>
-            ))}
+            <button onClick={() => scrollTo('features')} className="block text-base font-medium text-[#6E6E73] hover:text-[#1D1D1F] cursor-pointer w-full text-left">Features</button>
+            <Link to="/pricing" className="block text-base font-medium text-[#6E6E73] hover:text-[#1D1D1F]" onClick={() => setMobileMenuOpen(false)}>Pricing</Link>
+            <Link to="/solutions/small-business-seo" className="block text-base font-medium text-[#6E6E73] hover:text-[#1D1D1F]" onClick={() => setMobileMenuOpen(false)}>Solutions</Link>
+            <button onClick={() => scrollTo('faq')} className="block text-base font-medium text-[#6E6E73] hover:text-[#1D1D1F] cursor-pointer w-full text-left">FAQ</button>
             <button onClick={onOpenApp} className="block text-base font-medium text-[#1D1D1F] cursor-pointer w-full text-left">Login</button>
           </div>
         )}
@@ -371,28 +369,32 @@ export default function LandingPage({ onOpenApp }: LandingPageProps) {
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid md:grid-cols-4 gap-10 mb-12">
             <div>
-              <div className="flex items-center gap-2 mb-4">
-                <img src="/seauto-logo.svg" alt="SEAUTO" className="h-7" />
-                <span className="text-lg font-bold bg-gradient-to-r from-[#0071E3] to-[#00C2FF] bg-clip-text text-transparent">SEAUTO</span>
+              <div className="flex items-center mb-4">
+                <img src="/seauto-logo.svg" alt="SEAUTO" className="h-9 w-auto" />
               </div>
               <p className="text-sm text-[#6E6E73] leading-relaxed">AI-powered digital marketing automation. Replace entire teams with intelligent automation.</p>
             </div>
 
             <div>
-              <h4 className="text-sm font-semibold mb-4 uppercase tracking-wider text-[#86868B]">Product</h4>
+              <h4 className="text-sm font-semibold mb-4 uppercase tracking-wider text-[#86868B]">Features</h4>
               <div className="space-y-2.5">
-                {['Organic Tracking', 'SEO Audits', 'Blog Engine', 'Website Builder', 'Advertising', 'AI Bot'].map((item) => (
-                  <button key={item} onClick={() => scrollTo('features')} className="block text-sm text-[#6E6E73] hover:text-[#1D1D1F] transition-colors cursor-pointer">{item}</button>
-                ))}
+                <Link to="/features/keyword-rank-tracker" className="block text-sm text-[#6E6E73] hover:text-[#1D1D1F] transition-colors">Keyword Tracking</Link>
+                <Link to="/features/seo-audit-tool" className="block text-sm text-[#6E6E73] hover:text-[#1D1D1F] transition-colors">SEO Audits</Link>
+                <Link to="/features/ai-content-generator" className="block text-sm text-[#6E6E73] hover:text-[#1D1D1F] transition-colors">AI Content Generator</Link>
+                <Link to="/features/ai-website-builder" className="block text-sm text-[#6E6E73] hover:text-[#1D1D1F] transition-colors">Website Builder</Link>
+                <Link to="/features/google-ads-optimization" className="block text-sm text-[#6E6E73] hover:text-[#1D1D1F] transition-colors">Advertising</Link>
+                <Link to="/features/compliance-checker" className="block text-sm text-[#6E6E73] hover:text-[#1D1D1F] transition-colors">Compliance Checker</Link>
               </div>
             </div>
 
             <div>
               <h4 className="text-sm font-semibold mb-4 uppercase tracking-wider text-[#86868B]">Company</h4>
               <div className="space-y-2.5">
-                {['Pricing', 'FAQ', 'Privacy Policy', 'Terms of Service'].map((item) => (
-                  <button key={item} onClick={() => scrollTo(item.toLowerCase().replace(/\s+/g, '-'))} className="block text-sm text-[#6E6E73] hover:text-[#1D1D1F] transition-colors cursor-pointer">{item}</button>
-                ))}
+                <Link to="/pricing" className="block text-sm text-[#6E6E73] hover:text-[#1D1D1F] transition-colors">Pricing</Link>
+                <Link to="/solutions/small-business-seo" className="block text-sm text-[#6E6E73] hover:text-[#1D1D1F] transition-colors">Small Business SEO</Link>
+                <Link to="/solutions/seo-agency-software" className="block text-sm text-[#6E6E73] hover:text-[#1D1D1F] transition-colors">For Agencies</Link>
+                <Link to="/compare/seauto-vs-hiring" className="block text-sm text-[#6E6E73] hover:text-[#1D1D1F] transition-colors">SEAUTO vs Hiring</Link>
+                <Link to="/resources/automated-seo" className="block text-sm text-[#6E6E73] hover:text-[#1D1D1F] transition-colors">Automated SEO Guide</Link>
               </div>
             </div>
 
