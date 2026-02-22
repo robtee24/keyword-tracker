@@ -162,7 +162,7 @@ export default function BlogAuditView({ siteUrl }: BlogAuditViewProps) {
       setActiveTab('summary');
       await loadSavedAudits();
       const postCount = data.posts?.length || 0;
-      logActivity(siteUrl, 'blog', 'audit', `Blog audit completed: ${auditMode === 'full' ? `Full audit (${postCount} posts)` : `Single post: ${targetUrl}`} — Score: ${data.overallScore || data.posts?.[0]?.score || 'N/A'}`);
+      logActivity(siteUrl, 'blog', 'audit', `Blog audit completed: ${auditMode === 'full' ? `Full audit (${postCount} posts)` : `Single post: ${targetUrl}`} — Score: ${data.overview?.score || data.score || data.posts?.[0]?.score || 'N/A'}`);
     } catch (err) {
       console.error('Audit failed:', err);
     }

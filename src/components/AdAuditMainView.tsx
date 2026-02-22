@@ -231,7 +231,7 @@ export default function AdAuditMainView({ siteUrl }: AdAuditMainViewProps) {
     }
     setProgress(prev => ({ ...prev, done: typesWithFiles.length, current: '' }));
     setIsRunning(false);
-    const typesStr = typesWithFiles.map(t => t.type).join(', ');
+    const typesStr = typesWithFiles.join(', ');
     logActivity(siteUrl, 'ad', 'audit', `Advertising audit completed: ${typesStr}`);
   }, [siteUrl, selectedTypes, uploadedFiles]);
 
