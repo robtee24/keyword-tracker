@@ -8,7 +8,8 @@ export type View =
   | 'ad-audit' | 'ad-audit-google' | 'ad-audit-meta' | 'ad-audit-linkedin' | 'ad-audit-reddit'
   | 'ad-audit-budget' | 'ad-audit-performance' | 'ad-audit-creative' | 'ad-audit-attribution' | 'ad-audit-structure'
   | 'ad-tasklist' | 'ad-activity'
-  | 'advertising';
+  | 'advertising'
+  | 'blog-audit' | 'blog-opportunity' | 'blog-automate' | 'blog-tasklist' | 'blog-activity';
 
 interface SidebarProps {
   currentView: View;
@@ -22,6 +23,7 @@ interface SidebarProps {
 const ORGANIC_VIEWS = new Set<View>(['overview', 'keywords', 'lost-keywords', 'organic-tasklist', 'organic-activity']);
 const SEO_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit', 'seo-tasklist', 'seo-activity']);
 const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure', 'ad-tasklist', 'ad-activity', 'advertising']);
+const BLOG_VIEWS = new Set<View>(['blog-audit', 'blog-opportunity', 'blog-automate', 'blog-tasklist', 'blog-activity']);
 
 const organicSubItems: Array<{ id: View; label: string }> = [
   { id: 'overview', label: 'Overview' },
@@ -41,6 +43,14 @@ const seoAuditSubItems: Array<{ id: View; label: string }> = [
   { id: 'speed-audit', label: 'Page Speed' },
   { id: 'seo-tasklist', label: 'Tasklist' },
   { id: 'seo-activity', label: 'Activity Log' },
+];
+
+const blogSubItems: Array<{ id: View; label: string }> = [
+  { id: 'blog-audit', label: 'Audit' },
+  { id: 'blog-opportunity', label: 'Opportunity' },
+  { id: 'blog-automate', label: 'Automate' },
+  { id: 'blog-tasklist', label: 'Tasklist' },
+  { id: 'blog-activity', label: 'Activity Log' },
 ];
 
 const adAuditSubItems: Array<{ id: View; label: string }> = [
@@ -160,10 +170,12 @@ export default function Sidebar({
   const isOrganicActive = ORGANIC_VIEWS.has(currentView);
   const isSeoAuditActive = SEO_AUDIT_VIEWS.has(currentView);
   const isAdAuditActive = AD_AUDIT_VIEWS.has(currentView);
+  const isBlogActive = BLOG_VIEWS.has(currentView);
 
   const [organicExpanded, setOrganicExpanded] = useState(isOrganicActive);
   const [seoExpanded, setSeoExpanded] = useState(isSeoAuditActive);
   const [adExpanded, setAdExpanded] = useState(isAdAuditActive);
+  const [blogExpanded, setBlogExpanded] = useState(isBlogActive);
 
   const renderNavButton = (item: { id: View; label: string; icon: ReactNode }) => {
     const isActive = currentView === item.id;
@@ -302,6 +314,23 @@ export default function Sidebar({
               isGroupActive={isAdAuditActive}
               expanded={adExpanded}
               onToggleExpand={() => setAdExpanded(!adExpanded)}
+              currentView={currentView}
+              onNavigate={onNavigate}
+              collapsed={collapsed}
+            />
+
+            <NavGroup
+              label="Blog"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+                </svg>
+              }
+              parentView="blog-audit"
+              subItems={blogSubItems}
+              isGroupActive={isBlogActive}
+              expanded={blogExpanded}
+              onToggleExpand={() => setBlogExpanded(!blogExpanded)}
               currentView={currentView}
               onNavigate={onNavigate}
               collapsed={collapsed}

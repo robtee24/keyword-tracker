@@ -50,6 +50,12 @@ export const API_ENDPOINTS = {
   advertising: {
     generate: `${API_BASE_URL}/api/advertising/generate`,
   },
+  blog: {
+    detect: `${API_BASE_URL}/api/blog/detect`,
+    audit: `${API_BASE_URL}/api/blog/audit`,
+    opportunities: `${API_BASE_URL}/api/blog/opportunities`,
+    generate: `${API_BASE_URL}/api/blog/generate`,
+  },
   db: {
     completedTasks: `${API_BASE_URL}/api/db/completed-tasks`,
     recommendations: `${API_BASE_URL}/api/db/recommendations`,
@@ -60,5 +66,9 @@ export const API_ENDPOINTS = {
     keywordIntents: `${API_BASE_URL}/api/db/keyword-intents`,
     pageAudits: `${API_BASE_URL}/api/db/page-audits`,
     adKeywords: `${API_BASE_URL}/api/db/ad-keywords`,
+    blogUrls: `${API_BASE_URL}/api/db/blog-urls`,
+    blogAudits: `${API_BASE_URL}/api/db/blog-audits`,
+    blogOpportunities: `${API_BASE_URL}/api/db/blog-opportunities`,
+    blogSchedules: `${API_BASE_URL}/api/db/blog-schedules`,
   },
 };

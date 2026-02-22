@@ -8,7 +8,7 @@ interface ActivityItem {
   timestamp: string;
 }
 
-export type ActivityScope = 'organic' | 'seo' | 'ad';
+export type ActivityScope = 'organic' | 'seo' | 'ad' | 'blog';
 
 interface ActivityLogViewProps {
   siteUrl: string;
@@ -16,9 +16,10 @@ interface ActivityLogViewProps {
 }
 
 function matchesScope(keyword: string, scope: ActivityScope) {
-  if (scope === 'organic') return !keyword.startsWith('audit:') && !keyword.startsWith('ad-');
+  if (scope === 'organic') return !keyword.startsWith('audit:') && !keyword.startsWith('ad-') && !keyword.startsWith('blog:');
   if (scope === 'seo') return keyword.startsWith('audit:');
   if (scope === 'ad') return keyword.startsWith('ad-');
+  if (scope === 'blog') return keyword.startsWith('blog:');
   return true;
 }
 
@@ -26,6 +27,7 @@ const SCOPE_DESCRIPTIONS: Record<ActivityScope, string> = {
   organic: 'Timeline of keyword scan actions',
   seo: 'Timeline of SEO audit actions',
   ad: 'Timeline of advertising audit actions',
+  blog: 'Timeline of blog audit and generation actions',
 };
 
 function timeAgo(dateStr: string): string {

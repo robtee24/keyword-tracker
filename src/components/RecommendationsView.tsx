@@ -23,21 +23,23 @@ interface RankedItem {
   scannedAt: string;
 }
 
-export type TasklistScope = 'organic' | 'seo' | 'ad';
+export type TasklistScope = 'organic' | 'seo' | 'ad' | 'blog';
 
 interface RecommendationsViewProps {
   siteUrl: string;
   scope: TasklistScope;
 }
 
-function isOrganicKeyword(kw: string) { return !kw.startsWith('audit:') && !kw.startsWith('ad-'); }
+function isOrganicKeyword(kw: string) { return !kw.startsWith('audit:') && !kw.startsWith('ad-') && !kw.startsWith('blog:'); }
 function isSeoKeyword(kw: string) { return kw.startsWith('audit:'); }
 function isAdKeyword(kw: string) { return kw.startsWith('ad-'); }
+function isBlogKeyword(kw: string) { return kw.startsWith('blog:'); }
 
 function matchesScope(keyword: string, scope: TasklistScope) {
   if (scope === 'organic') return isOrganicKeyword(keyword);
   if (scope === 'seo') return isSeoKeyword(keyword);
   if (scope === 'ad') return isAdKeyword(keyword);
+  if (scope === 'blog') return isBlogKeyword(keyword);
   return true;
 }
 
@@ -45,6 +47,7 @@ const SCOPE_DESCRIPTIONS: Record<TasklistScope, string> = {
   organic: 'Recommendations from keyword scans',
   seo: 'Recommendations from SEO page audits',
   ad: 'Recommendations from advertising audits',
+  blog: 'Recommendations from blog audits',
 };
 
 const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };

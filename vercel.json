@@ -27,6 +27,18 @@
     },
     "api/audit/run-ad-audit.js": {
       "maxDuration": 60
+    },
+    "api/blog/detect.js": {
+      "maxDuration": 30
+    },
+    "api/blog/audit.js": {
+      "maxDuration": 120
+    },
+    "api/blog/opportunities.js": {
+      "maxDuration": 60
+    },
+    "api/blog/generate.js": {
+      "maxDuration": 120
     }
   },
   "rewrites": [
