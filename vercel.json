@@ -40,6 +40,9 @@
     "api/blog/generate.js": {
       "maxDuration": 120
     },
+    "api/build/crawl.js": {
+      "maxDuration": 30
+    },
     "api/build/rebuild.js": {
       "maxDuration": 120
     },

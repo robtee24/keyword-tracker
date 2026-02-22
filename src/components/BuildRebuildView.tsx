@@ -26,6 +26,24 @@ interface SavedBuild {
   created_at: string;
 }
 
+interface CrawlStats {
+  wordCount: number;
+  headings: number;
+  images: number;
+  imagesMissingAlt: number;
+  internalLinks: number;
+  externalLinks: number;
+  navLinks: number;
+  forms: number;
+  schemas: number;
+  htmlSizeKb: number;
+  fetchTimeMs: number;
+  title: string;
+  metaDescription: string;
+}
+
+type BuildStep = 'idle' | 'crawling' | 'generating' | 'saving' | 'done' | 'error';
+
 const IMPROVEMENT_OPTIONS = [
   { id: 'seo', label: 'SEO Optimization', desc: 'Title tags, meta descriptions, headings, keywords' },
   { id: 'content', label: 'Content Quality', desc: 'Copy, readability, depth, engagement' },
@@ -36,6 +54,12 @@ const IMPROVEMENT_OPTIONS = [
   { id: 'images', label: 'Image Optimization', desc: 'Alt text, compression, lazy loading' },
   { id: 'mobile', label: 'Mobile Experience', desc: 'Responsive design, touch targets' },
 ];
+
+const STEPS = [
+  { key: 'crawling', label: 'Crawling page', desc: 'Fetching and analyzing the existing page content, structure, styles, and metadata' },
+  { key: 'generating', label: 'Generating rebuild', desc: 'AI is analyzing the crawl data and building an optimized version of your page' },
+  { key: 'saving', label: 'Saving results', desc: 'Storing build results for future reference' },
+] as const;
 
 interface BuildRebuildViewProps {
   siteUrl: string;
@@ -48,7 +72,11 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedImprovements, setSelectedImprovements] = useState<Set<string>>(new Set(['seo', 'content', 'conversion']));
 
-  const [building, setBuilding] = useState(false);
+  const [buildStep, setBuildStep] = useState<BuildStep>('idle');
+  const [buildError, setBuildError] = useState('');
+  const [crawlStats, setCrawlStats] = useState<CrawlStats | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
   const [result, setResult] = useState<RebuildResult | null>(null);
   const [resultPageUrl, setResultPageUrl] = useState('');
   const [showPreview, setShowPreview] = useState(false);
@@ -59,6 +87,20 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
   const [viewingSavedIdx, setViewingSavedIdx] = useState<number | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const isBuilding = buildStep !== 'idle' && buildStep !== 'done' && buildStep !== 'error';
+
+  useEffect(() => {
+    if (isBuilding) {
+      setElapsedSeconds(0);
+      timerRef.current = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
+    } else if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [isBuilding]);
 
   useEffect(() => {
     (async () => {
@@ -91,8 +133,16 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
   }, [urlInput, sitemapUrls]);
 
   const isValidUrl = useMemo(() => {
-    return urlInput.trim() !== '' && sitemapUrls.includes(urlInput.trim());
-  }, [urlInput, sitemapUrls]);
+    const trimmed = urlInput.trim();
+    if (!trimmed) return false;
+    try {
+      const inputHost = new URL(trimmed).hostname.replace(/^www\./, '');
+      const siteHost = new URL(siteUrl).hostname.replace(/^www\./, '');
+      return inputHost === siteHost;
+    } catch {
+      return false;
+    }
+  }, [urlInput, siteUrl]);
 
   const selectUrl = useCallback((url: string) => {
     setUrlInput(url);
@@ -108,16 +158,52 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
   };
 
   const handleBuild = async () => {
-    if (!isValidUrl) return;
+    if (!isValidUrl || isBuilding) return;
     const pageUrl = urlInput.trim();
-    setBuilding(true);
+
     setResult(null);
     setShowPreview(false);
     setResultPageUrl(pageUrl);
+    setCrawlStats(null);
+    setBuildError('');
+    setBuildStep('crawling');
 
     try {
+      // Step 1: Comprehensive crawl
+      const crawlResp = await fetch(API_ENDPOINTS.build.crawl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pageUrl, siteUrl }),
+      });
+      const crawlData = await crawlResp.json();
+
+      if (crawlData.error) {
+        setBuildError(crawlData.error);
+        setBuildStep('error');
+        return;
+      }
+
+      const crawl = crawlData.crawl;
+      setCrawlStats({
+        wordCount: crawl.wordCount || 0,
+        headings: crawl.headings?.length || 0,
+        images: crawl.images?.length || 0,
+        imagesMissingAlt: crawl.images?.filter((i: { alt: string }) => !i.alt).length || 0,
+        internalLinks: crawl.internalLinks?.length || 0,
+        externalLinks: crawl.externalLinks?.length || 0,
+        navLinks: crawl.navLinks?.length || 0,
+        forms: crawl.forms?.length || 0,
+        schemas: crawl.existingSchema?.length || 0,
+        htmlSizeKb: Math.round((crawl.htmlSize || 0) / 1024),
+        fetchTimeMs: crawl.fetchTimeMs || 0,
+        title: crawl.title || '',
+        metaDescription: crawl.metaDescription || '',
+      });
+
+      // Step 2: Generate rebuild with AI
+      setBuildStep('generating');
       const objectives = localStorage.getItem('site_objectives') || '';
-      const resp = await fetch(API_ENDPOINTS.build.rebuild, {
+      const rebuildResp = await fetch(API_ENDPOINTS.build.rebuild, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -125,25 +211,42 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
           pageUrl,
           improvements: IMPROVEMENT_OPTIONS.filter(o => selectedImprovements.has(o.id)).map(o => o.label),
           objectives,
+          crawlData: crawl,
+          homePageStyles: crawlData.homePageStyles,
         }),
       });
-      const data = await resp.json();
-      if (data.result) {
-        setResult(data.result);
+      const rebuildData = await rebuildResp.json();
+
+      if (rebuildData.error) {
+        setBuildError(rebuildData.error);
+        setBuildStep('error');
+        return;
+      }
+
+      if (rebuildData.result) {
+        setResult(rebuildData.result);
         setActiveTab('changes');
 
+        // Step 3: Save results
+        setBuildStep('saving');
         await fetch(API_ENDPOINTS.db.buildResults, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ siteUrl, pageUrl, buildType: 'rebuild', result: data.result }),
+          body: JSON.stringify({ siteUrl, pageUrl, buildType: 'rebuild', result: rebuildData.result }),
         });
         await loadSavedBuilds();
-        logActivity(siteUrl, 'build', 'rebuild', `Rebuilt page: ${pageUrl} — ${data.result.recommendations?.length || 0} improvements`);
+        logActivity(siteUrl, 'build', 'rebuild', `Rebuilt page: ${pageUrl} — ${rebuildData.result.recommendations?.length || 0} improvements`);
+
+        setBuildStep('done');
+      } else {
+        setBuildError('No result returned from AI');
+        setBuildStep('error');
       }
     } catch (err) {
       console.error('Build failed:', err);
+      setBuildError(err instanceof Error ? err.message : 'Build failed');
+      setBuildStep('error');
     }
-    setBuilding(false);
   };
 
   const addToTasklist = async (change: RebuildChange) => {
@@ -180,6 +283,28 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
     setShowPreview(false);
   };
 
+  const formatTime = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+  };
+
+  const getStepStatus = (stepKey: string): 'pending' | 'active' | 'complete' | 'error' => {
+    const stepOrder = ['crawling', 'generating', 'saving'];
+    const currentIdx = stepOrder.indexOf(buildStep);
+    const stepIdx = stepOrder.indexOf(stepKey);
+
+    if (buildStep === 'done') return 'complete';
+    if (buildStep === 'error') {
+      if (stepIdx < currentIdx) return 'complete';
+      if (stepIdx === currentIdx) return 'error';
+      return 'pending';
+    }
+    if (stepIdx < currentIdx) return 'complete';
+    if (stepIdx === currentIdx) return 'active';
+    return 'pending';
+  };
+
   const displayResult = result;
 
   return (
@@ -187,7 +312,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
       <div>
         <h1 className="text-2xl font-semibold text-apple-text">Rebuild Page</h1>
         <p className="text-apple-sm text-apple-text-secondary mt-1">
-          Enter a page URL from your sitemap and generate an improved version with AI-powered recommendations.
+          Enter any page URL on your domain and generate an improved version with AI-powered recommendations.
         </p>
       </div>
 
@@ -202,9 +327,9 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
             onChange={(e) => { setUrlInput(e.target.value); setShowSuggestions(true); }}
             onFocus={() => { if (urlInput.trim()) setShowSuggestions(true); }}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-            placeholder={loadingSitemap ? 'Loading sitemap...' : `Enter a URL — ${sitemapUrls.length} pages in sitemap`}
+            placeholder={loadingSitemap ? 'Loading sitemap...' : `Enter any URL on ${siteUrl}`}
             className="input text-apple-sm w-full pr-10"
-            disabled={loadingSitemap}
+            disabled={loadingSitemap || isBuilding}
           />
           <span className="absolute right-3 top-1/2 -translate-y-1/2">
             {loadingSitemap ? (
@@ -240,7 +365,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
         </div>
         {urlInput.trim() && !isValidUrl && !showSuggestions && !loadingSitemap && (
           <p className="text-apple-xs text-red-500 mt-1.5">
-            This URL was not found in your sitemap ({sitemapUrls.length} pages). Check the URL and try again.
+            URL must belong to {siteUrl}. Enter a valid URL on the same domain.
           </p>
         )}
       </div>
@@ -263,6 +388,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
                 checked={selectedImprovements.has(opt.id)}
                 onChange={() => toggleImprovement(opt.id)}
                 className="w-4 h-4 mt-0.5 rounded border-apple-border text-apple-blue shrink-0"
+                disabled={isBuilding}
               />
               <div>
                 <span className="text-apple-sm font-medium text-apple-text">{opt.label}</span>
@@ -275,10 +401,10 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
         <div className="flex gap-3 mt-4">
           <button
             onClick={handleBuild}
-            disabled={!isValidUrl || building || selectedImprovements.size === 0}
+            disabled={!isValidUrl || isBuilding || selectedImprovements.size === 0}
             className="px-5 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
           >
-            {building ? (
+            {isBuilding ? (
               <span className="flex items-center gap-2">
                 <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 Building...
@@ -287,7 +413,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
               'Build'
             )}
           </button>
-          {displayResult && (
+          {displayResult && !isBuilding && (
             <button
               onClick={() => setShowPreview(!showPreview)}
               className="px-5 py-2 rounded-apple-sm border border-apple-border text-apple-sm font-medium text-apple-text hover:bg-apple-fill-secondary transition-colors"
@@ -298,8 +424,132 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
         </div>
       </div>
 
+      {/* Progress Indicator */}
+      {buildStep !== 'idle' && buildStep !== 'done' && (
+        <div className="bg-white rounded-apple border border-apple-border p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-apple-text">Build Progress</h2>
+            <span className="text-apple-xs text-apple-text-tertiary font-mono tabular-nums">
+              {formatTime(elapsedSeconds)}
+            </span>
+          </div>
+
+          <div className="space-y-0">
+            {STEPS.map((step, i) => {
+              const status = getStepStatus(step.key);
+              return (
+                <div key={step.key} className="flex gap-3">
+                  {/* Step indicator column */}
+                  <div className="flex flex-col items-center">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all duration-300 ${
+                      status === 'complete' ? 'bg-green-500' :
+                      status === 'active' ? 'bg-apple-blue' :
+                      status === 'error' ? 'bg-red-500' :
+                      'bg-gray-200'
+                    }`}>
+                      {status === 'complete' ? (
+                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : status === 'active' ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : status === 'error' ? (
+                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      ) : (
+                        <div className="w-2 h-2 rounded-full bg-gray-400" />
+                      )}
+                    </div>
+                    {i < STEPS.length - 1 && (
+                      <div className={`w-0.5 flex-1 min-h-[24px] transition-colors duration-300 ${
+                        status === 'complete' ? 'bg-green-500' : 'bg-gray-200'
+                      }`} />
+                    )}
+                  </div>
+
+                  {/* Step content */}
+                  <div className={`pb-5 flex-1 ${i === STEPS.length - 1 ? 'pb-0' : ''}`}>
+                    <p className={`text-apple-sm font-medium transition-colors ${
+                      status === 'active' ? 'text-apple-blue' :
+                      status === 'complete' ? 'text-green-600' :
+                      status === 'error' ? 'text-red-600' :
+                      'text-apple-text-tertiary'
+                    }`}>
+                      {step.label}
+                    </p>
+                    {(status === 'active' || status === 'error') && (
+                      <p className="text-apple-xs text-apple-text-tertiary mt-0.5">{step.desc}</p>
+                    )}
+
+                    {/* Crawl stats (shown after crawl completes) */}
+                    {step.key === 'crawling' && crawlStats && status === 'complete' && (
+                      <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <StatChip label="Words" value={crawlStats.wordCount.toLocaleString()} />
+                        <StatChip label="Headings" value={String(crawlStats.headings)} />
+                        <StatChip label="Images" value={String(crawlStats.images)} warn={crawlStats.imagesMissingAlt > 0 ? `${crawlStats.imagesMissingAlt} no alt` : undefined} />
+                        <StatChip label="Internal Links" value={String(crawlStats.internalLinks)} />
+                        <StatChip label="External Links" value={String(crawlStats.externalLinks)} />
+                        <StatChip label="Nav Links" value={String(crawlStats.navLinks)} />
+                        <StatChip label="Forms" value={String(crawlStats.forms)} />
+                        <StatChip label="Load Time" value={`${crawlStats.fetchTimeMs}ms`} />
+                      </div>
+                    )}
+
+                    {/* Generating step — pulsing bar */}
+                    {step.key === 'generating' && status === 'active' && (
+                      <div className="mt-2.5">
+                        <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-apple-blue rounded-full animate-progress-pulse" />
+                        </div>
+                        <p className="text-apple-xs text-apple-text-tertiary mt-1.5">
+                          This typically takes 30–90 seconds depending on page complexity
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Error state */}
+          {buildStep === 'error' && buildError && (
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-apple-sm">
+              <p className="text-apple-sm text-red-700">{buildError}</p>
+              <button
+                onClick={() => { setBuildStep('idle'); setBuildError(''); }}
+                className="mt-2 text-apple-xs text-red-600 font-medium hover:underline"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Build complete banner */}
+      {buildStep === 'done' && displayResult && (
+        <div className="bg-green-50 border border-green-200 rounded-apple p-4 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center shrink-0">
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <div className="flex-1">
+            <p className="text-apple-sm font-medium text-green-800">
+              Build complete in {formatTime(elapsedSeconds)}
+            </p>
+            <p className="text-apple-xs text-green-600">
+              {displayResult.recommendations?.length || 0} improvements generated
+              {crawlStats ? ` · Analyzed ${crawlStats.wordCount.toLocaleString()} words across ${crawlStats.headings} sections` : ''}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Current Result */}
-      {displayResult && (
+      {displayResult && !isBuilding && (
         <div className="bg-white rounded-apple border border-apple-border p-5">
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-1">
@@ -436,6 +686,27 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
           </div>
         </div>
       )}
+
+      <style>{`
+        @keyframes progress-pulse {
+          0% { width: 0%; margin-left: 0%; }
+          50% { width: 60%; margin-left: 20%; }
+          100% { width: 0%; margin-left: 100%; }
+        }
+        .animate-progress-pulse {
+          animation: progress-pulse 2s ease-in-out infinite;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function StatChip({ label, value, warn }: { label: string; value: string; warn?: string }) {
+  return (
+    <div className="bg-gray-50 rounded-lg px-2.5 py-1.5 border border-gray-100">
+      <p className="text-[11px] text-apple-text-tertiary uppercase tracking-wider">{label}</p>
+      <p className="text-apple-sm font-semibold text-apple-text">{value}</p>
+      {warn && <p className="text-[10px] text-amber-600">{warn}</p>}
     </div>
   );
 }
