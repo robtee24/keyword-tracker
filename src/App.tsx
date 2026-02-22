@@ -10,6 +10,7 @@ import GoogleSearchConsole from './components/SEO/GoogleSearchConsole';
 import TasklistView from './components/RecommendationsView';
 import LostKeywordsView from './components/LostKeywordsView';
 import AuditView from './components/AuditView';
+import AuditMainView from './components/AuditMainView';
 import AdvertisingView from './components/AdvertisingView';
 import ActivityLogView from './components/ActivityLogView';
 import OAuthModal from './components/OAuthModal';
@@ -160,7 +161,7 @@ function App() {
       setVisitedAudits(new Set());
     } else {
       localStorage.setItem('kt_active_view', view);
-      if (['seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit'].includes(view)) {
+      if (['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit'].includes(view)) {
         setVisitedAudits((prev) => new Set(prev).add(view));
       }
     }
@@ -247,11 +248,12 @@ function App() {
                       {({
                         'activity-log': 'Activity Log',
                         'lost-keywords': 'Lost Keywords',
-                        'seo-audit': 'SEO Audit',
-                        'content-audit': 'Content Audit',
-                        'aeo-audit': 'AEO Audit',
-                        'schema-audit': 'Schema Audit',
-                        'compliance-audit': 'Compliance Audit',
+                        'audit': 'Audit',
+                        'seo-audit': 'Audit › SEO',
+                        'content-audit': 'Audit › Content',
+                        'aeo-audit': 'Audit › AEO',
+                        'schema-audit': 'Audit › Schema',
+                        'compliance-audit': 'Audit › Compliance',
                         'advertising': 'Advertising',
                         'tasklist': 'Tasklist',
                       } as Record<string, string>)[currentView] || currentView}
@@ -418,7 +420,14 @@ function App() {
             <LostKeywordsView siteUrl={activeProject.siteUrl} />
           )}
 
-          {/* Audit Views — stay mounted once visited so audits continue in background */}
+          {/* Main Audit View — unified audit with checklist */}
+          {activeProject && visitedAudits.has('audit') && (
+            <div style={{ display: currentView === 'audit' ? 'block' : 'none' }}>
+              <AuditMainView siteUrl={activeProject.siteUrl} />
+            </div>
+          )}
+
+          {/* Individual Audit Views — stay mounted once visited so audits continue in background */}
           {activeProject && visitedAudits.has('seo-audit') && (
             <div style={{ display: currentView === 'seo-audit' ? 'block' : 'none' }}>
               <AuditView

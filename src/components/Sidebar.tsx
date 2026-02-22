@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 
-export type View = 'projects' | 'objectives' | 'overview' | 'keywords' | 'lost-keywords' | 'seo-audit' | 'content-audit' | 'aeo-audit' | 'schema-audit' | 'compliance-audit' | 'advertising' | 'tasklist' | 'activity-log';
+export type View = 'projects' | 'objectives' | 'overview' | 'keywords' | 'lost-keywords' | 'audit' | 'seo-audit' | 'content-audit' | 'aeo-audit' | 'schema-audit' | 'compliance-audit' | 'advertising' | 'tasklist' | 'activity-log';
 
 interface SidebarProps {
   currentView: View;
@@ -48,51 +49,19 @@ const projectNavItems: Array<{ id: View; label: string; icon: ReactNode }> = [
       </svg>
     ),
   },
-  {
-    id: 'seo-audit',
-    label: 'SEO',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-      </svg>
-    ),
-  },
-  {
-    id: 'content-audit',
-    label: 'Content Audit',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-      </svg>
-    ),
-  },
-  {
-    id: 'aeo-audit',
-    label: 'AEO',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
-      </svg>
-    ),
-  },
-  {
-    id: 'schema-audit',
-    label: 'Schema',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
-      </svg>
-    ),
-  },
-  {
-    id: 'compliance-audit',
-    label: 'Compliance',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-      </svg>
-    ),
-  },
+];
+
+const auditSubItems: Array<{ id: View; label: string }> = [
+  { id: 'seo-audit', label: 'SEO' },
+  { id: 'content-audit', label: 'Content' },
+  { id: 'aeo-audit', label: 'AEO' },
+  { id: 'schema-audit', label: 'Schema' },
+  { id: 'compliance-audit', label: 'Compliance' },
+];
+
+const AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit']);
+
+const bottomNavItems: Array<{ id: View; label: string; icon: ReactNode }> = [
   {
     id: 'advertising',
     label: 'Advertising',
@@ -130,6 +99,50 @@ export default function Sidebar({
   onSignOut,
   hasActiveProject,
 }: SidebarProps) {
+  const isAuditActive = AUDIT_VIEWS.has(currentView);
+  const [auditExpanded, setAuditExpanded] = useState(isAuditActive);
+
+  const handleAuditClick = () => {
+    if (collapsed) {
+      onNavigate('audit');
+      return;
+    }
+    if (!auditExpanded) {
+      setAuditExpanded(true);
+      onNavigate('audit');
+    } else if (currentView === 'audit') {
+      setAuditExpanded(false);
+    } else {
+      onNavigate('audit');
+    }
+  };
+
+  const handleAuditSubClick = (view: View) => {
+    setAuditExpanded(true);
+    onNavigate(view);
+  };
+
+  const renderNavButton = (item: { id: View; label: string; icon: ReactNode }) => {
+    const isActive = currentView === item.id;
+    return (
+      <button
+        key={item.id}
+        onClick={() => onNavigate(item.id)}
+        className={`w-full flex items-center gap-3 px-3 py-2 rounded-apple-sm text-apple-sm font-medium transition-all duration-150 ${
+          isActive
+            ? 'bg-apple-blue/10 text-apple-blue'
+            : 'text-apple-text-secondary hover:bg-apple-fill-secondary hover:text-apple-text'
+        }`}
+        title={collapsed ? item.label : undefined}
+      >
+        <span className={`shrink-0 ${isActive ? 'text-apple-blue' : ''}`}>
+          {item.icon}
+        </span>
+        {!collapsed && <span className="truncate">{item.label}</span>}
+      </button>
+    );
+  };
+
   return (
     <div
       className={`flex flex-col h-screen bg-white/80 backdrop-blur-xl border-r border-apple-divider transition-all duration-300 ${
@@ -182,7 +195,7 @@ export default function Sidebar({
           {!collapsed && <span className="truncate">Projects</span>}
         </button>
 
-        {/* Project-specific nav items — only when a project is active */}
+        {/* Project-specific nav items */}
         {hasActiveProject && (
           <>
             {!collapsed && (
@@ -194,26 +207,62 @@ export default function Sidebar({
             )}
             {collapsed && <div className="border-t border-apple-divider my-2 mx-2" />}
 
-            {projectNavItems.map((item) => {
-              const isActive = currentView === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => onNavigate(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-apple-sm text-apple-sm font-medium transition-all duration-150 ${
-                    isActive
-                      ? 'bg-apple-blue/10 text-apple-blue'
-                      : 'text-apple-text-secondary hover:bg-apple-fill-secondary hover:text-apple-text'
-                  }`}
-                  title={collapsed ? item.label : undefined}
-                >
-                  <span className={`shrink-0 ${isActive ? 'text-apple-blue' : ''}`}>
-                    {item.icon}
-                  </span>
-                  {!collapsed && <span className="truncate">{item.label}</span>}
-                </button>
-              );
-            })}
+            {projectNavItems.map(renderNavButton)}
+
+            {/* ── Audit Group ── */}
+            <div>
+              <button
+                onClick={handleAuditClick}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-apple-sm text-apple-sm font-medium transition-all duration-150 ${
+                  isAuditActive
+                    ? 'bg-apple-blue/10 text-apple-blue'
+                    : 'text-apple-text-secondary hover:bg-apple-fill-secondary hover:text-apple-text'
+                }`}
+                title={collapsed ? 'Audit' : undefined}
+              >
+                <span className={`shrink-0 ${isAuditActive ? 'text-apple-blue' : ''}`}>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                  </svg>
+                </span>
+                {!collapsed && (
+                  <>
+                    <span className="truncate flex-1">Audit</span>
+                    <svg
+                      className={`w-3.5 h-3.5 text-apple-text-tertiary transition-transform duration-200 ${auditExpanded ? 'rotate-180' : ''}`}
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                      onClick={(e) => { e.stopPropagation(); setAuditExpanded(!auditExpanded); }}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </>
+                )}
+              </button>
+
+              {/* Sub-items */}
+              {!collapsed && auditExpanded && (
+                <div className="ml-4 mt-0.5 space-y-0.5 border-l border-apple-divider pl-2">
+                  {auditSubItems.map((sub) => {
+                    const isSubActive = currentView === sub.id;
+                    return (
+                      <button
+                        key={sub.id}
+                        onClick={() => handleAuditSubClick(sub.id)}
+                        className={`w-full text-left px-3 py-1.5 rounded-apple-sm text-apple-xs font-medium transition-all duration-150 ${
+                          isSubActive
+                            ? 'bg-apple-blue/10 text-apple-blue'
+                            : 'text-apple-text-secondary hover:bg-apple-fill-secondary hover:text-apple-text'
+                        }`}
+                      >
+                        {sub.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {bottomNavItems.map(renderNavButton)}
           </>
         )}
       </nav>

@@ -44,6 +44,7 @@ export const API_ENDPOINTS = {
     sitemap: `${API_BASE_URL}/api/audit/sitemap`,
     run: `${API_BASE_URL}/api/audit/run`,
     runBatch: `${API_BASE_URL}/api/audit/run-batch`,
+    runMulti: `${API_BASE_URL}/api/audit/run-multi`,
   },
   advertising: {
     generate: `${API_BASE_URL}/api/advertising/generate`,

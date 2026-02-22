@@ -21,6 +21,9 @@
     },
     "api/audit/run-batch.js": {
       "maxDuration": 60
+    },
+    "api/audit/run-multi.js": {
+      "maxDuration": 120
     }
   },
   "rewrites": [
