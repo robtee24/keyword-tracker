@@ -39,7 +39,6 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
   const [hasSuggestions, setHasSuggestions] = useState(false);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [buildingIdx, setBuildingIdx] = useState<number | null>(null);
-  const [previewIdx, setPreviewIdx] = useState<number | null>(null);
   const [dbRecordId, setDbRecordId] = useState<string | null>(null);
 
   const [showWizard, setShowWizard] = useState(false);
@@ -58,6 +57,8 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
   const [loadingSaved, setLoadingSaved] = useState(true);
 
   const [savedWizardBuilds, setSavedWizardBuilds] = useState<Array<{ result: BuiltPage; created_at: string }>>([]);
+  const [expandedSavedIdx, setExpandedSavedIdx] = useState<number | null>(null);
+  const [previewModal, setPreviewModal] = useState<{ type: 'saved' | 'suggestion' | 'wizard'; idx?: number } | null>(null);
 
   const [modifyTarget, setModifyTarget] = useState<{ type: 'wizard' | 'suggestion'; idx?: number } | null>(null);
   const [modifyInput, setModifyInput] = useState('');
@@ -485,31 +486,32 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
                     <h3 className="text-base font-semibold text-apple-text">{wizardResult.title}</h3>
                     <p className="text-apple-xs text-apple-text-tertiary italic">{wizardResult.metaDescription}</p>
                     <p className="text-apple-sm text-apple-text-secondary">{wizardResult.summary}</p>
-                    <div className="border border-apple-border rounded-apple-sm bg-white overflow-hidden">
-                      <div className="bg-gray-100 px-3 py-1.5 border-b border-apple-border text-apple-xs text-apple-text-tertiary">
-                        Preview
-                      </div>
-                      <iframe
-                        srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${wizardResult.title}</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:24px;line-height:1.6;color:#1d1d1f;max-width:900px;margin:0 auto}h1{font-size:2em;margin-bottom:0.5em}h2{font-size:1.5em;margin-top:1.5em}h3{font-size:1.2em}p{margin:0.8em 0}a{color:#0071e3}ul,ol{padding-left:1.5em}</style></head><body>${wizardResult.htmlContent}</body></html>`}
-                        className="w-full h-[400px] border-0"
-                        title="Preview"
-                        sandbox="allow-same-origin"
-                      />
-                    </div>
                     <div className="flex gap-2">
+                      {wizardResult.htmlContent && (
+                        <button
+                          onClick={() => setPreviewModal({ type: 'wizard' })}
+                          className="px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors flex items-center gap-1.5"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          Preview
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           setModifyTarget({ type: 'wizard' });
                           setModifyInput('');
                           setModifyError('');
                         }}
-                        className={`flex-1 px-4 py-2 rounded-apple-sm text-apple-sm font-medium transition-colors ${
+                        className={`px-4 py-2 rounded-apple-sm text-apple-sm font-medium transition-colors ${
                           modifyTarget?.type === 'wizard' ? 'bg-purple-600 text-white' : 'border border-purple-300 text-purple-600 hover:bg-purple-50'
                         }`}
                       >
                         Modify Page
                       </button>
-                      <button onClick={() => setShowWizard(false)} className="flex-1 px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium">Done</button>
+                      <button onClick={() => setShowWizard(false)} className="px-4 py-2 rounded-apple-sm border border-apple-border text-apple-sm font-medium text-apple-text-secondary hover:bg-apple-fill-secondary transition-colors">Done</button>
                     </div>
 
                     {modifyTarget?.type === 'wizard' && (
@@ -636,10 +638,14 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
                     ) : (
                       <>
                         <button
-                          onClick={() => setPreviewIdx(previewIdx === i ? null : i)}
-                          className="px-4 py-1.5 rounded-apple-sm border border-apple-blue text-apple-blue text-apple-xs font-medium hover:bg-apple-blue/5 transition-colors"
+                          onClick={() => setPreviewModal({ type: 'suggestion', idx: i })}
+                          className="px-4 py-1.5 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors flex items-center gap-1.5"
                         >
-                          {previewIdx === i ? 'Hide Preview' : 'Preview'}
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          Preview
                         </button>
                         <button
                           onClick={() => {
@@ -693,27 +699,6 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
                     </div>
                   )}
 
-                  {previewIdx === i && s.builtContent && (
-                    <div className="mt-3">
-                      <p className="text-apple-sm text-apple-text-secondary mb-2">{s.builtContent.summary}</p>
-                      <div className="border border-apple-border rounded-apple-sm overflow-hidden">
-                        <div className="bg-gray-100 px-3 py-1.5 border-b border-apple-border flex items-center gap-2">
-                          <div className="flex gap-1">
-                            <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
-                            <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                            <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
-                          </div>
-                          <span className="text-apple-xs text-apple-text-tertiary">/{s.builtContent.slug}</span>
-                        </div>
-                        <iframe
-                          srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${s.builtContent.title}</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:24px;line-height:1.6;color:#1d1d1f;max-width:900px;margin:0 auto}h1{font-size:2em;margin-bottom:0.5em}h2{font-size:1.5em;margin-top:1.5em}h3{font-size:1.2em}p{margin:0.8em 0}a{color:#0071e3}ul,ol{padding-left:1.5em}</style></head><body>${s.builtContent.htmlContent}</body></html>`}
-                          className="w-full h-[500px] border-0"
-                          title="Preview"
-                          sandbox="allow-same-origin"
-                        />
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -723,25 +708,157 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
 
       {/* Saved Wizard Builds */}
       {savedWizardBuilds.length > 0 && (
-        <div className="bg-white rounded-apple border border-apple-border p-5">
-          <h2 className="text-base font-semibold text-apple-text mb-3">Custom-Built Pages</h2>
-          <div className="space-y-2">
-            {savedWizardBuilds.map((build, i) => (
-              <div key={i} className="border border-apple-border rounded-apple-sm p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-apple-sm font-medium text-apple-text">{build.result?.title}</p>
-                    <p className="text-apple-xs text-apple-text-tertiary italic truncate">{build.result?.metaDescription}</p>
+        <div className="space-y-4">
+          <h3 className="text-apple-sm font-semibold text-apple-text-secondary uppercase tracking-wider">
+            Custom-Built Pages ({savedWizardBuilds.length})
+          </h3>
+          {savedWizardBuilds.map((build, i) => {
+            const isExp = expandedSavedIdx === i;
+            const r = build.result;
+            return (
+              <div key={i} className="rounded-apple border border-apple-divider bg-white overflow-hidden shadow-sm">
+                <div
+                  className="p-4 flex items-center gap-4 cursor-pointer hover:bg-apple-fill-secondary/30 transition-colors"
+                  onClick={() => setExpandedSavedIdx(isExp ? null : i)}
+                >
+                  <div className="w-10 h-10 rounded-apple-sm bg-green-500/10 flex items-center justify-center shrink-0">
+                    <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
                   </div>
-                  <span className="text-apple-xs text-apple-text-tertiary shrink-0">
-                    {new Date(build.created_at).toLocaleDateString()}
-                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-apple-sm font-medium text-apple-text truncate">{r?.title || 'Untitled Page'}</p>
+                    <p className="text-apple-xs text-apple-text-tertiary truncate mt-0.5">{r?.slug ? `/${r.slug}` : ''}</p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-apple-xs text-apple-text-tertiary">
+                      {new Date(build.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </span>
+                    {r?.htmlContent && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setPreviewModal({ type: 'saved', idx: i }); }}
+                        className="px-3 py-1.5 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors flex items-center gap-1.5"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        Preview
+                      </button>
+                    )}
+                    <svg className={`w-4 h-4 text-apple-text-tertiary transition-transform ${isExp ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
                 </div>
+
+                {isExp && r && (
+                  <div className="border-t border-apple-divider px-5 py-4 space-y-3">
+                    {r.metaDescription && <p className="text-apple-xs text-apple-text-tertiary italic">{r.metaDescription}</p>}
+                    {r.summary && <p className="text-apple-sm text-apple-text-secondary">{r.summary}</p>}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          const isMod = modifyTarget?.type === 'suggestion' && modifyTarget.idx === -(i + 1);
+                          setModifyTarget(isMod ? null : { type: 'suggestion', idx: -(i + 1) });
+                          setModifyInput('');
+                          setModifyError('');
+                        }}
+                        className={`px-4 py-2 rounded-apple-sm text-apple-xs font-medium transition-colors ${
+                          modifyTarget?.type === 'suggestion' && modifyTarget.idx === -(i + 1) ? 'bg-purple-600 text-white' : 'border border-purple-300 text-purple-600 hover:bg-purple-50'
+                        }`}
+                      >
+                        Modify Page
+                      </button>
+                    </div>
+
+                    {modifyTarget?.type === 'suggestion' && modifyTarget.idx === -(i + 1) && r && (
+                      <div className="p-3 bg-purple-50 border border-purple-200 rounded-apple-sm space-y-3">
+                        <label className="block text-apple-xs font-medium text-purple-800">Describe your modifications</label>
+                        <textarea
+                          value={modifyInput}
+                          onChange={(e) => setModifyInput(e.target.value)}
+                          placeholder="e.g., Change the headline, add a FAQ section, make the tone more casual..."
+                          className="w-full h-24 px-3 py-2 rounded-apple-sm border border-purple-200 text-apple-xs focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 resize-none bg-white"
+                          disabled={isModifying}
+                        />
+                        {modifyError && <p className="text-apple-xs text-red-600">{modifyError}</p>}
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleModifyPage(r)}
+                            disabled={!modifyInput.trim() || isModifying}
+                            className="px-3 py-1.5 rounded-apple-sm bg-purple-600 text-white text-apple-xs font-medium disabled:opacity-50"
+                          >
+                            {isModifying ? (
+                              <span className="flex items-center gap-1.5">
+                                <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                Modifying...
+                              </span>
+                            ) : 'Apply'}
+                          </button>
+                          <button
+                            onClick={() => { setModifyTarget(null); setModifyInput(''); setModifyError(''); }}
+                            className="px-3 py-1.5 rounded-apple-sm border border-apple-border text-apple-xs text-apple-text-secondary"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       )}
+
+      {/* Preview Modal */}
+      {previewModal && (() => {
+        let previewContent: BuiltPage | null = null;
+        let previewUrl = '';
+        if (previewModal.type === 'wizard' && wizardResult) {
+          previewContent = wizardResult;
+          previewUrl = wizardResult.slug ? `/${wizardResult.slug}` : '';
+        } else if (previewModal.type === 'suggestion' && previewModal.idx !== undefined) {
+          previewContent = suggestions[previewModal.idx]?.builtContent || null;
+          previewUrl = suggestions[previewModal.idx]?.slug ? `/${suggestions[previewModal.idx].slug}` : '';
+        } else if (previewModal.type === 'saved' && previewModal.idx !== undefined) {
+          previewContent = savedWizardBuilds[previewModal.idx]?.result || null;
+          previewUrl = previewContent?.slug ? `/${previewContent.slug}` : '';
+        }
+        if (!previewContent?.htmlContent) return null;
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4" onClick={() => setPreviewModal(null)}>
+            <div className="bg-white rounded-apple w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="bg-gray-100 px-4 py-3 border-b border-apple-border flex items-center gap-3 shrink-0">
+                <div className="flex gap-1.5">
+                  <button onClick={() => setPreviewModal(null)} className="w-3 h-3 rounded-full bg-red-400 hover:bg-red-500 transition-colors" />
+                  <div className="w-3 h-3 rounded-full bg-amber-400" />
+                  <div className="w-3 h-3 rounded-full bg-green-400" />
+                </div>
+                <div className="flex-1 bg-white rounded px-3 py-1 text-apple-xs text-apple-text-secondary truncate">
+                  {previewUrl || previewContent.title}
+                </div>
+                <button
+                  onClick={() => setPreviewModal(null)}
+                  className="text-apple-text-tertiary hover:text-apple-text transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <iframe
+                srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${previewContent.title}</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:24px;line-height:1.6;color:#1d1d1f;max-width:900px;margin:0 auto}h1{font-size:2em;margin-bottom:0.5em}h2{font-size:1.5em;margin-top:1.5em}h3{font-size:1.2em}p{margin:0.8em 0}img{max-width:100%;height:auto}a{color:#0071e3}ul,ol{padding-left:1.5em}blockquote{border-left:3px solid #0071e3;margin:1em 0;padding:0.5em 1em;background:#f5f5f7}</style></head><body>${previewContent.htmlContent}</body></html>`}
+                className="w-full flex-1 border-0"
+                title="Page Preview"
+                sandbox="allow-same-origin"
+              />
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

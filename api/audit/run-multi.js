@@ -366,6 +366,7 @@ export default async function handler(req, res) {
 
   // 3. Save all results to DB
   const supabase = getSupabase();
+  const dbErrors = [];
   if (supabase) {
     for (const result of auditResults) {
       if (result.error) continue;
@@ -381,26 +382,16 @@ export default async function handler(req, res) {
         audited_at: new Date().toISOString(),
       };
       try {
-        const { error: insertErr } = await supabase
+        const { error: upsertErr } = await supabase
           .from('page_audits')
-          .insert(row);
-
-        if (insertErr) {
-          // Unique constraint may still exist; fall back to upsert
-          const { error: upsertErr } = await supabase
-            .from('page_audits')
-            .upsert(row, { onConflict: 'site_url,page_url,audit_type' });
-          if (upsertErr) {
-            await supabase.from('page_audits')
-              .delete()
-              .eq('site_url', siteUrl)
-              .eq('page_url', pageUrl)
-              .eq('audit_type', result.auditType);
-            await supabase.from('page_audits').insert(row);
-          }
+          .upsert(row, { onConflict: 'site_url,page_url,audit_type' });
+        if (upsertErr) {
+          console.error(`[MultiAudit] DB save failed for ${result.auditType}:`, upsertErr.message);
+          dbErrors.push({ auditType: result.auditType, error: upsertErr.message });
         }
       } catch (err) {
         console.error(`[MultiAudit] DB save error for ${result.auditType}:`, err.message);
+        dbErrors.push({ auditType: result.auditType, error: err.message });
       }
     }
   }

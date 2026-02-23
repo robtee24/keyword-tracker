@@ -77,19 +77,15 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
   const [crawlStats, setCrawlStats] = useState<CrawlStats | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-  const [result, setResult] = useState<RebuildResult | null>(null);
-  const [resultPageUrl, setResultPageUrl] = useState('');
-  const [showPreview, setShowPreview] = useState(false);
-  const [activeTab, setActiveTab] = useState<'changes' | 'code'>('changes');
-
   const [savedBuilds, setSavedBuilds] = useState<SavedBuild[]>([]);
   const [loadingSaved, setLoadingSaved] = useState(true);
-  const [viewingSavedIdx, setViewingSavedIdx] = useState<number | null>(null);
-
-  const [showModify, setShowModify] = useState(false);
+  const [expandedBuildIdx, setExpandedBuildIdx] = useState<number | null>(null);
+  const [cardTab, setCardTab] = useState<Record<number, 'changes' | 'code'>>({});
+  const [cardModify, setCardModify] = useState<number | null>(null);
   const [modifyInput, setModifyInput] = useState('');
   const [isModifying, setIsModifying] = useState(false);
   const [modifyError, setModifyError] = useState('');
+  const [previewModalIdx, setPreviewModalIdx] = useState<number | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -166,15 +162,11 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
     if (!isValidUrl || isBuilding) return;
     const pageUrl = urlInput.trim();
 
-    setResult(null);
-    setShowPreview(false);
-    setResultPageUrl(pageUrl);
     setCrawlStats(null);
     setBuildError('');
     setBuildStep('crawling');
 
     try {
-      // Step 1: Comprehensive crawl
       const crawlResp = await fetch(API_ENDPOINTS.build.crawl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -205,7 +197,6 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
         metaDescription: crawl.metaDescription || '',
       });
 
-      // Step 2: Generate rebuild with AI
       setBuildStep('generating');
       const objectives = localStorage.getItem('site_objectives') || '';
       const rebuildResp = await fetch(API_ENDPOINTS.build.rebuild, {
@@ -229,10 +220,6 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
       }
 
       if (rebuildData.result) {
-        setResult(rebuildData.result);
-        setActiveTab('changes');
-
-        // Step 3: Save results
         setBuildStep('saving');
         await fetch(API_ENDPOINTS.db.buildResults, {
           method: 'POST',
@@ -241,8 +228,8 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
         });
         await loadSavedBuilds();
         logActivity(siteUrl, 'build', 'rebuild', `Rebuilt page: ${pageUrl} — ${rebuildData.result.recommendations?.length || 0} improvements`);
-
         setBuildStep('done');
+        setExpandedBuildIdx(0);
       } else {
         setBuildError('No result returned from AI');
         setBuildStep('error');
@@ -254,28 +241,28 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
     }
   };
 
-  const addToTasklist = async (change: RebuildChange) => {
+  const addToTasklist = async (change: RebuildChange, pageUrl: string) => {
     try {
       await fetch(API_ENDPOINTS.db.completedTasks, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
-          keyword: `build:${resultPageUrl}`,
+          keyword: `build:${pageUrl}`,
           taskId: `build-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           taskText: `${change.area}: ${change.improved}`,
           category: change.area,
           status: 'pending',
         }),
       });
-      logActivity(siteUrl, 'build', 'task-added', `Added rebuild task: ${change.area} for ${resultPageUrl}`);
+      logActivity(siteUrl, 'build', 'task-added', `Added rebuild task: ${change.area} for ${pageUrl}`);
     } catch (err) {
       console.error('Failed to add to tasklist:', err);
     }
   };
 
-  const handleModify = async () => {
-    if (!modifyInput.trim() || !result?.htmlContent || isModifying) return;
+  const handleModify = async (build: SavedBuild, buildIdx: number) => {
+    if (!modifyInput.trim() || !build.result?.htmlContent || isModifying) return;
     setIsModifying(true);
     setModifyError('');
     try {
@@ -284,48 +271,32 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
-          pageUrl: resultPageUrl,
-          currentHtml: result.htmlContent,
+          pageUrl: build.page_url,
+          currentHtml: build.result.htmlContent,
           modifications: modifyInput.trim(),
-          currentTitle: result.title,
-          currentMeta: result.metaDescription,
+          currentTitle: build.result.title,
+          currentMeta: build.result.metaDescription,
         }),
       });
       const data = await resp.json();
       if (data.error) {
         setModifyError(data.error);
       } else if (data.result) {
-        setResult(data.result);
-        setActiveTab('code');
-        setShowPreview(true);
         setModifyInput('');
-        setShowModify(false);
+        setCardModify(null);
         await fetch(API_ENDPOINTS.db.buildResults, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ siteUrl, pageUrl: resultPageUrl, buildType: 'rebuild', result: data.result }),
+          body: JSON.stringify({ siteUrl, pageUrl: build.page_url, buildType: 'rebuild', result: data.result }),
         });
         await loadSavedBuilds();
-        logActivity(siteUrl, 'build', 'modify', `Modified page: ${resultPageUrl}`);
+        setExpandedBuildIdx(0);
+        logActivity(siteUrl, 'build', 'modify', `Modified page: ${build.page_url}`);
       }
     } catch (err) {
       setModifyError(err instanceof Error ? err.message : 'Modification failed');
     }
     setIsModifying(false);
-  };
-
-  const viewSavedBuild = (idx: number) => {
-    if (viewingSavedIdx === idx) {
-      setViewingSavedIdx(null);
-      setResult(null);
-      return;
-    }
-    setViewingSavedIdx(idx);
-    const build = savedBuilds[idx];
-    setResult(build.result);
-    setResultPageUrl(build.page_url);
-    setActiveTab('changes');
-    setShowPreview(false);
   };
 
   const formatTime = (s: number) => {
@@ -338,7 +309,6 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
     const stepOrder = ['crawling', 'generating', 'saving'];
     const currentIdx = stepOrder.indexOf(buildStep);
     const stepIdx = stepOrder.indexOf(stepKey);
-
     if (buildStep === 'done') return 'complete';
     if (buildStep === 'error') {
       if (stepIdx < currentIdx) return 'complete';
@@ -349,8 +319,6 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
     if (stepIdx === currentIdx) return 'active';
     return 'pending';
   };
-
-  const displayResult = result;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -392,26 +360,15 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
           {showSuggestions && filteredUrls.length > 0 && (
             <div className="absolute z-10 mt-1 w-full bg-white border border-apple-border rounded-apple-sm shadow-lg max-h-60 overflow-y-auto">
               {filteredUrls.map((url) => (
-                <button
-                  key={url}
-                  onMouseDown={() => selectUrl(url)}
-                  className="w-full text-left px-3 py-2 text-apple-sm hover:bg-apple-fill-secondary transition-colors truncate"
-                >
+                <button key={url} onMouseDown={() => selectUrl(url)} className="w-full text-left px-3 py-2 text-apple-sm hover:bg-apple-fill-secondary transition-colors truncate">
                   {url}
                 </button>
               ))}
-              {filteredUrls.length < sitemapUrls.filter(u => u.toLowerCase().includes(urlInput.toLowerCase())).length && (
-                <div className="px-3 py-2 text-apple-xs text-apple-text-tertiary border-t border-apple-divider">
-                  Keep typing to narrow results...
-                </div>
-              )}
             </div>
           )}
         </div>
         {urlInput.trim() && !isValidUrl && !showSuggestions && !loadingSitemap && (
-          <p className="text-apple-xs text-red-500 mt-1.5">
-            URL must belong to {siteUrl}. Enter a valid URL on the same domain.
-          </p>
+          <p className="text-apple-xs text-red-500 mt-1.5">URL must belong to {siteUrl}.</p>
         )}
       </div>
 
@@ -423,18 +380,10 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
             <label
               key={opt.id}
               className={`flex items-start gap-3 p-3 rounded-apple-sm border cursor-pointer transition-colors ${
-                selectedImprovements.has(opt.id)
-                  ? 'border-apple-blue bg-apple-blue/5'
-                  : 'border-apple-border hover:bg-apple-fill-secondary'
+                selectedImprovements.has(opt.id) ? 'border-apple-blue bg-apple-blue/5' : 'border-apple-border hover:bg-apple-fill-secondary'
               }`}
             >
-              <input
-                type="checkbox"
-                checked={selectedImprovements.has(opt.id)}
-                onChange={() => toggleImprovement(opt.id)}
-                className="w-4 h-4 mt-0.5 rounded border-apple-border text-apple-blue shrink-0"
-                disabled={isBuilding}
-              />
+              <input type="checkbox" checked={selectedImprovements.has(opt.id)} onChange={() => toggleImprovement(opt.id)} className="w-4 h-4 mt-0.5 rounded border-apple-border text-apple-blue shrink-0" disabled={isBuilding} />
               <div>
                 <span className="text-apple-sm font-medium text-apple-text">{opt.label}</span>
                 <p className="text-apple-xs text-apple-text-tertiary">{opt.desc}</p>
@@ -442,8 +391,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
             </label>
           ))}
         </div>
-
-        <div className="flex gap-3 mt-4">
+        <div className="mt-4">
           <button
             onClick={handleBuild}
             disabled={!isValidUrl || isBuilding || selectedImprovements.size === 0}
@@ -454,18 +402,8 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
                 <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 Building...
               </span>
-            ) : (
-              'Build'
-            )}
+            ) : 'Build'}
           </button>
-          {displayResult && !isBuilding && (
-            <button
-              onClick={() => setShowPreview(!showPreview)}
-              className="px-5 py-2 rounded-apple-sm border border-apple-border text-apple-sm font-medium text-apple-text hover:bg-apple-fill-secondary transition-colors"
-            >
-              {showPreview ? 'Hide Preview' : 'Preview'}
-            </button>
-          )}
         </div>
       </div>
 
@@ -474,82 +412,46 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
         <div className="bg-white rounded-apple border border-apple-border p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-semibold text-apple-text">Build Progress</h2>
-            <span className="text-apple-xs text-apple-text-tertiary font-mono tabular-nums">
-              {formatTime(elapsedSeconds)}
-            </span>
+            <span className="text-apple-xs text-apple-text-tertiary font-mono tabular-nums">{formatTime(elapsedSeconds)}</span>
           </div>
-
           <div className="space-y-0">
             {STEPS.map((step, i) => {
               const status = getStepStatus(step.key);
               return (
                 <div key={step.key} className="flex gap-3">
-                  {/* Step indicator column */}
                   <div className="flex flex-col items-center">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all duration-300 ${
-                      status === 'complete' ? 'bg-green-500' :
-                      status === 'active' ? 'bg-apple-blue' :
-                      status === 'error' ? 'bg-red-500' :
-                      'bg-gray-200'
+                      status === 'complete' ? 'bg-green-500' : status === 'active' ? 'bg-apple-blue' : status === 'error' ? 'bg-red-500' : 'bg-gray-200'
                     }`}>
                       {status === 'complete' ? (
-                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
+                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
                       ) : status === 'active' ? (
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                       ) : status === 'error' ? (
-                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
+                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                       ) : (
                         <div className="w-2 h-2 rounded-full bg-gray-400" />
                       )}
                     </div>
-                    {i < STEPS.length - 1 && (
-                      <div className={`w-0.5 flex-1 min-h-[24px] transition-colors duration-300 ${
-                        status === 'complete' ? 'bg-green-500' : 'bg-gray-200'
-                      }`} />
-                    )}
+                    {i < STEPS.length - 1 && <div className={`w-0.5 flex-1 min-h-[24px] transition-colors duration-300 ${status === 'complete' ? 'bg-green-500' : 'bg-gray-200'}`} />}
                   </div>
-
-                  {/* Step content */}
                   <div className={`pb-5 flex-1 ${i === STEPS.length - 1 ? 'pb-0' : ''}`}>
-                    <p className={`text-apple-sm font-medium transition-colors ${
-                      status === 'active' ? 'text-apple-blue' :
-                      status === 'complete' ? 'text-green-600' :
-                      status === 'error' ? 'text-red-600' :
-                      'text-apple-text-tertiary'
-                    }`}>
-                      {step.label}
-                    </p>
-                    {(status === 'active' || status === 'error') && (
-                      <p className="text-apple-xs text-apple-text-tertiary mt-0.5">{step.desc}</p>
-                    )}
-
-                    {/* Crawl stats (shown after crawl completes) */}
+                    <p className={`text-apple-sm font-medium transition-colors ${status === 'active' ? 'text-apple-blue' : status === 'complete' ? 'text-green-600' : status === 'error' ? 'text-red-600' : 'text-apple-text-tertiary'}`}>{step.label}</p>
+                    {(status === 'active' || status === 'error') && <p className="text-apple-xs text-apple-text-tertiary mt-0.5">{step.desc}</p>}
                     {step.key === 'crawling' && crawlStats && status === 'complete' && (
                       <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
                         <StatChip label="Words" value={crawlStats.wordCount.toLocaleString()} />
                         <StatChip label="Headings" value={String(crawlStats.headings)} />
                         <StatChip label="Images" value={String(crawlStats.images)} warn={crawlStats.imagesMissingAlt > 0 ? `${crawlStats.imagesMissingAlt} no alt` : undefined} />
                         <StatChip label="Internal Links" value={String(crawlStats.internalLinks)} />
-                        <StatChip label="External Links" value={String(crawlStats.externalLinks)} />
-                        <StatChip label="Nav Links" value={String(crawlStats.navLinks)} />
-                        <StatChip label="Forms" value={String(crawlStats.forms)} />
-                        <StatChip label="Load Time" value={`${crawlStats.fetchTimeMs}ms`} />
                       </div>
                     )}
-
-                    {/* Generating step — pulsing bar */}
                     {step.key === 'generating' && status === 'active' && (
                       <div className="mt-2.5">
                         <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
                           <div className="h-full bg-apple-blue rounded-full animate-progress-pulse" />
                         </div>
-                        <p className="text-apple-xs text-apple-text-tertiary mt-1.5">
-                          This typically takes 30–90 seconds depending on page complexity
-                        </p>
+                        <p className="text-apple-xs text-apple-text-tertiary mt-1.5">This typically takes 30–90 seconds</p>
                       </div>
                     )}
                   </div>
@@ -557,225 +459,249 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
               );
             })}
           </div>
-
-          {/* Error state */}
           {buildStep === 'error' && buildError && (
             <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-apple-sm">
               <p className="text-apple-sm text-red-700">{buildError}</p>
-              <button
-                onClick={() => { setBuildStep('idle'); setBuildError(''); }}
-                className="mt-2 text-apple-xs text-red-600 font-medium hover:underline"
-              >
-                Dismiss
-              </button>
+              <button onClick={() => { setBuildStep('idle'); setBuildError(''); }} className="mt-2 text-apple-xs text-red-600 font-medium hover:underline">Dismiss</button>
             </div>
           )}
         </div>
       )}
 
       {/* Build complete banner */}
-      {buildStep === 'done' && displayResult && (
+      {buildStep === 'done' && (
         <div className="bg-green-50 border border-green-200 rounded-apple p-4 flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center shrink-0">
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
           </div>
           <div className="flex-1">
-            <p className="text-apple-sm font-medium text-green-800">
-              Build complete in {formatTime(elapsedSeconds)}
-            </p>
+            <p className="text-apple-sm font-medium text-green-800">Build complete in {formatTime(elapsedSeconds)}</p>
             <p className="text-apple-xs text-green-600">
-              {displayResult.recommendations?.length || 0} improvements generated
+              {savedBuilds[0]?.result?.recommendations?.length || 0} improvements generated
               {crawlStats ? ` · Analyzed ${crawlStats.wordCount.toLocaleString()} words across ${crawlStats.headings} sections` : ''}
             </p>
           </div>
         </div>
       )}
 
-      {/* Current Result */}
-      {displayResult && !isBuilding && (
-        <div className="bg-white rounded-apple border border-apple-border p-5">
-          <div className="mb-4">
-            <div className="flex items-center gap-2 mb-1">
-              <h2 className="text-base font-semibold text-apple-text">{displayResult.title}</h2>
-            </div>
-            <a href={resultPageUrl} target="_blank" rel="noopener noreferrer" className="text-apple-xs text-apple-blue hover:underline">{resultPageUrl}</a>
-            <p className="text-apple-xs text-apple-text-tertiary italic mt-1">{displayResult.metaDescription}</p>
-            <p className="text-apple-sm text-apple-text-secondary mt-2">{displayResult.summary}</p>
-          </div>
+      {/* ═══════ BUILD HISTORY CARDS ═══════ */}
+      {savedBuilds.length > 0 && (
+        <div className="space-y-4">
+          <h3 className="text-apple-sm font-semibold text-apple-text-secondary uppercase tracking-wider">
+            Build History ({savedBuilds.length} build{savedBuilds.length !== 1 ? 's' : ''})
+          </h3>
 
-          <div className="flex items-center gap-2 border-b border-apple-divider pb-3 mb-4">
-            <button
-              onClick={() => setActiveTab('changes')}
-              className={`px-3 py-1.5 rounded-apple-sm text-apple-sm font-medium transition-colors ${
-                activeTab === 'changes' ? 'bg-apple-blue text-white' : 'text-apple-text-secondary hover:bg-apple-fill-secondary'
-              }`}
-            >
-              Changes ({displayResult.recommendations?.length || 0})
-            </button>
-            <button
-              onClick={() => setActiveTab('code')}
-              className={`px-3 py-1.5 rounded-apple-sm text-apple-sm font-medium transition-colors ${
-                activeTab === 'code' ? 'bg-apple-blue text-white' : 'text-apple-text-secondary hover:bg-apple-fill-secondary'
-              }`}
-            >
-              Generated Code
-            </button>
-            <div className="ml-auto">
-              <button
-                onClick={() => setShowModify(!showModify)}
-                className={`px-3 py-1.5 rounded-apple-sm text-apple-sm font-medium transition-colors ${
-                  showModify ? 'bg-purple-600 text-white' : 'border border-purple-300 text-purple-600 hover:bg-purple-50'
-                }`}
-              >
-                Modify Page
-              </button>
-            </div>
-          </div>
+          {savedBuilds.map((build, idx) => {
+            const isExp = expandedBuildIdx === idx;
+            const tab = cardTab[idx] || 'changes';
+            const r = build.result;
+            const changesCount = r?.recommendations?.length || 0;
+            const isModifyOpen = cardModify === idx;
 
-          {showModify && (
-            <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-apple-sm space-y-3">
-              <label className="block text-apple-sm font-medium text-purple-800">
-                Describe your modifications
-              </label>
-              <textarea
-                value={modifyInput}
-                onChange={(e) => setModifyInput(e.target.value)}
-                placeholder="e.g., Change the hero headline to 'Transform Your Business Today', add a testimonials section below the pricing, make the CTA buttons green instead of blue..."
-                className="w-full h-28 px-3 py-2 rounded-apple-sm border border-purple-200 text-apple-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 resize-none bg-white"
-                disabled={isModifying}
-              />
-              {modifyError && (
-                <p className="text-apple-xs text-red-600">{modifyError}</p>
-              )}
-              <div className="flex gap-2">
-                <button
-                  onClick={handleModify}
-                  disabled={!modifyInput.trim() || isModifying}
-                  className="px-4 py-2 rounded-apple-sm bg-purple-600 text-white text-apple-sm font-medium hover:bg-purple-700 transition-colors disabled:opacity-50"
+            return (
+              <div key={build.id || idx} className="rounded-apple border border-apple-divider bg-white overflow-hidden shadow-sm">
+                {/* Card Header */}
+                <div
+                  className="p-4 flex items-center gap-4 cursor-pointer hover:bg-apple-fill-secondary/30 transition-colors"
+                  onClick={() => {
+                    setExpandedBuildIdx(isExp ? null : idx);
+                    if (!isExp) setCardModify(null);
+                  }}
                 >
-                  {isModifying ? (
-                    <span className="flex items-center gap-2">
-                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Modifying...
+                  <div className="w-10 h-10 rounded-apple-sm bg-apple-blue/10 flex items-center justify-center shrink-0">
+                    <svg className="w-5 h-5 text-apple-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-apple-sm font-medium text-apple-text truncate">{r?.title || build.page_url}</p>
+                    <p className="text-apple-xs text-apple-text-tertiary truncate mt-0.5">{build.page_url.replace(/^https?:\/\/[^/]+/, '') || '/'}</p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {changesCount > 0 && (
+                      <span className="text-apple-xs text-apple-text-tertiary">{changesCount} change{changesCount !== 1 ? 's' : ''}</span>
+                    )}
+                    <span className="text-apple-xs text-apple-text-tertiary">
+                      {new Date(build.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                     </span>
-                  ) : 'Apply Modifications'}
-                </button>
-                <button
-                  onClick={() => { setShowModify(false); setModifyInput(''); setModifyError(''); }}
-                  className="px-4 py-2 rounded-apple-sm border border-apple-border text-apple-sm text-apple-text-secondary hover:bg-apple-fill-secondary transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'changes' && (
-            <div className="space-y-3">
-              {(displayResult.recommendations || []).map((change, i) => (
-                <div key={i} className="border border-apple-border rounded-apple-sm p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <span className="text-apple-xs font-semibold text-apple-blue uppercase">{change.area}</span>
-                      <div className="mt-1.5 space-y-1">
-                        <p className="text-apple-sm text-red-600">
-                          <span className="font-medium">Before:</span> {change.current}
-                        </p>
-                        <p className="text-apple-sm text-green-600">
-                          <span className="font-medium">After:</span> {change.improved}
-                        </p>
-                        <p className="text-apple-xs text-apple-text-tertiary mt-1">{change.reason}</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => addToTasklist(change)}
-                      className="shrink-0 px-2 py-1 rounded text-apple-xs text-apple-blue hover:bg-apple-blue/5 transition-colors"
-                    >
-                      + Tasklist
-                    </button>
+                    {r?.htmlContent && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setPreviewModalIdx(idx); }}
+                        className="px-3 py-1.5 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors flex items-center gap-1.5"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        Preview
+                      </button>
+                    )}
+                    <svg className={`w-4 h-4 text-apple-text-tertiary transition-transform ${isExp ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
 
-          {activeTab === 'code' && (
-            <div className="space-y-4">
-              {displayResult.htmlContent && (
-                <div>
-                  <h3 className="text-sm font-semibold text-apple-text mb-2">HTML Content</h3>
-                  <pre className="bg-gray-900 text-gray-100 rounded-apple-sm p-4 text-xs overflow-x-auto max-h-96 overflow-y-auto whitespace-pre-wrap">
-                    {displayResult.htmlContent}
-                  </pre>
-                </div>
-              )}
-              {displayResult.schemaMarkup && (
-                <div>
-                  <h3 className="text-sm font-semibold text-apple-text mb-2">Schema Markup</h3>
-                  <pre className="bg-gray-900 text-gray-100 rounded-apple-sm p-4 text-xs overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">
-                    {displayResult.schemaMarkup}
-                  </pre>
-                </div>
-              )}
-            </div>
-          )}
+                {/* Expanded Content */}
+                {isExp && r && (
+                  <div className="border-t border-apple-divider">
+                    {/* Summary + actions */}
+                    <div className="px-5 pt-4 pb-3">
+                      {r.metaDescription && <p className="text-apple-xs text-apple-text-tertiary italic">{r.metaDescription}</p>}
+                      {r.summary && <p className="text-apple-sm text-apple-text-secondary mt-1.5">{r.summary}</p>}
+                      <div className="flex items-center gap-2 mt-3">
+                        <button
+                          onClick={() => { setCardModify(isModifyOpen ? null : idx); setModifyInput(''); setModifyError(''); }}
+                          className={`px-4 py-2 rounded-apple-sm text-apple-xs font-medium transition-colors ${
+                            isModifyOpen ? 'bg-purple-600 text-white' : 'border border-purple-300 text-purple-600 hover:bg-purple-50'
+                          }`}
+                        >
+                          Modify Page
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Modify Panel */}
+                    {isModifyOpen && (
+                      <div className="mx-5 mb-3 p-4 bg-purple-50 border border-purple-200 rounded-apple-sm space-y-3">
+                        <label className="block text-apple-sm font-medium text-purple-800">Describe your modifications</label>
+                        <textarea
+                          value={modifyInput}
+                          onChange={(e) => setModifyInput(e.target.value)}
+                          placeholder="e.g., Change the hero headline, add a testimonials section, make the CTA buttons green..."
+                          className="w-full h-28 px-3 py-2 rounded-apple-sm border border-purple-200 text-apple-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 resize-none bg-white"
+                          disabled={isModifying}
+                        />
+                        {modifyError && <p className="text-apple-xs text-red-600">{modifyError}</p>}
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleModify(build, idx)}
+                            disabled={!modifyInput.trim() || isModifying}
+                            className="px-4 py-2 rounded-apple-sm bg-purple-600 text-white text-apple-sm font-medium hover:bg-purple-700 transition-colors disabled:opacity-50"
+                          >
+                            {isModifying ? (
+                              <span className="flex items-center gap-2">
+                                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                Modifying...
+                              </span>
+                            ) : 'Apply Modifications'}
+                          </button>
+                          <button
+                            onClick={() => { setCardModify(null); setModifyInput(''); setModifyError(''); }}
+                            className="px-4 py-2 rounded-apple-sm border border-apple-border text-apple-sm text-apple-text-secondary hover:bg-apple-fill-secondary transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Changes / Code tabs */}
+                    <div className="px-5 flex items-center gap-2 border-b border-apple-divider pb-3">
+                      {(['changes', 'code'] as const).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setCardTab(prev => ({ ...prev, [idx]: t }))}
+                          className={`px-3 py-1.5 rounded-apple-sm text-apple-xs font-medium transition-colors ${
+                            tab === t ? 'bg-apple-blue text-white' : 'text-apple-text-secondary hover:bg-apple-fill-secondary'
+                          }`}
+                        >
+                          {t === 'changes' ? `Changes (${changesCount})` : 'Code'}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Tab Content */}
+                    <div className="p-5">
+                      {tab === 'changes' && (
+                        <div className="space-y-3">
+                          {(r.recommendations || []).length === 0 ? (
+                            <p className="text-apple-sm text-apple-text-tertiary py-4 text-center">No change details for this build.</p>
+                          ) : (r.recommendations || []).map((change, ci) => (
+                            <div key={ci} className="border border-apple-border rounded-apple-sm p-4">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex-1">
+                                  <span className="text-apple-xs font-semibold text-apple-blue uppercase">{change.area}</span>
+                                  <div className="mt-1.5 space-y-1">
+                                    <p className="text-apple-sm text-red-600"><span className="font-medium">Before:</span> {change.current}</p>
+                                    <p className="text-apple-sm text-green-600"><span className="font-medium">After:</span> {change.improved}</p>
+                                    <p className="text-apple-xs text-apple-text-tertiary mt-1">{change.reason}</p>
+                                  </div>
+                                </div>
+                                <button onClick={() => addToTasklist(change, build.page_url)} className="shrink-0 px-2 py-1 rounded text-apple-xs text-apple-blue hover:bg-apple-blue/5 transition-colors">+ Tasklist</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {tab === 'code' && (
+                        <div className="space-y-4">
+                          {r.htmlContent && (
+                            <div>
+                              <h3 className="text-sm font-semibold text-apple-text mb-2">HTML Content</h3>
+                              <pre className="bg-gray-900 text-gray-100 rounded-apple-sm p-4 text-xs overflow-x-auto max-h-96 overflow-y-auto whitespace-pre-wrap">{r.htmlContent}</pre>
+                            </div>
+                          )}
+                          {r.schemaMarkup && (
+                            <div>
+                              <h3 className="text-sm font-semibold text-apple-text mb-2">Schema Markup</h3>
+                              <pre className="bg-gray-900 text-gray-100 rounded-apple-sm p-4 text-xs overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">{r.schemaMarkup}</pre>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Preview */}
-      {showPreview && displayResult?.htmlContent && (
-        <div className="bg-white rounded-apple border border-apple-border p-5">
-          <h2 className="text-base font-semibold text-apple-text mb-3">Page Preview</h2>
-          <div className="border border-apple-border rounded-apple-sm bg-white overflow-hidden">
-            <div className="bg-gray-100 px-4 py-2 border-b border-apple-border flex items-center gap-2">
+      {!loadingSaved && savedBuilds.length === 0 && !isBuilding && (
+        <div className="card p-16 text-center">
+          <div className="w-16 h-16 rounded-full bg-apple-fill-secondary mx-auto mb-4 flex items-center justify-center">
+            <svg className="w-8 h-8 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+            </svg>
+          </div>
+          <h3 className="text-apple-title3 font-semibold text-apple-text mb-2">No builds yet</h3>
+          <p className="text-apple-base text-apple-text-secondary max-w-md mx-auto">
+            Enter a page URL above and click Build to generate an improved version.
+          </p>
+        </div>
+      )}
+
+      {/* Preview Modal */}
+      {previewModalIdx !== null && savedBuilds[previewModalIdx]?.result?.htmlContent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setPreviewModalIdx(null)}>
+          <div className="bg-white rounded-apple w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-gray-100 px-4 py-3 border-b border-apple-border flex items-center gap-3 shrink-0">
               <div className="flex gap-1.5">
-                <div className="w-3 h-3 rounded-full bg-red-400" />
+                <button onClick={() => setPreviewModalIdx(null)} className="w-3 h-3 rounded-full bg-red-400 hover:bg-red-500 transition-colors" />
                 <div className="w-3 h-3 rounded-full bg-amber-400" />
                 <div className="w-3 h-3 rounded-full bg-green-400" />
               </div>
               <div className="flex-1 bg-white rounded px-3 py-1 text-apple-xs text-apple-text-secondary truncate">
-                {resultPageUrl}
+                {savedBuilds[previewModalIdx].page_url}
               </div>
+              <button
+                onClick={() => setPreviewModalIdx(null)}
+                className="text-apple-text-tertiary hover:text-apple-text transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
             <iframe
-              srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${displayResult.title}</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:24px;line-height:1.6;color:#1d1d1f;max-width:900px;margin:0 auto}h1{font-size:2em;margin-bottom:0.5em}h2{font-size:1.5em;margin-top:1.5em}h3{font-size:1.2em}p{margin:0.8em 0}img{max-width:100%;height:auto}a{color:#0071e3}ul,ol{padding-left:1.5em}blockquote{border-left:3px solid #0071e3;margin:1em 0;padding:0.5em 1em;background:#f5f5f7}</style></head><body>${displayResult.htmlContent}</body></html>`}
-              className="w-full h-[600px] border-0"
+              srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${savedBuilds[previewModalIdx].result.title}</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:24px;line-height:1.6;color:#1d1d1f;max-width:900px;margin:0 auto}h1{font-size:2em;margin-bottom:0.5em}h2{font-size:1.5em;margin-top:1.5em}h3{font-size:1.2em}p{margin:0.8em 0}img{max-width:100%;height:auto}a{color:#0071e3}ul,ol{padding-left:1.5em}blockquote{border-left:3px solid #0071e3;margin:1em 0;padding:0.5em 1em;background:#f5f5f7}</style></head><body>${savedBuilds[previewModalIdx].result.htmlContent}</body></html>`}
+              className="w-full flex-1 border-0"
               title="Page Preview"
               sandbox="allow-same-origin"
             />
-          </div>
-        </div>
-      )}
-
-      {/* Previous Builds */}
-      {!loadingSaved && savedBuilds.length > 0 && (
-        <div className="bg-white rounded-apple border border-apple-border p-5">
-          <h2 className="text-base font-semibold text-apple-text mb-3">Previous Builds</h2>
-          <div className="space-y-2">
-            {savedBuilds.map((build, i) => (
-              <button
-                key={build.id || i}
-                onClick={() => viewSavedBuild(i)}
-                className={`w-full flex items-center gap-3 p-3 rounded-apple-sm border text-left transition-colors ${
-                  viewingSavedIdx === i ? 'border-apple-blue bg-apple-blue/5' : 'border-apple-border hover:bg-apple-fill-secondary'
-                }`}
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-apple-sm font-medium text-apple-text truncate">{build.result?.title || build.page_url}</p>
-                  <a href={build.page_url} target="_blank" rel="noopener noreferrer" className="text-apple-xs text-apple-blue hover:underline truncate block" onClick={e => e.stopPropagation()}>
-                    {build.page_url}
-                  </a>
-                </div>
-                <span className="text-apple-xs text-apple-text-tertiary shrink-0">
-                  {new Date(build.created_at).toLocaleDateString()}
-                </span>
-                <span className="text-apple-xs text-apple-text-tertiary shrink-0">
-                  {build.result?.recommendations?.length || 0} changes
-                </span>
-              </button>
-            ))}
           </div>
         </div>
       )}

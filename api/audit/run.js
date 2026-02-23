@@ -289,6 +289,7 @@ export default async function handler(req, res) {
 
   // 3. Save to Supabase
   const supabase = getSupabase();
+  let dbSaveError = null;
   if (supabase) {
     const row = {
       site_url: siteUrl,
@@ -302,26 +303,16 @@ export default async function handler(req, res) {
       audited_at: new Date().toISOString(),
     };
     try {
-      const { error: insertErr } = await supabase
+      const { error: upsertErr } = await supabase
         .from('page_audits')
-        .insert(row);
-
-      if (insertErr) {
-        // Unique constraint may still exist; fall back to upsert
-        const { error: upsertErr } = await supabase
-          .from('page_audits')
-          .upsert(row, { onConflict: 'site_url,page_url,audit_type' });
-        if (upsertErr) {
-          await supabase.from('page_audits')
-            .delete()
-            .eq('site_url', siteUrl)
-            .eq('page_url', pageUrl)
-            .eq('audit_type', auditType);
-          await supabase.from('page_audits').insert(row);
-        }
+        .upsert(row, { onConflict: 'site_url,page_url,audit_type' });
+      if (upsertErr) {
+        console.error('[Audit] DB save failed:', upsertErr.message);
+        dbSaveError = upsertErr.message;
       }
     } catch (err) {
       console.error('[Audit] DB save exception:', err.message);
+      dbSaveError = err.message;
     }
   }
 
