@@ -36,6 +36,7 @@ import PricingPage from './components/website/PricingPage';
 import AuthPage from './components/AuthPage';
 import ConnectionsView from './components/ConnectionsView';
 import { signOut, onAuthStateChange, authenticatedFetch } from './services/authService';
+import { supabase } from './services/supabaseClient';
 import { API_ENDPOINTS } from './config/api';
 import { PlanProvider, usePlan } from './contexts/PlanContext';
 import UpgradePrompt from './components/UpgradePrompt';
@@ -183,10 +184,34 @@ function App() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
+  const navigate = useNavigate();
+
   useEffect(() => {
+    const hasAuthInUrl =
+      window.location.hash.includes('access_token') ||
+      new URLSearchParams(window.location.search).has('code');
+
+    if (hasAuthInUrl) {
+      supabase.auth.getSession().then(({ data: { session: s } }) => {
+        if (s) {
+          setSession(s);
+          setAppState('authenticated');
+          navigate('/app', { replace: true });
+        }
+      });
+    }
+
     const { data: { subscription } } = onAuthStateChange((s) => {
       setSession(s);
-      setAppState(s ? 'authenticated' : 'unauthenticated');
+      if (s) {
+        setAppState('authenticated');
+        const loc = window.location.pathname;
+        if (loc !== '/app' && !loc.startsWith('/app')) {
+          navigate('/app', { replace: true });
+        }
+      } else {
+        setAppState('unauthenticated');
+      }
     });
     return () => subscription.unsubscribe();
   }, []);
