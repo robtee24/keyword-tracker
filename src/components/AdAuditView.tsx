@@ -3,7 +3,7 @@ import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
 
-type AdAuditType = 'google' | 'meta' | 'linkedin' | 'reddit' | 'budget' | 'performance' | 'creative' | 'attribution' | 'structure';
+type AdAuditType = 'google' | 'meta' | 'linkedin' | 'reddit' | 'tiktok' | 'budget' | 'performance' | 'creative' | 'attribution' | 'structure';
 
 interface Recommendation {
   priority: 'high' | 'medium' | 'low';

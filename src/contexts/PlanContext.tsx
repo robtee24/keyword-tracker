@@ -59,8 +59,8 @@ export function PlanProvider({ children, isAuthenticated }: { children: ReactNod
   const isLimitExhausted = useCallback((field: keyof UserPlanInfo['usage']) => {
     if (!planInfo) return false;
     const limit = plan.limits[field as keyof typeof plan.limits];
-    const current = planInfo.usage[field] || 0;
-    return isLimitReached(current, limit);
+    const current = Number(planInfo.usage[field] || 0);
+    return isLimitReached(current, Number(limit));
   }, [planInfo, plan]);
 
   const getRemaining = useCallback((field: keyof UserPlanInfo['limits']) => {
@@ -68,8 +68,8 @@ export function PlanProvider({ children, isAuthenticated }: { children: ReactNod
     const limit = plan.limits[field];
     if (limit === -1) return -1;
     if (limit === 0) return 0;
-    const usage = planInfo.usage[field as keyof typeof planInfo.usage] || 0;
-    return Math.max(0, limit - usage);
+    const usage = Number(planInfo.usage[field as keyof typeof planInfo.usage] || 0);
+    return Math.max(0, Number(limit) - usage);
   }, [planInfo, plan]);
 
   return (

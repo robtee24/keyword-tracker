@@ -41,8 +41,8 @@ export default function UpgradePrompt({ feature, limitField, title, description,
   let limit = 0;
   if (limitField && planInfo) {
     const plan = PLANS[planId];
-    current = planInfo.usage[limitField as keyof typeof planInfo.usage] || 0;
-    limit = plan.limits[limitField as keyof typeof plan.limits] || 0;
+    current = Number(planInfo.usage[limitField as keyof typeof planInfo.usage] || 0);
+    limit = Number(plan.limits[limitField as keyof typeof plan.limits] || 0);
   }
 
   const defaultTitle = feature
@@ -122,7 +122,7 @@ export function UsageBadge({ field, compact }: { field: string; compact?: boolea
   if (limit === -1) return null;
 
   const current = planInfo.usage[field as keyof typeof planInfo.usage] || 0;
-  const percent = getUsagePercent(current, limit);
+  const percent = getUsagePercent(Number(current), Number(limit));
   const isNearLimit = percent >= 80;
   const isAtLimit = percent >= 100;
 

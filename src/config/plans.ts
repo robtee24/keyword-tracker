@@ -126,7 +126,7 @@ export function getUsagePercent(current: number, limit: number): number {
 export function isFeatureLocked(planId: PlanId, feature: string): boolean {
   const plan = PLANS[planId];
   if (!plan) return true;
-  return !(plan.features as Record<string, unknown>)[feature];
+  return !(plan.features as unknown as Record<string, unknown>)[feature];
 }
 
 export function isLimitReached(current: number, limit: number): boolean {
