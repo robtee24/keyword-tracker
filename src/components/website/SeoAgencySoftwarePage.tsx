@@ -19,10 +19,10 @@ export default function SeoAgencySoftwarePage({ onOpenApp }: { onOpenApp: () => 
               Take on <span className="bg-gradient-to-r from-violet-600 to-purple-500 bg-clip-text text-transparent">10x More Clients.</span> Same Team.
             </h1>
             <p className="text-xl text-[#6E6E73] leading-relaxed mb-8">
-              SEAUTO automates the grunt work — audits, content, keyword tracking, and execution — so your team can focus on strategy and client relationships. At $30/project/month, the math changes everything.
+              SEAUTO automates the grunt work — audits, content, keyword tracking, and execution — so your team can focus on strategy and client relationships. Starting at $10/project/month, the math changes everything.
             </p>
             <button onClick={onOpenApp} className="px-8 py-3.5 rounded-full bg-[#0071E3] text-white font-semibold hover:bg-[#0077ED] transition-all shadow-lg cursor-pointer">
-              Start Your First Project Free
+              Start Your First Project
             </button>
           </div>
         </div>
@@ -87,11 +87,11 @@ export default function SeoAgencySoftwarePage({ onOpenApp }: { onOpenApp: () => 
       <section className="py-20 bg-[#FAFAFA]">
         <div className="max-w-7xl mx-auto px-6">
           <h2 className="text-3xl font-bold text-center mb-4">The Revenue Math</h2>
-          <p className="text-lg text-[#6E6E73] text-center max-w-3xl mx-auto mb-14">At $30/project/month for SEAUTO, every additional client is almost pure profit.</p>
+          <p className="text-lg text-[#6E6E73] text-center max-w-3xl mx-auto mb-14">Starting at $10/project/month for SEAUTO, every additional client is almost pure profit.</p>
           <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto text-center">
             {[
               { label: 'You charge per client', val: '$1,500-5,000/mo', sub: 'Industry-standard SEO retainer' },
-              { label: 'SEAUTO costs you', val: '$30/client/mo', sub: 'Plus plan, per project' },
+              { label: 'SEAUTO costs you', val: '$10-$30/client/mo', sub: 'Base or Plus plan, per project' },
               { label: 'Your margin per client', val: '97-99%', sub: 'Near-total automation' },
             ].map((r) => (
               <div key={r.label} className="bg-white rounded-2xl p-7 border border-gray-100">
@@ -126,7 +126,7 @@ export default function SeoAgencySoftwarePage({ onOpenApp }: { onOpenApp: () => 
         { to: '/features/ai-content-generator', label: 'AI Content Generator', desc: 'Automated content creation for every client, every month.' },
         { to: '/features/keyword-rank-tracker', label: 'Keyword Rank Tracker', desc: 'Track keywords across all client projects in one platform.' },
         { to: '/compare/seauto-vs-hiring', label: 'SEAUTO vs Hiring', desc: 'See how SEAUTO compares to expanding your team.' },
-        { to: '/pricing', label: 'View Pricing', desc: '$30/project/month — designed for agency economics.' },
+        { to: '/pricing', label: 'View Pricing', desc: 'Starting at $10/project/month — designed for agency economics.' },
         { to: '/solutions/small-business-seo', label: 'Small Business SEO', desc: 'Many of your clients are small businesses — show them the value.' },
       ]} />
     </WebsiteLayout>

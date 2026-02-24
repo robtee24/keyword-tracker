@@ -22,7 +22,7 @@ export default function AiContentGeneratorPage({ onOpenApp }: { onOpenApp: () =>
               SEAUTO's content engine doesn't just write — it strategizes. Every blog post is built on proven marketing frameworks, targeted at high-opportunity keywords, and optimized for both search engines and human readers.
             </p>
             <button onClick={onOpenApp} className="px-8 py-3.5 rounded-full bg-[#0071E3] text-white font-semibold hover:bg-[#0077ED] transition-all shadow-lg cursor-pointer">
-              Generate Your First Post Free
+              Generate Your First Post
             </button>
           </div>
         </div>
@@ -99,7 +99,7 @@ export default function AiContentGeneratorPage({ onOpenApp }: { onOpenApp: () =>
         { to: '/features/keyword-rank-tracker', label: 'Keyword Rank Tracker', desc: 'Track the keywords your content targets and monitor ranking improvements over time.' },
         { to: '/features/seo-audit-tool', label: 'SEO Audit Tool', desc: 'Audit your existing content for technical SEO, content quality, and conversion optimization.' },
         { to: '/solutions/small-business-seo', label: 'Small Business SEO', desc: 'Learn how AI content generation helps small businesses compete without a writing team.' },
-        { to: '/pricing', label: 'View Pricing', desc: 'Free plan includes 5 blog posts per month. Plus and Managed plans include more.' },
+        { to: '/pricing', label: 'View Pricing', desc: 'Base plan includes 5 blog posts/month. Plus includes 30 and Managed Digital includes 100.' },
         { to: '/resources/automated-seo', label: 'Automated SEO Guide', desc: 'How content generation fits into a fully automated SEO workflow.' },
       ]} />
     </WebsiteLayout>

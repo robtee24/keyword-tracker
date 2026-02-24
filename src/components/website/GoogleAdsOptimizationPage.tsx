@@ -21,7 +21,7 @@ export default function GoogleAdsOptimizationPage({ onOpenApp }: { onOpenApp: ()
               SEAUTO generates conversion-optimized keyword lists from your organic ranking data and AI analysis, then audits your ad accounts across platforms to eliminate waste and maximize ROAS.
             </p>
             <button onClick={onOpenApp} className="px-8 py-3.5 rounded-full bg-[#0071E3] text-white font-semibold hover:bg-[#0077ED] transition-all shadow-lg cursor-pointer">
-              Generate Keywords Free
+              Generate Keywords Now
             </button>
           </div>
         </div>
@@ -106,7 +106,7 @@ export default function GoogleAdsOptimizationPage({ onOpenApp }: { onOpenApp: ()
         { to: '/features/seo-audit-tool', label: 'SEO Audit Tool', desc: 'Optimize your landing pages for better Quality Scores and conversions.' },
         { to: '/features/ai-website-builder', label: 'AI Website Builder', desc: 'Build high-converting landing pages for your ad campaigns.' },
         { to: '/solutions/seo-agency-software', label: 'For SEO Agencies', desc: 'Offer PPC management alongside SEO for your agency clients.' },
-        { to: '/pricing', label: 'View Pricing', desc: 'Advertising features are included in the Plus plan and above.' },
+        { to: '/pricing', label: 'View Pricing', desc: 'Advertising features are included in the Managed Digital plan.' },
         { to: '/resources/automated-seo', label: 'Automated SEO Guide', desc: 'How organic and paid search work together in an automated strategy.' },
       ]} />
     </WebsiteLayout>

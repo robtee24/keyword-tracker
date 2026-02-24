@@ -21,7 +21,7 @@ export default function AutomatedSeoPage({ onOpenApp }: { onOpenApp: () => void 
               Automated SEO uses artificial intelligence to perform the tasks traditionally done by SEO specialists, content writers, and web developers — faster, more consistently, and at a fraction of the cost. Here's how it works and why it's the future of digital marketing.
             </p>
             <button onClick={onOpenApp} className="px-8 py-3.5 rounded-full bg-[#0071E3] text-white font-semibold hover:bg-[#0077ED] transition-all shadow-lg cursor-pointer">
-              Try Automated SEO Free
+              Try Automated SEO
             </button>
           </div>
         </div>
@@ -108,7 +108,7 @@ export default function AutomatedSeoPage({ onOpenApp }: { onOpenApp: () => void 
         { to: '/features/ai-content-generator', label: 'AI Content Generator', desc: 'Automated content creation using proven marketing frameworks.' },
         { to: '/features/ai-website-builder', label: 'AI Website Builder', desc: 'Automated page building and optimization.' },
         { to: '/solutions/small-business-seo', label: 'Small Business SEO', desc: 'How automation makes expert SEO accessible to every business.' },
-        { to: '/pricing', label: 'View Pricing', desc: 'Start automating for free, upgrade as you grow.' },
+        { to: '/pricing', label: 'View Pricing', desc: 'Start automating at $10/project/month, upgrade as you grow.' },
       ]} />
     </WebsiteLayout>
   );

@@ -49,7 +49,7 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
   base: {
     id: 'base',
     name: 'Base',
-    price: 0,
+    price: 10,
     limits: {
       projects: 1,
       page_audits: 5,

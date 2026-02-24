@@ -22,7 +22,7 @@ export default function KeywordRankTrackerPage({ onOpenApp }: { onOpenApp: () =>
               SEAUTO doesn't just track rankings — it analyzes search intent, detects new and lost keywords, groups them strategically, and generates AI-powered recommendations to improve every position.
             </p>
             <button onClick={onOpenApp} className="px-8 py-3.5 rounded-full bg-[#0071E3] text-white font-semibold hover:bg-[#0077ED] transition-all shadow-lg cursor-pointer">
-              Start Tracking for Free
+              Start Tracking Keywords
             </button>
           </div>
         </div>
@@ -119,7 +119,7 @@ export default function KeywordRankTrackerPage({ onOpenApp }: { onOpenApp: () =>
         { to: '/features/seo-audit-tool', label: 'SEO Audit Tool', desc: 'Run 6 specialized audits and get exact code-level fixes for every page.' },
         { to: '/features/ai-content-generator', label: 'AI Content Generator', desc: 'Generate SEO-optimized blog posts targeting your highest-opportunity keywords.' },
         { to: '/features/google-ads-optimization', label: 'Google Ads Optimization', desc: 'Turn your organic keyword data into high-converting ad campaigns.' },
-        { to: '/pricing', label: 'View Pricing', desc: 'Start tracking keywords for free. Upgrade for unlimited scans and AI recommendations.' },
+        { to: '/pricing', label: 'View Pricing', desc: 'Keyword tracking included on all plans. Base includes 50 scans/month, Plus includes 100.' },
         { to: '/resources/automated-seo', label: 'Automated SEO Guide', desc: 'Learn how keyword tracking fits into a fully automated SEO strategy.' },
         { to: '/solutions/small-business-seo', label: 'Small Business SEO', desc: 'How SEAUTO helps small businesses compete with big-budget competitors.' },
       ]} />

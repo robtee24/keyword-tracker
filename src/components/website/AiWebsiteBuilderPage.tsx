@@ -21,7 +21,7 @@ export default function AiWebsiteBuilderPage({ onOpenApp }: { onOpenApp: () => v
               Not a generic page builder. SEAUTO's AI analyzes your existing site's design, applies 115+ marketing frameworks, and generates pages optimized for SEO, conversions, and user experience — matching your brand perfectly.
             </p>
             <button onClick={onOpenApp} className="px-8 py-3.5 rounded-full bg-[#0071E3] text-white font-semibold hover:bg-[#0077ED] transition-all shadow-lg cursor-pointer">
-              Try the Builder Free
+              Try the Builder
             </button>
           </div>
         </div>
@@ -118,7 +118,7 @@ export default function AiWebsiteBuilderPage({ onOpenApp }: { onOpenApp: () => v
         { to: '/features/keyword-rank-tracker', label: 'Keyword Rank Tracker', desc: 'Track how rebuilt pages improve in search rankings over time.' },
         { to: '/solutions/seo-agency-software', label: 'For SEO Agencies', desc: 'Build pages for every client, matching each site\'s unique design.' },
         { to: '/solutions/small-business-seo', label: 'Small Business SEO', desc: 'Build professional pages without hiring a web developer.' },
-        { to: '/pricing', label: 'View Pricing', desc: 'Free plan includes 1 page build. Plus includes 5/month.' },
+        { to: '/pricing', label: 'View Pricing', desc: 'Page builds available on the Managed Digital plan — 30/month.' },
       ]} />
     </WebsiteLayout>
   );

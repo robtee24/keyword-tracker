@@ -18,10 +18,10 @@ export default function SeautoVsHiringPage({ onOpenApp }: { onOpenApp: () => voi
               SEAUTO vs Hiring: <span className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">The Real Numbers</span>
             </h1>
             <p className="text-xl text-[#6E6E73] leading-relaxed mb-8">
-              A fully staffed marketing department costs $15,000-30,000/month. An SEO agency charges $2,000-10,000/month. SEAUTO starts at $0 and the full platform is $200/month. Here's exactly what you get at each price point.
+              A fully staffed marketing department costs $15,000-30,000/month. An SEO agency charges $2,000-10,000/month. SEAUTO starts at $10/project/month and the full platform is $200/project/month. Here's exactly what you get at each price point.
             </p>
             <button onClick={onOpenApp} className="px-8 py-3.5 rounded-full bg-[#0071E3] text-white font-semibold hover:bg-[#0077ED] transition-all shadow-lg cursor-pointer">
-              Try SEAUTO Free
+              Try SEAUTO
             </button>
           </div>
         </div>
@@ -49,10 +49,10 @@ export default function SeautoVsHiringPage({ onOpenApp }: { onOpenApp: () => voi
                   ['Compliance Auditor', '$2,000+ (one-time)', '$1,500+ (one-time)', 'Included'],
                   ['PPC Manager', '$4,000-7,000/mo', '$1,000-3,000/mo', 'Included'],
                   ['Data Analyst', '$4,000-7,000/mo', 'Limited', 'Included'],
-                  ['Total Monthly Cost', '$24,000-45,000', '$7,000-16,000', '$0 - $200'],
-                  ['Annual Cost', '$288,000-540,000', '$84,000-192,000', '$0 - $2,400'],
+                  ['Total Monthly Cost', '$24,000-45,000', '$7,000-16,000', '$10 - $200'],
+                  ['Annual Cost', '$288,000-540,000', '$84,000-192,000', '$120 - $2,400'],
                   ['Time to Results', '3-6 months to hire + ramp', '1-3 months onboarding', 'Immediate'],
-                  ['Scalability', 'Hire more people', 'Pay more retainer', 'Add projects ($30 each)'],
+                  ['Scalability', 'Hire more people', 'Pay more retainer', 'Add projects ($10-$30 each)'],
                 ].map(([label, inhouse, agency, seauto], i) => (
                   <tr key={i} className={`border-b border-gray-100 ${i >= 6 ? 'bg-gray-50 font-medium' : ''}`}>
                     <td className="py-3 px-4 text-[#1D1D1F]">{label}</td>
@@ -108,7 +108,7 @@ export default function SeautoVsHiringPage({ onOpenApp }: { onOpenApp: () => voi
       <section className="py-20">
         <div className="max-w-7xl mx-auto px-6">
           <h2 className="text-3xl font-bold text-center mb-4">The ROI Is Overwhelming</h2>
-          <p className="text-lg text-[#6E6E73] text-center max-w-3xl mx-auto mb-14">Even at the Managed Digital plan ($200/month), SEAUTO costs less than a single day of an SEO specialist's salary.</p>
+          <p className="text-lg text-[#6E6E73] text-center max-w-3xl mx-auto mb-14">Even at the Managed Digital plan ($200/project/month), SEAUTO costs less than a single day of an SEO specialist's salary.</p>
           <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto text-center">
             {[
               { metric: '99%', label: 'Cost Reduction', desc: 'Compared to hiring a full marketing team' },
@@ -151,7 +151,7 @@ export default function SeautoVsHiringPage({ onOpenApp }: { onOpenApp: () => voi
       <InternalLinks links={[
         { to: '/solutions/small-business-seo', label: 'Small Business SEO', desc: 'How SEAUTO replaces an entire marketing team for small businesses.' },
         { to: '/solutions/seo-agency-software', label: 'For SEO Agencies', desc: 'Handle 10x more clients without growing your team.' },
-        { to: '/pricing', label: 'View Pricing', desc: 'Free, Plus ($30/mo), and Managed Digital ($200/mo) plans.' },
+        { to: '/pricing', label: 'View Pricing', desc: 'Base ($10/mo), Plus ($30/mo), and Managed Digital ($200/mo) plans.' },
         { to: '/features/seo-audit-tool', label: 'SEO Audit Tool', desc: 'What an SEO specialist does manually — automated.' },
         { to: '/features/ai-content-generator', label: 'AI Content Generator', desc: 'What a content writer does manually — automated.' },
         { to: '/resources/automated-seo', label: 'Automated SEO Guide', desc: 'Deep dive into how automated SEO works.' },

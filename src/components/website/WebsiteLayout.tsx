@@ -48,7 +48,7 @@ export default function WebsiteLayout({ children, onOpenApp, title, description 
               Login
             </button>
             <button onClick={onOpenApp} className="px-5 py-2 rounded-full bg-[#0071E3] text-white text-sm font-semibold hover:bg-[#0077ED] transition-all shadow-sm hover:shadow-md cursor-pointer">
-              Try Free
+              Get Started
             </button>
             <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="lg:hidden p-2 cursor-pointer">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -115,9 +115,9 @@ export default function WebsiteLayout({ children, onOpenApp, title, description 
 
             <div>
               <h4 className="text-sm font-semibold mb-4 uppercase tracking-wider text-[#86868B]">Get Started</h4>
-              <p className="text-sm text-[#6E6E73] mb-4">Create your free account and start automating your marketing today.</p>
+              <p className="text-sm text-[#6E6E73] mb-4">Create your account and start automating your marketing today.</p>
               <button onClick={onOpenApp} className="px-5 py-2 rounded-full bg-[#0071E3] text-white text-sm font-semibold hover:bg-[#0077ED] transition-colors cursor-pointer">
-                Try Free
+                Get Started
               </button>
             </div>
           </div>
@@ -145,9 +145,9 @@ export function SectionCTA({ onOpenApp }: { onOpenApp: () => void }) {
       </div>
       <div className="relative max-w-3xl mx-auto px-6 text-center">
         <h2 className="text-3xl lg:text-4xl font-bold text-white mb-5">Ready to Automate Your Marketing?</h2>
-        <p className="text-lg text-white/80 mb-8 max-w-xl mx-auto">Create your free account in 30 seconds. No credit card required.</p>
+        <p className="text-lg text-white/80 mb-8 max-w-xl mx-auto">Create your account in 30 seconds and start automating immediately.</p>
         <button onClick={onOpenApp} className="px-10 py-4 rounded-full bg-white text-[#0071E3] text-base font-bold hover:bg-gray-50 transition-all shadow-xl hover:shadow-2xl hover:-translate-y-0.5 cursor-pointer">
-          Create Free Account
+          Create Account
         </button>
       </div>
     </section>

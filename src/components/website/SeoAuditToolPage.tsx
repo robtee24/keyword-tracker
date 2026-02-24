@@ -5,7 +5,7 @@ export default function SeoAuditToolPage({ onOpenApp }: { onOpenApp: () => void 
   return (
     <WebsiteLayout
       onOpenApp={onOpenApp}
-      title="Free SEO Audit Tool — 6 Specialized Website Audits | SEAUTO"
+      title="SEO Audit Tool — 6 Specialized Website Audits | SEAUTO"
       description="Run comprehensive SEO audits across your entire website. 6 specialized audit types: technical SEO, content, AEO, schema, compliance, and page speed. Get exact fixes, not vague suggestions."
     >
       {/* Hero */}
@@ -23,7 +23,7 @@ export default function SeoAuditToolPage({ onOpenApp }: { onOpenApp: () => void 
             </p>
             <div className="flex flex-wrap gap-4">
               <button onClick={onOpenApp} className="px-8 py-3.5 rounded-full bg-[#0071E3] text-white font-semibold hover:bg-[#0077ED] transition-all shadow-lg cursor-pointer">
-                Run Your Free Audit
+                Run Your First Audit
               </button>
               <Link to="/pricing" className="px-8 py-3.5 rounded-full border border-gray-200 font-semibold text-[#1D1D1F] hover:bg-gray-50 transition-all">
                 View Pricing

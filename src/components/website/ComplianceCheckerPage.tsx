@@ -22,7 +22,7 @@ export default function ComplianceCheckerPage({ onOpenApp }: { onOpenApp: () => 
               Non-compliance isn't just a legal risk — it hurts your rankings, alienates users, and opens you to lawsuits. SEAUTO checks every page against 10 critical standards and provides exact code fixes to pass each one.
             </p>
             <button onClick={onOpenApp} className="px-8 py-3.5 rounded-full bg-[#0071E3] text-white font-semibold hover:bg-[#0077ED] transition-all shadow-lg cursor-pointer">
-              Check Your Compliance Free
+              Check Your Compliance
             </button>
           </div>
         </div>
@@ -124,7 +124,7 @@ export default function ComplianceCheckerPage({ onOpenApp }: { onOpenApp: () => 
         { to: '/solutions/small-business-seo', label: 'Small Business SEO', desc: 'Small businesses face the same compliance requirements — SEAUTO makes it manageable.' },
         { to: '/solutions/seo-agency-software', label: 'For SEO Agencies', desc: 'Offer compliance auditing as a service to your clients with automated reporting.' },
         { to: '/features/keyword-rank-tracker', label: 'Keyword Rank Tracker', desc: 'Better compliance often leads to better rankings — track the improvement.' },
-        { to: '/pricing', label: 'View Pricing', desc: 'Compliance auditing is included in all paid plans.' },
+        { to: '/pricing', label: 'View Pricing', desc: 'Compliance auditing available on Plus and Managed Digital plans.' },
       ]} />
     </WebsiteLayout>
   );

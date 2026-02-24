@@ -19,11 +19,11 @@ export default function SmallBusinessSeoPage({ onOpenApp }: { onOpenApp: () => v
               Expert SEO Without the <span className="bg-gradient-to-r from-emerald-500 to-teal-500 bg-clip-text text-transparent">Expert Price Tag</span>
             </h1>
             <p className="text-xl text-[#6E6E73] leading-relaxed mb-8">
-              You don't need a $10,000/month marketing agency or a full-time SEO hire. SEAUTO gives you the same expertise, the same tools, and the same results — powered by AI, starting at $0.
+              You don't need a $10,000/month marketing agency or a full-time SEO hire. SEAUTO gives you the same expertise, the same tools, and the same results — powered by AI, starting at $10/project/month.
             </p>
             <div className="flex flex-wrap gap-4">
               <button onClick={onOpenApp} className="px-8 py-3.5 rounded-full bg-[#0071E3] text-white font-semibold hover:bg-[#0077ED] transition-all shadow-lg cursor-pointer">
-                Start Free — No Credit Card
+                Get Started — $10/month
               </button>
               <Link to="/compare/seauto-vs-hiring" className="px-8 py-3.5 rounded-full border border-gray-200 font-semibold text-[#1D1D1F] hover:bg-gray-50 transition-all">
                 See the Cost Comparison
@@ -100,7 +100,7 @@ export default function SmallBusinessSeoPage({ onOpenApp }: { onOpenApp: () => v
             ))}
           </div>
           <p className="text-center mt-8 text-lg">
-            <span className="font-bold text-[#1D1D1F]">SEAUTO starts at $0.</span> <span className="text-[#6E6E73]">The Plus plan is $30/month. </span>
+            <span className="font-bold text-[#1D1D1F]">SEAUTO starts at $10/project/month.</span> <span className="text-[#6E6E73]">The Plus plan is $30/project/month. </span>
             <Link to="/pricing" className="text-[#0071E3] font-medium hover:underline">See all plans &rarr;</Link>
           </p>
         </div>
@@ -113,7 +113,7 @@ export default function SmallBusinessSeoPage({ onOpenApp }: { onOpenApp: () => v
         { to: '/features/seo-audit-tool', label: 'SEO Audit Tool', desc: 'Run a comprehensive audit and get exact fixes for every issue.' },
         { to: '/features/ai-content-generator', label: 'AI Content Generator', desc: 'Write blog posts that rank without hiring a content writer.' },
         { to: '/features/compliance-checker', label: 'Compliance Checker', desc: 'Stay ADA and GDPR compliant without expensive consultants.' },
-        { to: '/pricing', label: 'View Pricing', desc: 'Start free. Upgrade when your business grows.' },
+        { to: '/pricing', label: 'View Pricing', desc: 'Start with the Base plan. Upgrade when your business grows.' },
         { to: '/resources/automated-seo', label: 'Automated SEO Guide', desc: 'How automated SEO works and why it\'s perfect for small businesses.' },
       ]} />
     </WebsiteLayout>

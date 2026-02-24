@@ -35,7 +35,7 @@ export default function LandingPage({ onOpenApp }: LandingPageProps) {
               Login
             </button>
             <button onClick={onOpenApp} className="px-5 py-2 rounded-full bg-[#0071E3] text-white text-sm font-semibold hover:bg-[#0077ED] transition-all shadow-sm hover:shadow-md cursor-pointer">
-              Try Free
+              Get Started
             </button>
             <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="lg:hidden p-2 cursor-pointer">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -81,7 +81,7 @@ export default function LandingPage({ onOpenApp }: LandingPageProps) {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
             <button onClick={onOpenApp} className="px-8 py-3.5 rounded-full bg-[#0071E3] text-white text-base font-semibold hover:bg-[#0077ED] transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 cursor-pointer">
-              Create Free Account
+              Create Account
             </button>
             <button onClick={() => scrollTo('features')} className="px-8 py-3.5 rounded-full border border-gray-200 text-base font-semibold text-[#1D1D1F] hover:bg-gray-50 transition-all cursor-pointer">
               See All Features
@@ -237,28 +237,28 @@ export default function LandingPage({ onOpenApp }: LandingPageProps) {
       <section id="pricing" className="py-24">
         <div className="max-w-7xl mx-auto px-6">
           <h2 className="text-3xl lg:text-4xl font-bold text-center mb-4">Simple, Transparent Pricing</h2>
-          <p className="text-lg text-[#6E6E73] text-center max-w-2xl mx-auto mb-14">Start free. Upgrade when you're ready. Per-project pricing so you only pay for what you use.</p>
+          <p className="text-lg text-[#6E6E73] text-center max-w-2xl mx-auto mb-14">Per-project pricing so you only pay for what you use. No contracts, cancel anytime.</p>
 
           <div className="grid lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
-            {/* Free */}
+            {/* Base */}
             <PricingCard
-              name="Free"
-              price="$0"
-              period=""
+              name="Base"
+              price="$10"
+              period="/ project / month"
               description="Perfect for getting started and exploring what SEAUTO can do."
               features={[
                 { text: '1 project', included: true },
-                { text: '5 page audits / month', included: true, note: 'Specific page & type only' },
-                { text: '100 keyword tracking', included: true },
+                { text: '5 page audits / month', included: true, note: 'SEO & Content audits only' },
+                { text: 'Keyword tracking', included: true },
                 { text: 'Weekly keyword refresh', included: true },
-                { text: '20 keyword scans / month', included: true },
+                { text: '50 keyword scans / month', included: true },
                 { text: '5 blog posts / month', included: true },
-                { text: '1 web page build', included: true },
+                { text: 'Page builds', included: false },
                 { text: 'Full site audit', included: false },
                 { text: 'AI bot automation', included: false },
                 { text: 'Advertising features', included: false },
               ]}
-              cta="Get Started Free"
+              cta="Get Started"
               onCta={onOpenApp}
               highlighted={false}
             />
@@ -271,17 +271,17 @@ export default function LandingPage({ onOpenApp }: LandingPageProps) {
               description="For businesses serious about growth. Everything you need to compete."
               features={[
                 { text: 'Unlimited projects', included: true },
-                { text: '20 page audits / month', included: true, note: 'All types including full audit' },
-                { text: 'All keyword tracking', included: true },
+                { text: '50 page audits / month', included: true, note: 'All 6 audit types including full site audit' },
+                { text: 'Keyword tracking', included: true },
                 { text: 'Daily keyword refresh', included: true },
-                { text: '50 keyword scans / month', included: true },
-                { text: '20 blog posts / month', included: true },
-                { text: '5 web page builds / month', included: true },
+                { text: '100 keyword scans / month', included: true },
+                { text: '30 blog posts / month', included: true },
                 { text: 'Full site audit', included: true },
+                { text: 'Page builds', included: false },
                 { text: 'AI bot automation', included: false },
-                { text: 'Advertising features', included: true },
+                { text: 'Advertising features', included: false },
               ]}
-              cta="Start Plus Trial"
+              cta="Start Plus"
               onCta={onOpenApp}
               highlighted={true}
             />
@@ -294,12 +294,12 @@ export default function LandingPage({ onOpenApp }: LandingPageProps) {
               description="Fully managed, fully automated. Your entire marketing department in one platform."
               features={[
                 { text: 'Unlimited projects', included: true },
-                { text: 'Unlimited page audits', included: true },
-                { text: 'All keyword tracking', included: true },
+                { text: 'Unlimited page audits', included: true, note: 'All 6 audit types' },
+                { text: 'Keyword tracking', included: true },
                 { text: 'Real-time keyword refresh', included: true },
-                { text: 'Unlimited keyword scans', included: true },
-                { text: 'Unlimited blog posts', included: true },
-                { text: 'Unlimited page builds', included: true },
+                { text: '200 keyword scans / month', included: true },
+                { text: '100 blog posts / month', included: true },
+                { text: '30 page builds / month', included: true },
                 { text: 'Full site audit', included: true },
                 { text: 'AI bot automation', included: true, note: 'Auto-executes all tasks' },
                 { text: 'Full advertising suite', included: true },
@@ -323,10 +323,10 @@ export default function LandingPage({ onOpenApp }: LandingPageProps) {
         <div className="relative max-w-3xl mx-auto px-6 text-center">
           <h2 className="text-3xl lg:text-5xl font-bold text-white mb-6">Stop Paying for Marketing Teams.{'\n'}Start Automating.</h2>
           <p className="text-lg text-white/80 mb-10 max-w-xl mx-auto">
-            Join businesses and agencies who've replaced $10,000/month marketing departments with SEAUTO. Create your free account in 30 seconds.
+            Join businesses and agencies who've replaced $10,000/month marketing departments with SEAUTO. Create your account in 30 seconds.
           </p>
           <button onClick={onOpenApp} className="px-10 py-4 rounded-full bg-white text-[#0071E3] text-base font-bold hover:bg-gray-50 transition-all shadow-xl hover:shadow-2xl hover:-translate-y-0.5 cursor-pointer">
-            Create Free Account
+            Create Account
           </button>
         </div>
       </section>
@@ -340,9 +340,9 @@ export default function LandingPage({ onOpenApp }: LandingPageProps) {
             {[
               { q: 'How does SEAUTO replace a marketing team?', a: 'SEAUTO automates the work of SEO specialists, content writers, web developers, compliance officers, and advertising managers. It audits your entire site, generates specific recommendations with exact code changes, writes and publishes blog posts, builds new pages, and (with Managed Digital) executes everything automatically through an AI bot.' },
               { q: 'What is the AI bot and how does it work?', a: 'The AI bot (available on the Managed Digital plan) connects to your website platform — WordPress, Shopify, Webflow, or any custom CMS. It reads the task list of recommendations and automatically implements them: updating meta tags, fixing accessibility issues, publishing blog posts, deploying new pages, and more. Every change is logged in the activity feed.' },
-              { q: 'Can SEO agencies use this for multiple clients?', a: 'Absolutely — that\'s our ideal customer. Each client is a separate project. On the Plus plan at $30/project/month, you can manage unlimited clients. Agencies typically report handling 10x more clients with the same team size after switching to SEAUTO.' },
+              { q: 'Can SEO agencies use this for multiple clients?', a: 'Absolutely — that\'s our ideal customer. Each client is a separate project. On the Plus plan at $30/project/month, you can manage unlimited projects. Agencies typically report handling 10x more clients with the same team size after switching to SEAUTO.' },
               { q: 'How are the audits different from other SEO tools?', a: 'Most SEO tools give you vague suggestions like "improve your title tag." SEAUTO gives you the exact replacement text, the specific HTML to add, the precise header configuration — down to copy-paste code. We run 6 specialized audit types (SEO, Content, AEO, Schema, Compliance, Speed) and check against 10 compliance standards with pass/fail verdicts.' },
-              { q: 'What does "per project" pricing mean?', a: 'Each website you add to SEAUTO is a project. If you manage 3 client websites, that\'s 3 projects. The Free plan includes 1 project, and paid plans are priced per project per month.' },
+              { q: 'What does "per project" pricing mean?', a: 'Each website you add to SEAUTO is a project. If you manage 3 client websites, that\'s 3 projects. The Base plan includes 1 project, and higher plans are priced per project per month with unlimited projects.' },
               { q: 'Is there a contract or commitment?', a: 'No contracts, no commitments. Cancel anytime. Your data and audit history are preserved even if you downgrade.' },
             ].map((faq, i) => {
               const isOpen = expandedFaq === i;
@@ -400,9 +400,9 @@ export default function LandingPage({ onOpenApp }: LandingPageProps) {
 
             <div>
               <h4 className="text-sm font-semibold mb-4 uppercase tracking-wider text-[#86868B]">Get Started</h4>
-              <p className="text-sm text-[#6E6E73] mb-4">Create your free account and start automating your marketing today.</p>
+              <p className="text-sm text-[#6E6E73] mb-4">Create your account and start automating your marketing today.</p>
               <button onClick={onOpenApp} className="px-5 py-2 rounded-full bg-[#0071E3] text-white text-sm font-semibold hover:bg-[#0077ED] transition-colors cursor-pointer">
-                Try Free
+                Get Started
               </button>
             </div>
           </div>
