@@ -1,5 +1,6 @@
-import { API_CONFIG, getAccessTokenFromRequest } from '../../_config.js';
+import { API_CONFIG, authenticateRequest } from '../../_config.js';
 import { getSupabase } from '../../db.js';
+import { getServiceToken } from '../../_connections.js';
 
 function todayUTC() {
   return new Date().toISOString().slice(0, 10);
@@ -7,13 +8,6 @@ function todayUTC() {
 
 /**
  * Batch-fetch keyword positions across 3 time windows for alert detection.
- *
- * Returns average position per keyword for:
- *   - period1: 12–6 months ago
- *   - period2: 6–3 months ago
- *   - period3: last 3 months (recent)
- *
- * The frontend uses these to compute Fire / Smoking / Hot alerts.
  */
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -21,14 +15,19 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const accessToken = getAccessTokenFromRequest(req);
-  if (!accessToken) {
+  const auth = await authenticateRequest(req);
+  if (!auth) {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
   const { siteUrl } = req.body || {};
   if (!siteUrl) {
     return res.status(400).json({ error: 'siteUrl is required' });
+  }
+
+  const accessToken = await getServiceToken(auth.user.id, siteUrl, 'google_search_console');
+  if (!accessToken) {
+    return res.status(401).json({ error: 'Google Search Console not connected for this project' });
   }
 
   // Check Supabase cache (valid for the current calendar day)

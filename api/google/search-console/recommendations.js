@@ -1,4 +1,4 @@
-import { getAccessTokenFromRequest } from '../../_config.js';
+import { authenticateRequest } from '../../_config.js';
 import { getSupabase } from '../../db.js';
 
 export const config = {
@@ -19,8 +19,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const accessToken = getAccessTokenFromRequest(req);
-  if (!accessToken) {
+  const auth = await authenticateRequest(req);
+  if (!auth) {
     return res.status(401).json({ error: 'Authentication required' });
   }
 

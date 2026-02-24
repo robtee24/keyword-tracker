@@ -1,110 +1,79 @@
-import { API_ENDPOINTS } from '../config/api';
+import { supabase } from './supabaseClient';
+import type { Session, User } from '@supabase/supabase-js';
 
-const STORAGE_KEYS = {
-  accessToken: 'gsc_access_token',
-  refreshToken: 'gsc_refresh_token',
-  tokenExpiry: 'gsc_token_expiry',
-} as const;
-
-/**
- * Store tokens received from the OAuth callback.
- */
-export function setTokens(accessToken: string, refreshToken: string, expiresIn: number): void {
-  localStorage.setItem(STORAGE_KEYS.accessToken, accessToken);
-  if (refreshToken) {
-    localStorage.setItem(STORAGE_KEYS.refreshToken, refreshToken);
-  }
-  const expiryTime = Date.now() + expiresIn * 1000;
-  localStorage.setItem(STORAGE_KEYS.tokenExpiry, expiryTime.toString());
+export async function signIn(email: string, password: string) {
+  return supabase.auth.signInWithPassword({ email, password });
 }
 
-/**
- * Clear all stored tokens (sign out).
- */
-export function clearTokens(): void {
-  localStorage.removeItem(STORAGE_KEYS.accessToken);
-  localStorage.removeItem(STORAGE_KEYS.refreshToken);
-  localStorage.removeItem(STORAGE_KEYS.tokenExpiry);
-  localStorage.removeItem('gsc_selected_site');
+export async function signUp(email: string, password: string) {
+  return supabase.auth.signUp({ email, password });
 }
 
-/**
- * Check if the user has stored credentials.
- */
+export async function signInWithGoogle() {
+  return supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: window.location.origin + '/app' },
+  });
+}
+
+export async function signInWithMicrosoft() {
+  return supabase.auth.signInWithOAuth({
+    provider: 'azure',
+    options: { redirectTo: window.location.origin + '/app' },
+  });
+}
+
+export async function signOut() {
+  return supabase.auth.signOut();
+}
+
+export async function getSession(): Promise<Session | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session;
+}
+
+export async function getUser(): Promise<User | null> {
+  const { data } = await supabase.auth.getUser();
+  return data.user;
+}
+
 export function isAuthenticated(): boolean {
-  return !!localStorage.getItem(STORAGE_KEYS.refreshToken);
+  // Synchronous check; for real-time session state, use onAuthStateChange
+  return false;
 }
 
-/**
- * Get a valid access token.
- * If the current token is expired, refreshes it using the server-side refresh endpoint.
- */
-export async function getAccessToken(): Promise<string | null> {
-  const accessToken = localStorage.getItem(STORAGE_KEYS.accessToken);
-  const refreshToken = localStorage.getItem(STORAGE_KEYS.refreshToken);
-  const expiryStr = localStorage.getItem(STORAGE_KEYS.tokenExpiry);
-
-  if (!refreshToken) {
-    return null;
-  }
-
-  // Check if access token is still valid (with 5 min buffer)
-  if (accessToken && expiryStr) {
-    const expiry = parseInt(expiryStr, 10);
-    if (Date.now() < expiry - 300_000) {
-      return accessToken;
-    }
-  }
-
-  // Access token is expired or missing -- refresh it
-  try {
-    const response = await fetch(API_ENDPOINTS.google.oauth.refresh, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
-    });
-
-    if (!response.ok) {
-      // Refresh failed -- clear tokens and force re-auth
-      clearTokens();
-      return null;
-    }
-
-    const data = await response.json();
-    const newAccessToken = data.accessToken;
-    const expiresIn = data.expiresIn || 3600;
-
-    // Store new access token (keep existing refresh token)
-    localStorage.setItem(STORAGE_KEYS.accessToken, newAccessToken);
-    const newExpiry = Date.now() + expiresIn * 1000;
-    localStorage.setItem(STORAGE_KEYS.tokenExpiry, newExpiry.toString());
-
-    return newAccessToken;
-  } catch (error) {
-    console.error('Failed to refresh access token:', error);
-    return null;
-  }
+export function onAuthStateChange(callback: (session: Session | null) => void) {
+  return supabase.auth.onAuthStateChange((_event, session) => {
+    callback(session);
+  });
 }
 
 /**
  * Make an authenticated fetch request.
- * Automatically attaches the access token as a Bearer token.
+ * Attaches the Supabase JWT as a Bearer token.
  */
 export async function authenticatedFetch(
   url: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  const accessToken = await getAccessToken();
+  const session = await getSession();
 
-  if (!accessToken) {
+  if (!session?.access_token) {
     throw new Error('Not authenticated');
   }
 
   const headers = new Headers(options.headers);
-  headers.set('Authorization', `Bearer ${accessToken}`);
+  headers.set('Authorization', `Bearer ${session.access_token}`);
 
   return fetch(url, {
     ...options,
     headers,
   });
+}
+
+export function clearTokens(): void {
+  localStorage.removeItem('gsc_access_token');
+  localStorage.removeItem('gsc_refresh_token');
+  localStorage.removeItem('gsc_token_expiry');
+  localStorage.removeItem('gsc_selected_site');
 }

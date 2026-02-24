@@ -1,4 +1,5 @@
-import { API_CONFIG, getAccessTokenFromRequest } from '../../_config.js';
+import { API_CONFIG, authenticateRequest } from '../../_config.js';
+import { getServiceToken } from '../../_connections.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -6,9 +7,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const accessToken = getAccessTokenFromRequest(req);
-
-    if (!accessToken) {
+    const auth = await authenticateRequest(req);
+    if (!auth) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
@@ -16,6 +16,11 @@ export default async function handler(req, res) {
 
     if (!keyword || !siteUrl) {
       return res.status(400).json({ error: 'keyword and siteUrl are required' });
+    }
+
+    const accessToken = await getServiceToken(auth.user.id, siteUrl, 'google_search_console');
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Google Search Console not connected for this project' });
     }
 
     // Calculate trailing 24 months

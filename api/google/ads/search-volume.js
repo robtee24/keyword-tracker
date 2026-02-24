@@ -1,4 +1,4 @@
-import { API_CONFIG } from '../../_config.js';
+import { API_CONFIG, authenticateRequest } from '../../_config.js';
 import { getSupabase, VOLUME_CACHE_DAYS } from '../../db.js';
 
 const ADS_API_VERSION = 'v23';
@@ -17,6 +17,11 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const auth = await authenticateRequest(req);
+  if (!auth) {
+    return res.status(401).json({ error: 'Authentication required' });
   }
 
   const { keywords, siteUrl, cacheOnly } = req.body || {};

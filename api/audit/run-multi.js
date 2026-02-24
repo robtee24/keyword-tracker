@@ -1,4 +1,6 @@
 import { getSupabase } from '../db.js';
+import { authenticateRequest } from '../_config.js';
+import { checkLimit, checkAuditType, incrementUsage, getUserPlan } from '../_plans.js';
 
 export const config = { maxDuration: 120 };
 
@@ -330,6 +332,34 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'No valid audit types provided' });
   }
 
+  const auth = await authenticateRequest(req);
+  if (auth) {
+    const allowedTypes = [];
+    for (const t of validTypes) {
+      if (await checkAuditType(auth.user.id, t)) allowedTypes.push(t);
+    }
+    if (allowedTypes.length === 0) {
+      return res.status(403).json({
+        error: 'None of the requested audit types are available on your plan',
+        code: 'PLAN_FEATURE_LOCKED',
+      });
+    }
+
+    const limitCheck = await checkLimit(auth.user.id, 'page_audits');
+    if (limitCheck.limit !== -1 && limitCheck.current + allowedTypes.length > limitCheck.limit) {
+      const { plan } = await getUserPlan(auth.user.id);
+      return res.status(403).json({
+        error: 'Plan limit reached',
+        code: 'PLAN_LIMIT_REACHED',
+        field: 'page_audits',
+        current: limitCheck.current,
+        limit: limitCheck.limit,
+        plan: plan.id,
+        planName: plan.name,
+      });
+    }
+  }
+
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (!anthropicKey) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
@@ -394,6 +424,11 @@ export default async function handler(req, res) {
         dbErrors.push({ auditType: result.auditType, error: err.message });
       }
     }
+  }
+
+  const successCount = auditResults.filter((r) => !r.error).length;
+  if (auth && successCount > 0) {
+    await incrementUsage(auth.user.id, 'page_audits', successCount);
   }
 
   const output = auditResults.map((r) => ({

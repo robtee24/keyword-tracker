@@ -1,38 +1,40 @@
-import { API_CONFIG } from '../../_config.js';
+import { API_CONFIG } from '../_config.js';
+import { saveServiceConnection } from '../_connections.js';
 
 export default async function handler(req, res) {
-  const { code, error } = req.query;
+  const { code, error, state } = req.query;
 
   if (error) {
     return res.status(400).send(renderPage({
-      title: 'Authorization Failed',
+      title: 'Connection Failed',
       body: `
         <div class="icon error">&#10005;</div>
-        <h1>Authorization Failed</h1>
+        <h1>Connection Failed</h1>
         <p class="secondary">${error}</p>
       `,
-      script: `
-        if (window.opener) {
-          window.opener.postMessage({ type: 'oauth-error', error: '${error}' }, '*');
-          setTimeout(() => window.close(), 3000);
-        }
-      `,
+      script: 'setTimeout(() => window.close(), 3000);',
     }));
   }
 
-  if (!code) {
-    return res.status(400).json({ error: 'No authorization code provided' });
+  if (!code || !state) {
+    return res.status(400).json({ error: 'Missing authorization code or state' });
   }
 
+  let stateData;
   try {
-    // Determine redirect URI to match the one used in authorize
-    let redirectUri = API_CONFIG.google.redirectUri;
-    const host = req.headers.host;
-    if (host && !host.includes('localhost')) {
-      redirectUri = `https://${host}/api/google/oauth/callback`;
-    }
+    stateData = JSON.parse(state);
+  } catch {
+    return res.status(400).json({ error: 'Invalid state parameter' });
+  }
 
-    // Exchange code for tokens
+  const { userId, siteUrl, service } = stateData;
+
+  try {
+    const host = req.headers.host;
+    const redirectUri = host && !host.includes('localhost')
+      ? `https://${host}/api/connections/callback`
+      : API_CONFIG.google.redirectUri;
+
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -53,40 +55,49 @@ export default async function handler(req, res) {
 
     const tokens = await tokenResponse.json();
 
-    // Send tokens to parent window via postMessage and close popup
+    let accountName = null;
+    try {
+      const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      });
+      if (profileRes.ok) {
+        const profile = await profileRes.json();
+        accountName = profile.email || profile.name || null;
+      }
+    } catch {}
+
+    await saveServiceConnection(userId, siteUrl, service, {
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expires_in: tokens.expires_in,
+      scope: tokens.scope,
+      account_name: accountName,
+    });
+
     return res.status(200).send(renderPage({
-      title: 'Authorization Successful',
+      title: 'Connected',
       body: `
         <div class="icon success">&#10003;</div>
-        <h1>Connected to Google</h1>
-        <p class="secondary">Your Search Console data is now accessible. This window will close automatically.</p>
+        <h1>Service Connected</h1>
+        <p class="secondary">Your account has been linked. This window will close automatically.</p>
       `,
       script: `
         if (window.opener) {
-          window.opener.postMessage({
-            type: 'oauth-tokens',
-            accessToken: ${JSON.stringify(tokens.access_token || '')},
-            refreshToken: ${JSON.stringify(tokens.refresh_token || '')},
-            expiresIn: ${tokens.expires_in || 3600}
-          }, window.location.origin);
+          window.opener.postMessage({ type: 'connection-success', service: '${service}' }, window.location.origin);
           setTimeout(() => window.close(), 1500);
         }
       `,
     }));
-  } catch (error) {
-    console.error('OAuth callback error:', error);
+  } catch (err) {
+    console.error('Connection callback error:', err);
     return res.status(500).send(renderPage({
-      title: 'Authorization Error',
+      title: 'Connection Error',
       body: `
         <div class="icon error">&#10005;</div>
-        <h1>Authorization Error</h1>
-        <p class="secondary">${error.message}</p>
+        <h1>Connection Error</h1>
+        <p class="secondary">${err.message}</p>
       `,
-      script: `
-        if (window.opener) {
-          window.opener.postMessage({ type: 'oauth-error', error: '${error.message}' }, '*');
-        }
-      `,
+      script: 'setTimeout(() => window.close(), 3000);',
     }));
   }
 }

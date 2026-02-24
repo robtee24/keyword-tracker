@@ -1,19 +1,38 @@
-import { getAccessTokenFromRequest } from '../../_config.js';
+import { authenticateRequest } from '../../_config.js';
+import { getSupabase } from '../../db.js';
 
 /**
  * List the user's Google Search Console properties (sites).
- * Returns verified sites the authenticated user has access to.
+ * Looks for any GSC connection belonging to this user to get the token.
  */
 export default async function handler(req, res) {
   try {
-    const accessToken = getAccessTokenFromRequest(req);
-
-    if (!accessToken) {
+    const auth = await authenticateRequest(req);
+    if (!auth) {
       return res.status(401).json({
         error: 'Authentication required',
-        message: 'Please sign in with Google to view your Search Console properties.',
+        message: 'Please sign in to view your Search Console properties.',
       });
     }
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      return res.status(500).json({ error: 'Database not configured' });
+    }
+
+    const { data: conn } = await supabase
+      .from('service_connections')
+      .select('access_token, refresh_token, token_expiry')
+      .eq('user_id', auth.user.id)
+      .eq('service', 'google_search_console')
+      .limit(1)
+      .maybeSingle();
+
+    if (!conn?.access_token) {
+      return res.status(200).json({ sites: [], needsConnection: true });
+    }
+
+    const accessToken = conn.access_token;
 
     const response = await fetch(
       'https://www.googleapis.com/webmasters/v3/sites',

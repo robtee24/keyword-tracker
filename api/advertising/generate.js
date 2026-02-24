@@ -1,10 +1,17 @@
 import { getSupabase } from '../db.js';
+import { authenticateRequest } from '../_config.js';
+import { enforcePlanFeature } from '../_plans.js';
 
 export const config = { maxDuration: 60 };
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  const auth = await authenticateRequest(req);
+  if (auth) {
+    if (!(await enforcePlanFeature(auth.user.id, 'advertising', res))) return;
+  }
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'OpenAI API key not configured' });

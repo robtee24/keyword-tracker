@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
+import { usePlan } from '../contexts/PlanContext';
+import { PlanBadge } from './UpgradePrompt';
 
 export type View =
-  | 'projects' | 'objectives'
+  | 'projects' | 'objectives' | 'connections'
   | 'overview' | 'keywords' | 'lost-keywords'
   | 'audit' | 'seo-audit' | 'content-audit' | 'aeo-audit' | 'schema-audit' | 'compliance-audit' | 'speed-audit'
   | 'blog-audit'
-  | 'ad-audit' | 'ad-audit-google' | 'ad-audit-meta' | 'ad-audit-linkedin' | 'ad-audit-reddit'
+  | 'ad-audit' | 'ad-audit-google' | 'ad-audit-meta' | 'ad-audit-linkedin' | 'ad-audit-reddit' | 'ad-audit-tiktok'
   | 'ad-audit-budget' | 'ad-audit-performance' | 'ad-audit-creative' | 'ad-audit-attribution' | 'ad-audit-structure'
   | 'blog-opportunity' | 'blog-automate' | 'advertising'
   | 'build-rebuild' | 'build-new'
@@ -23,7 +25,7 @@ interface SidebarProps {
 
 const SEARCH_VIEWS = new Set<View>(['overview', 'keywords', 'lost-keywords']);
 const SITE_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit']);
-const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure']);
+const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-tiktok', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure']);
 const CONTENT_VIEWS = new Set<View>(['blog-opportunity', 'blog-automate', 'advertising']);
 const PAGES_VIEWS = new Set<View>(['build-rebuild', 'build-new']);
 
@@ -49,6 +51,7 @@ const adAuditSubItems: Array<{ id: View; label: string }> = [
   { id: 'ad-audit-meta', label: 'Meta' },
   { id: 'ad-audit-linkedin', label: 'LinkedIn' },
   { id: 'ad-audit-reddit', label: 'Reddit' },
+  { id: 'ad-audit-tiktok', label: 'TikTok' },
   { id: 'ad-audit-budget', label: 'Budget & Spend' },
   { id: 'ad-audit-performance', label: 'Performance' },
   { id: 'ad-audit-creative', label: 'Creative & Copy' },
@@ -67,6 +70,14 @@ const pagesSubItems: Array<{ id: View; label: string }> = [
   { id: 'build-new', label: 'Create Page' },
 ];
 
+function LockIcon() {
+  return (
+    <svg className="w-3 h-3 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+    </svg>
+  );
+}
+
 function NavGroup({
   label,
   icon,
@@ -79,6 +90,8 @@ function NavGroup({
   onNavigate,
   collapsed,
   title,
+  locked,
+  lockedSubItems,
 }: {
   label: string;
   icon: ReactNode;
@@ -91,6 +104,8 @@ function NavGroup({
   onNavigate: (v: View) => void;
   collapsed: boolean;
   title?: string;
+  locked?: boolean;
+  lockedSubItems?: Set<View>;
 }) {
   const handleClick = () => {
     if (collapsed) {
@@ -137,17 +152,21 @@ function NavGroup({
         <div className="ml-4 mt-0.5 space-y-0.5 border-l border-apple-divider pl-2">
           {subItems.map((sub) => {
             const isSubActive = currentView === sub.id;
+            const isSubLocked = lockedSubItems?.has(sub.id);
             return (
               <button
                 key={sub.id}
                 onClick={() => onNavigate(sub.id)}
-                className={`w-full text-left px-3 py-1.5 rounded-apple-sm text-apple-xs font-medium transition-all duration-150 ${
+                className={`w-full flex items-center gap-1 text-left px-3 py-1.5 rounded-apple-sm text-apple-xs font-medium transition-all duration-150 ${
                   isSubActive
                     ? 'bg-apple-blue/10 text-apple-blue'
-                    : 'text-apple-text-secondary hover:bg-apple-fill-secondary hover:text-apple-text'
+                    : isSubLocked
+                      ? 'text-apple-text-tertiary hover:bg-apple-fill-secondary'
+                      : 'text-apple-text-secondary hover:bg-apple-fill-secondary hover:text-apple-text'
                 }`}
               >
-                {sub.label}
+                <span className="flex-1">{sub.label}</span>
+                {isSubLocked && <LockIcon />}
               </button>
             );
           })}
@@ -176,6 +195,8 @@ export default function Sidebar({
   onSignOut,
   hasActiveProject,
 }: SidebarProps) {
+  const { canUseFeature, planInfo, planId } = usePlan();
+
   const isSearchActive = SEARCH_VIEWS.has(currentView);
   const isSiteAuditActive = SITE_AUDIT_VIEWS.has(currentView);
   const isAdAuditActive = AD_AUDIT_VIEWS.has(currentView);
@@ -187,6 +208,24 @@ export default function Sidebar({
   const [adAuditExpanded, setAdAuditExpanded] = useState(isAdAuditActive);
   const [contentExpanded, setContentExpanded] = useState(isContentActive);
   const [pagesExpanded, setPagesExpanded] = useState(isPagesActive);
+
+  const allowedAuditTypes = planInfo?.features?.audit_types || ['seo', 'content'];
+  const lockedAuditSubItems = new Set<View>();
+  const auditTypeMap: Record<string, View> = {
+    seo: 'seo-audit', content: 'content-audit', aeo: 'aeo-audit',
+    schema: 'schema-audit', compliance: 'compliance-audit', speed: 'speed-audit',
+  };
+  if (!canUseFeature('full_site_audit')) lockedAuditSubItems.add('audit');
+  for (const [type, view] of Object.entries(auditTypeMap)) {
+    if (!allowedAuditTypes.includes(type)) lockedAuditSubItems.add(view);
+  }
+
+  const isAdvertisingLocked = !canUseFeature('advertising');
+  const lockedContentSubItems = new Set<View>();
+  if (isAdvertisingLocked) lockedContentSubItems.add('advertising');
+
+  const pageBuildLimit = planInfo?.limits?.page_builds ?? 0;
+  const isPagesLocked = pageBuildLimit === 0;
 
   const renderNavButton = (item: { id: View; label: string; icon: ReactNode }) => {
     const isActive = currentView === item.id;
@@ -280,6 +319,16 @@ export default function Sidebar({
               ),
             })}
 
+            {renderNavButton({
+              id: 'connections',
+              label: 'Connections',
+              icon: (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+              ),
+            })}
+
             {/* ── MONITOR ── */}
             <SectionHeader label="Monitor" collapsed={collapsed} />
 
@@ -319,6 +368,7 @@ export default function Sidebar({
               currentView={currentView}
               onNavigate={onNavigate}
               collapsed={collapsed}
+              lockedSubItems={lockedAuditSubItems}
             />
 
             {renderNavButton({
@@ -367,6 +417,7 @@ export default function Sidebar({
               currentView={currentView}
               onNavigate={onNavigate}
               collapsed={collapsed}
+              lockedSubItems={lockedContentSubItems}
             />
 
             <NavGroup
@@ -384,6 +435,8 @@ export default function Sidebar({
               currentView={currentView}
               onNavigate={onNavigate}
               collapsed={collapsed}
+              locked={isPagesLocked}
+              lockedSubItems={isPagesLocked ? new Set<View>(['build-rebuild', 'build-new']) : undefined}
             />
 
             {/* ── TRACK ── */}
@@ -412,7 +465,12 @@ export default function Sidebar({
         )}
       </nav>
 
-      <div className="px-2 pb-4 shrink-0">
+      <div className="px-2 pb-4 shrink-0 space-y-2">
+        {!collapsed && (
+          <div className="px-3 py-2">
+            <PlanBadge />
+          </div>
+        )}
         <button
           onClick={onSignOut}
           className="w-full flex items-center gap-3 px-3 py-2 rounded-apple-sm text-apple-sm text-apple-text-tertiary hover:text-apple-red hover:bg-red-50/50 transition-all duration-150"

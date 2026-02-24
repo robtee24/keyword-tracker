@@ -33,17 +33,21 @@ import GoogleAdsOptimizationPage from './components/website/GoogleAdsOptimizatio
 import AutomatedSeoPage from './components/website/AutomatedSeoPage';
 import SeautoVsHiringPage from './components/website/SeautoVsHiringPage';
 import PricingPage from './components/website/PricingPage';
-import OAuthModal from './components/OAuthModal';
-import { isAuthenticated, clearTokens, authenticatedFetch } from './services/authService';
+import AuthPage from './components/AuthPage';
+import ConnectionsView from './components/ConnectionsView';
+import { signOut, onAuthStateChange, authenticatedFetch } from './services/authService';
 import { API_ENDPOINTS } from './config/api';
+import { PlanProvider, usePlan } from './contexts/PlanContext';
+import UpgradePrompt from './components/UpgradePrompt';
 import type { DateRange, SearchConsoleSite } from './types';
+import type { Session } from '@supabase/supabase-js';
 
 type AppState = 'loading' | 'unauthenticated' | 'authenticated';
 
 const PROJECTS_KEY = 'kt_projects';
 
 const SITE_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit']);
-const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure']);
+const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-tiktok', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure']);
 
 const BREADCRUMB_LABELS: Record<string, string> = {
   'objectives': 'Objectives',
@@ -63,6 +67,8 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   'ad-audit-meta': 'Ad Audit › Meta',
   'ad-audit-linkedin': 'Ad Audit › LinkedIn',
   'ad-audit-reddit': 'Ad Audit › Reddit',
+  'ad-audit-tiktok': 'Ad Audit › TikTok',
+  'connections': 'Connections',
   'ad-audit-budget': 'Ad Audit › Budget & Spend',
   'ad-audit-performance': 'Ad Audit › Performance',
   'ad-audit-creative': 'Ad Audit › Creative & Copy',
@@ -77,13 +83,14 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   'activity': 'Activity Log',
 };
 
-type AdAuditType = 'google' | 'meta' | 'linkedin' | 'reddit' | 'budget' | 'performance' | 'creative' | 'attribution' | 'structure';
+type AdAuditType = 'google' | 'meta' | 'linkedin' | 'reddit' | 'tiktok' | 'budget' | 'performance' | 'creative' | 'attribution' | 'structure';
 
 const AD_AUDIT_VIEW_MAP: Record<string, AdAuditType> = {
   'ad-audit-google': 'google',
   'ad-audit-meta': 'meta',
   'ad-audit-linkedin': 'linkedin',
   'ad-audit-reddit': 'reddit',
+  'ad-audit-tiktok': 'tiktok',
   'ad-audit-budget': 'budget',
   'ad-audit-performance': 'performance',
   'ad-audit-creative': 'creative',
@@ -96,12 +103,47 @@ const AD_AUDIT_TITLES: Record<AdAuditType, { title: string; description: string 
   meta: { title: 'Meta Ads Audit', description: 'Detects creative fatigue, audience overlap, frequency cap issues, retargeting window optimization, and competitor creative analysis.' },
   linkedin: { title: 'LinkedIn Ads Audit', description: 'Evaluates B2B campaign performance against LinkedIn benchmarks, audience quality, lead gen form friction, and budget efficiency.' },
   reddit: { title: 'Reddit Ads Audit', description: 'Analyzes community targeting, subreddit performance, creative fit, and bid inefficiencies for Reddit advertising campaigns.' },
+  tiktok: { title: 'TikTok Ads Audit', description: 'Analyzes TikTok campaign performance, creative effectiveness, audience targeting, and spend efficiency for short-form video advertising.' },
   budget: { title: 'Budget & Spend Audit', description: 'Cross-channel budget optimization, wasted spend identification, budget scenario modeling, channel mix rebalancing, and ROAS forecasting.' },
   performance: { title: 'Performance Audit', description: 'CPA spike diagnostics, anomaly detection, day/hour scheduling optimization, geo analysis, and device performance splits.' },
   creative: { title: 'Creative & Copy Audit', description: 'Ad copy variant analysis, landing page conversion audit, and creative performance benchmarking.' },
   attribution: { title: 'Attribution & Tracking Audit', description: 'Attribution model comparison, conversion path analysis, and UTM/tracking consistency review.' },
   structure: { title: 'Account Structure Audit', description: 'Campaign and ad set structure review, naming convention standardization, and consolidation opportunities.' },
 };
+
+function PlanGatedAuditView({ children, auditType }: { children: React.ReactNode; auditType: string }) {
+  const { planInfo } = usePlan();
+  const allowedTypes = planInfo?.features?.audit_types || ['seo', 'content'];
+
+  if (!allowedTypes.includes(auditType)) {
+    return (
+      <UpgradePrompt
+        feature="full_site_audit"
+        title={`${auditType.toUpperCase()} Audit requires an upgrade`}
+        description="This audit type is not available on your current plan. Upgrade to Plus or Managed Digital to unlock all audit types."
+      />
+    );
+  }
+
+  return <>{children}</>;
+}
+
+function PlanGatedView({ children, feature, limitField }: { children: React.ReactNode; feature?: string; limitField?: string }) {
+  const { canUseFeature, isLimitExhausted, planInfo } = usePlan();
+
+  if (feature && !canUseFeature(feature)) {
+    return <UpgradePrompt feature={feature} />;
+  }
+
+  if (limitField && planInfo) {
+    const limit = planInfo.limits[limitField as keyof typeof planInfo.limits];
+    if (limit === 0) {
+      return <UpgradePrompt limitField={limitField} />;
+    }
+  }
+
+  return <>{children}</>;
+}
 
 function loadProjects(): Project[] {
   try {
@@ -117,7 +159,7 @@ function saveProjects(projects: Project[]) {
 
 function App() {
   const [appState, setAppState] = useState<AppState>('loading');
-  const [showOAuth, setShowOAuth] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
 
   const [currentView, setCurrentView] = useState<View>('projects');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -142,11 +184,11 @@ function App() {
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   useEffect(() => {
-    if (isAuthenticated()) {
-      setAppState('authenticated');
-    } else {
-      setAppState('unauthenticated');
-    }
+    const { data: { subscription } } = onAuthStateChange((s) => {
+      setSession(s);
+      setAppState(s ? 'authenticated' : 'unauthenticated');
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -184,8 +226,9 @@ function App() {
     setShowDatePicker(false);
   };
 
-  const handleSignOut = () => {
-    clearTokens();
+  const handleSignOut = async () => {
+    await signOut();
+    setSession(null);
     setAppState('unauthenticated');
     setActiveProject(null);
     setHasLoadedOnce(false);
@@ -275,41 +318,38 @@ function App() {
   }
 
   if (appState === 'unauthenticated') {
-    const openApp = () => setShowOAuth(true);
+    const openApp = () => {
+      // Navigate to /app to show the auth page
+      window.history.pushState({}, '', '/app');
+      setAppState('unauthenticated');
+    };
+    const loc = window.location.pathname;
+    const showAuth = loc === '/app' || loc === '/';
+
+    if (showAuth) {
+      return <AuthPage onAuthenticated={() => setAppState('authenticated')} />;
+    }
+
     return (
-      <>
-        <Routes>
-          <Route path="/features/seo-audit-tool" element={<SeoAuditToolPage onOpenApp={openApp} />} />
-          <Route path="/features/keyword-rank-tracker" element={<KeywordRankTrackerPage onOpenApp={openApp} />} />
-          <Route path="/features/ai-content-generator" element={<AiContentGeneratorPage onOpenApp={openApp} />} />
-          <Route path="/features/compliance-checker" element={<ComplianceCheckerPage onOpenApp={openApp} />} />
-          <Route path="/features/ai-website-builder" element={<AiWebsiteBuilderPage onOpenApp={openApp} />} />
-          <Route path="/features/google-ads-optimization" element={<GoogleAdsOptimizationPage onOpenApp={openApp} />} />
-          <Route path="/solutions/small-business-seo" element={<SmallBusinessSeoPage onOpenApp={openApp} />} />
-          <Route path="/solutions/seo-agency-software" element={<SeoAgencySoftwarePage onOpenApp={openApp} />} />
-          <Route path="/resources/automated-seo" element={<AutomatedSeoPage onOpenApp={openApp} />} />
-          <Route path="/compare/seauto-vs-hiring" element={<SeautoVsHiringPage onOpenApp={openApp} />} />
-          <Route path="/pricing" element={<PricingPage onOpenApp={openApp} />} />
-          <Route path="*" element={<LandingPage onOpenApp={openApp} />} />
-        </Routes>
-        {showOAuth && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="relative">
-              <button
-                onClick={() => setShowOAuth(false)}
-                className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-800 cursor-pointer transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-              <OAuthModal onAuthenticated={() => setAppState('authenticated')} />
-            </div>
-          </div>
-        )}
-      </>
+      <Routes>
+        <Route path="/features/seo-audit-tool" element={<SeoAuditToolPage onOpenApp={openApp} />} />
+        <Route path="/features/keyword-rank-tracker" element={<KeywordRankTrackerPage onOpenApp={openApp} />} />
+        <Route path="/features/ai-content-generator" element={<AiContentGeneratorPage onOpenApp={openApp} />} />
+        <Route path="/features/compliance-checker" element={<ComplianceCheckerPage onOpenApp={openApp} />} />
+        <Route path="/features/ai-website-builder" element={<AiWebsiteBuilderPage onOpenApp={openApp} />} />
+        <Route path="/features/google-ads-optimization" element={<GoogleAdsOptimizationPage onOpenApp={openApp} />} />
+        <Route path="/solutions/small-business-seo" element={<SmallBusinessSeoPage onOpenApp={openApp} />} />
+        <Route path="/solutions/seo-agency-software" element={<SeoAgencySoftwarePage onOpenApp={openApp} />} />
+        <Route path="/resources/automated-seo" element={<AutomatedSeoPage onOpenApp={openApp} />} />
+        <Route path="/compare/seauto-vs-hiring" element={<SeautoVsHiringPage onOpenApp={openApp} />} />
+        <Route path="/pricing" element={<PricingPage onOpenApp={openApp} />} />
+        <Route path="*" element={<LandingPage onOpenApp={openApp} />} />
+      </Routes>
     );
   }
 
   return (
+    <PlanProvider isAuthenticated={appState === 'authenticated'}>
     <div className="flex h-screen bg-apple-bg overflow-hidden">
       <Sidebar
         currentView={currentView}
@@ -472,6 +512,10 @@ function App() {
             <ObjectivesView projectId={activeProject.id} projectName={activeProject.name} siteUrl={activeProject.siteUrl} />
           )}
 
+          {currentView === 'connections' && activeProject && (
+            <ConnectionsView siteUrl={activeProject.siteUrl} />
+          )}
+
           {activeProject && (
             <div style={{ display: currentView === 'overview' ? 'block' : 'none' }}>
               <OverviewView
@@ -501,7 +545,9 @@ function App() {
           {/* ── SEO Audit Views ── */}
           {activeProject && visitedAudits.has('audit') && (
             <div style={{ display: currentView === 'audit' ? 'block' : 'none' }}>
-              <AuditMainView siteUrl={activeProject.siteUrl} />
+              <PlanGatedView feature="full_site_audit">
+                <AuditMainView siteUrl={activeProject.siteUrl} />
+              </PlanGatedView>
             </div>
           )}
           {activeProject && visitedAudits.has('seo-audit') && (
@@ -516,22 +562,30 @@ function App() {
           )}
           {activeProject && visitedAudits.has('aeo-audit') && (
             <div style={{ display: currentView === 'aeo-audit' ? 'block' : 'none' }}>
-              <AuditView siteUrl={activeProject.siteUrl} auditType="aeo" title="AEO Audit" description="AI Engine Optimization audit — analyzes how well your pages would be cited by AI assistants." isVisible={currentView === 'aeo-audit'} />
+              <PlanGatedAuditView auditType="aeo">
+                <AuditView siteUrl={activeProject.siteUrl} auditType="aeo" title="AEO Audit" description="AI Engine Optimization audit — analyzes how well your pages would be cited by AI assistants." isVisible={currentView === 'aeo-audit'} />
+              </PlanGatedAuditView>
             </div>
           )}
           {activeProject && visitedAudits.has('schema-audit') && (
             <div style={{ display: currentView === 'schema-audit' ? 'block' : 'none' }}>
-              <AuditView siteUrl={activeProject.siteUrl} auditType="schema" title="Schema Audit" description="Validates existing schema markup and identifies missing structured data opportunities." isVisible={currentView === 'schema-audit'} />
+              <PlanGatedAuditView auditType="schema">
+                <AuditView siteUrl={activeProject.siteUrl} auditType="schema" title="Schema Audit" description="Validates existing schema markup and identifies missing structured data opportunities." isVisible={currentView === 'schema-audit'} />
+              </PlanGatedAuditView>
             </div>
           )}
           {activeProject && visitedAudits.has('compliance-audit') && (
             <div style={{ display: currentView === 'compliance-audit' ? 'block' : 'none' }}>
-              <AuditView siteUrl={activeProject.siteUrl} auditType="compliance" title="Compliance Audit" description="Audits for GDPR, CCPA, ADA/WCAG accessibility, privacy, security headers, and all applicable compliance requirements." isVisible={currentView === 'compliance-audit'} />
+              <PlanGatedAuditView auditType="compliance">
+                <AuditView siteUrl={activeProject.siteUrl} auditType="compliance" title="Compliance Audit" description="Audits for GDPR, CCPA, ADA/WCAG accessibility, privacy, security headers, and all applicable compliance requirements." isVisible={currentView === 'compliance-audit'} />
+              </PlanGatedAuditView>
             </div>
           )}
           {activeProject && visitedAudits.has('speed-audit') && (
             <div style={{ display: currentView === 'speed-audit' ? 'block' : 'none' }}>
-              <AuditView siteUrl={activeProject.siteUrl} auditType="speed" title="Page Speed Audit" description="Analyzes Core Web Vitals signals, render-blocking resources, image optimization, font loading, and page load performance." isVisible={currentView === 'speed-audit'} />
+              <PlanGatedAuditView auditType="speed">
+                <AuditView siteUrl={activeProject.siteUrl} auditType="speed" title="Page Speed Audit" description="Analyzes Core Web Vitals signals, render-blocking resources, image optimization, font loading, and page load performance." isVisible={currentView === 'speed-audit'} />
+              </PlanGatedAuditView>
             </div>
           )}
 
@@ -556,7 +610,9 @@ function App() {
           )}
 
           {currentView === 'advertising' && activeProject && (
-            <AdvertisingView siteUrl={activeProject.siteUrl} projectId={activeProject.id} />
+            <PlanGatedView feature="advertising">
+              <AdvertisingView siteUrl={activeProject.siteUrl} projectId={activeProject.id} />
+            </PlanGatedView>
           )}
 
           {/* ── Blog Views ── */}
@@ -572,10 +628,14 @@ function App() {
 
           {/* ── Build Views ── */}
           {currentView === 'build-rebuild' && activeProject && (
-            <BuildRebuildView siteUrl={activeProject.siteUrl} />
+            <PlanGatedView limitField="page_builds">
+              <BuildRebuildView siteUrl={activeProject.siteUrl} />
+            </PlanGatedView>
           )}
           {currentView === 'build-new' && activeProject && (
-            <BuildNewView siteUrl={activeProject.siteUrl} />
+            <PlanGatedView limitField="page_builds">
+              <BuildNewView siteUrl={activeProject.siteUrl} />
+            </PlanGatedView>
           )}
 
           {/* ── Consolidated Tasks & Activity ── */}
@@ -588,6 +648,7 @@ function App() {
         </main>
       </div>
     </div>
+    </PlanProvider>
   );
 }
 

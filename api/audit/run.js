@@ -1,4 +1,6 @@
 import { getSupabase } from '../db.js';
+import { authenticateRequest } from '../_config.js';
+import { enforcePlanLimit, enforcePlanFeature, checkAuditType, incrementUsage } from '../_plans.js';
 
 export const config = { maxDuration: 60 };
 
@@ -254,6 +256,21 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: `Invalid auditType: ${auditType}` });
   }
 
+  const auth = await authenticateRequest(req);
+  if (auth) {
+    const auditAllowed = await checkAuditType(auth.user.id, auditType);
+    if (!auditAllowed) {
+      return res.status(403).json({
+        error: 'This audit type is not available on your plan',
+        code: 'PLAN_FEATURE_LOCKED',
+        feature: 'audit_type',
+        auditType,
+      });
+    }
+
+    if (!(await enforcePlanLimit(auth.user.id, 'page_audits', res))) return;
+  }
+
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (!anthropicKey) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
@@ -314,6 +331,10 @@ export default async function handler(req, res) {
       console.error('[Audit] DB save exception:', err.message);
       dbSaveError = err.message;
     }
+  }
+
+  if (auth) {
+    await incrementUsage(auth.user.id, 'page_audits');
   }
 
   return res.status(200).json({

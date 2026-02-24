@@ -1,4 +1,5 @@
-import { API_CONFIG, getAccessTokenFromRequest } from '../../_config.js';
+import { API_CONFIG, authenticateRequest } from '../../_config.js';
+import { getServiceToken } from '../../_connections.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -6,19 +7,20 @@ export default async function handler(req, res) {
   }
 
   try {
-    const accessToken = getAccessTokenFromRequest(req);
-
-    if (!accessToken) {
-      return res.status(401).json({
-        error: 'Authentication required',
-        message: 'Please sign in with Google.',
-      });
+    const auth = await authenticateRequest(req);
+    if (!auth) {
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
     const { startDate, endDate, keyword, siteUrl } = req.body;
 
     if (!siteUrl) {
       return res.status(400).json({ error: 'siteUrl is required' });
+    }
+
+    const accessToken = await getServiceToken(auth.user.id, siteUrl, 'google_search_console');
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Google Search Console not connected for this project' });
     }
 
     const response = await fetch(

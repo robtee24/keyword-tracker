@@ -1,4 +1,6 @@
 import { getSupabase } from '../db.js';
+import { authenticateRequest } from '../_config.js';
+import { enforcePlanLimit, incrementUsage } from '../_plans.js';
 
 export const config = { maxDuration: 120 };
 
@@ -36,6 +38,11 @@ export default async function handler(req, res) {
 
   const { siteUrl, title, targetKeyword, relatedKeywords, description, objectives, opportunityId } = req.body || {};
   if (!siteUrl || !title) return res.status(400).json({ error: 'siteUrl and title are required' });
+
+  const auth = await authenticateRequest(req);
+  if (auth) {
+    if (!(await enforcePlanLimit(auth.user.id, 'blog_posts', res))) return;
+  }
 
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
 
@@ -99,6 +106,10 @@ Respond with ONLY valid JSON:
           completed_at: new Date().toISOString(),
         })
         .eq('id', opportunityId);
+    }
+
+    if (auth) {
+      await incrementUsage(auth.user.id, 'blog_posts');
     }
 
     return res.status(200).json({ blog });

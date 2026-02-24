@@ -1,3 +1,6 @@
+import { authenticateRequest } from '../_config.js';
+import { enforcePlanLimit, incrementUsage } from '../_plans.js';
+
 export const config = { maxDuration: 120 };
 
 const MARKETING_SKILLS = `
@@ -199,6 +202,11 @@ export default async function handler(req, res) {
   const { siteUrl, title, slug, purpose, targetKeyword, outline, objectives, style } = req.body || {};
   if (!siteUrl || !title) return res.status(400).json({ error: 'siteUrl and title required' });
 
+  const auth = await authenticateRequest(req);
+  if (auth) {
+    if (!(await enforcePlanLimit(auth.user.id, 'page_builds', res))) return;
+  }
+
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
 
   let homePageStyles = '';
@@ -279,6 +287,10 @@ Respond with ONLY valid JSON:
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
       if (jsonMatch) page = JSON.parse(jsonMatch[0]);
       else throw new Error('Failed to parse AI response');
+    }
+
+    if (auth) {
+      await incrementUsage(auth.user.id, 'page_builds');
     }
 
     return res.status(200).json({ page });

@@ -16,13 +16,13 @@ const getApiBaseUrl = () => {
 export const API_BASE_URL = getApiBaseUrl();
 
 export const API_ENDPOINTS = {
+  connections: {
+    authorize: `${API_BASE_URL}/api/connections/authorize`,
+    callback: `${API_BASE_URL}/api/connections/callback`,
+    status: `${API_BASE_URL}/api/connections/status`,
+    disconnect: `${API_BASE_URL}/api/connections/disconnect`,
+  },
   google: {
-    oauth: {
-      authorize: `${API_BASE_URL}/api/google/oauth/authorize`,
-      callback: `${API_BASE_URL}/api/google/oauth/callback`,
-      status: `${API_BASE_URL}/api/google/oauth/status`,
-      refresh: `${API_BASE_URL}/api/google/oauth/refresh`,
-    },
     searchConsole: {
       keywords: `${API_BASE_URL}/api/google/search-console`,
       daily: `${API_BASE_URL}/api/google/search-console/daily`,
@@ -62,6 +62,10 @@ export const API_ENDPOINTS = {
     modifyPage: `${API_BASE_URL}/api/build/modify-page`,
     suggestPages: `${API_BASE_URL}/api/build/suggest-pages`,
     createPage: `${API_BASE_URL}/api/build/create-page`,
+  },
+  plans: {
+    current: `${API_BASE_URL}/api/plans/current`,
+    check: `${API_BASE_URL}/api/plans/check`,
   },
   db: {
     completedTasks: `${API_BASE_URL}/api/db/completed-tasks`,
