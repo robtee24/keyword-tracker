@@ -3,12 +3,13 @@ import { API_ENDPOINTS } from '../config/api';
 import type { UserPlanInfo, PlanId } from '../config/plans';
 import { PLANS } from '../config/plans';
 
+// TODO: Change back to 'base' when Stripe integration is live.
 const DEFAULT_PLAN_INFO: UserPlanInfo = {
-  plan: 'base',
-  planName: 'Base',
-  price: 0,
-  limits: PLANS.base.limits,
-  features: PLANS.base.features,
+  plan: 'managed_digital',
+  planName: 'Managed Digital',
+  price: 200,
+  limits: PLANS.managed_digital.limits,
+  features: PLANS.managed_digital.features,
   usage: { page_audits: 0, keyword_scans: 0, blog_posts: 0, page_builds: 0, period: '' },
   startedAt: null,
   expiresAt: null,

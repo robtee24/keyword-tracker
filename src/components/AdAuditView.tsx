@@ -33,7 +33,7 @@ interface AdAuditViewProps {
 }
 
 const AD_AUDIT_TYPE_LABELS: Record<AdAuditType, string> = {
-  google: 'Google Ads', meta: 'Meta Ads', linkedin: 'LinkedIn Ads', reddit: 'Reddit Ads',
+  google: 'Google Ads', meta: 'Meta Ads', linkedin: 'LinkedIn Ads', reddit: 'Reddit Ads', tiktok: 'TikTok Ads',
   budget: 'Budget & Spend', performance: 'Performance', creative: 'Creative & Copy',
   attribution: 'Attribution', structure: 'Account Structure',
 };

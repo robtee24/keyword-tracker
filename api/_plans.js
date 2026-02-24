@@ -88,12 +88,13 @@ export async function getUserPlan(userId) {
     .eq('user_id', userId)
     .maybeSingle();
 
-  if (error || !data) {
-    return { plan: PLANS.base, record: null };
+  // TODO: Remove this override when Stripe integration is live.
+  // For now, grant all logged-in users Managed Digital access.
+  if (!data) {
+    return { plan: PLANS.managed_digital, record: null };
   }
 
-  const planConfig = PLANS[data.plan] || PLANS.base;
-  return { plan: planConfig, record: data };
+  return { plan: PLANS.managed_digital, record: data };
 }
 
 /**
