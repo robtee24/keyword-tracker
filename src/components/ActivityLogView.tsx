@@ -26,18 +26,18 @@ function matchesScope(keyword: string, scope: ActivityScope) {
 }
 
 function getScopeLabel(keyword: string): string {
-  if (keyword.startsWith('audit:')) return 'SEO';
-  if (keyword.startsWith('ad-')) return 'Advertising';
-  if (keyword.startsWith('blog:')) return 'Blog';
-  if (keyword.startsWith('build:')) return 'Build';
-  return 'Organic';
+  if (keyword.startsWith('audit:')) return 'Site Audit';
+  if (keyword.startsWith('ad-')) return 'Ad Audit';
+  if (keyword.startsWith('blog:')) return 'Content';
+  if (keyword.startsWith('build:')) return 'Pages';
+  return 'Search';
 }
 
 const SCOPE_DESCRIPTIONS: Record<ActivityScope, string> = {
   organic: 'Timeline of keyword scan actions',
-  seo: 'Timeline of SEO audit actions',
-  ad: 'Timeline of advertising audit actions',
-  blog: 'Timeline of blog audit and generation actions',
+  seo: 'Timeline of site audit actions',
+  ad: 'Timeline of ad audit actions',
+  blog: 'Timeline of content creation actions',
   build: 'Timeline of page build actions',
   all: 'All activities across every section',
 };
@@ -170,11 +170,11 @@ export default function ActivityLogView({ siteUrl, scope }: ActivityLogViewProps
                 className="px-3 py-2 text-apple-sm rounded-apple-sm border border-apple-border bg-white text-apple-text-secondary cursor-pointer"
               >
                 <option value="all">All Sections</option>
-                <option value="organic">Organic</option>
-                <option value="seo">SEO</option>
-                <option value="ad">Advertising</option>
-                <option value="blog">Blog</option>
-                <option value="build">Build</option>
+                <option value="organic">Search</option>
+                <option value="seo">Site Audit</option>
+                <option value="ad">Ad Audit</option>
+                <option value="blog">Content</option>
+                <option value="build">Pages</option>
               </select>
             )}
             <select

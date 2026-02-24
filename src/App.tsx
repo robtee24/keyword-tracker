@@ -42,49 +42,39 @@ type AppState = 'loading' | 'unauthenticated' | 'authenticated';
 
 const PROJECTS_KEY = 'kt_projects';
 
-const SEO_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit', 'seo-tasklist', 'seo-activity']);
-const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure', 'ad-tasklist', 'ad-activity', 'advertising']);
-const BLOG_VIEWS = new Set<View>(['blog-audit', 'blog-opportunity', 'blog-automate', 'blog-tasklist', 'blog-activity']);
-const BUILD_VIEWS = new Set<View>(['build-rebuild', 'build-new', 'build-tasklist', 'build-activity']);
+const SITE_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit']);
+const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure']);
 
 const BREADCRUMB_LABELS: Record<string, string> = {
   'objectives': 'Objectives',
-  'overview': 'Organic › Overview',
-  'keywords': 'Organic › Keywords',
-  'lost-keywords': 'Organic › Lost Keywords',
-  'organic-tasklist': 'Organic › Tasklist',
-  'organic-activity': 'Organic › Activity Log',
-  'audit': 'SEO › Full Audit',
-  'seo-audit': 'SEO › SEO',
-  'content-audit': 'SEO › Content',
-  'aeo-audit': 'SEO › AEO',
-  'schema-audit': 'SEO › Schema',
-  'compliance-audit': 'SEO › Compliance',
-  'speed-audit': 'SEO › Page Speed',
-  'seo-tasklist': 'SEO › Tasklist',
-  'seo-activity': 'SEO › Activity Log',
-  'ad-audit': 'Advertising › Full Audit',
-  'advertising': 'Advertising › Google Keywords',
-  'ad-audit-google': 'Advertising › Google Ads',
-  'ad-audit-meta': 'Advertising › Meta Ads',
-  'ad-audit-linkedin': 'Advertising › LinkedIn Ads',
-  'ad-audit-reddit': 'Advertising › Reddit Ads',
-  'ad-audit-budget': 'Advertising › Budget & Spend',
-  'ad-audit-performance': 'Advertising › Performance',
-  'ad-audit-creative': 'Advertising › Creative & Copy',
-  'ad-audit-attribution': 'Advertising › Attribution',
-  'ad-audit-structure': 'Advertising › Account Structure',
-  'ad-tasklist': 'Advertising › Tasklist',
-  'ad-activity': 'Advertising › Activity Log',
-  'blog-audit': 'Blog › Audit',
-  'blog-opportunity': 'Blog › Opportunity',
-  'blog-automate': 'Blog › Automate',
-  'blog-tasklist': 'Blog › Tasklist',
-  'blog-activity': 'Blog › Activity Log',
-  'build-rebuild': 'Build › Rebuild',
-  'build-new': 'Build › New',
-  'build-tasklist': 'Build › Tasklist',
-  'build-activity': 'Build › Activity Log',
+  'overview': 'Search Performance › Dashboard',
+  'keywords': 'Search Performance › Keyword Rankings',
+  'lost-keywords': 'Search Performance › Keyword Alerts',
+  'audit': 'Site Audit › Full Audit',
+  'seo-audit': 'Site Audit › Technical SEO',
+  'content-audit': 'Site Audit › Content & Copy',
+  'aeo-audit': 'Site Audit › AI Visibility',
+  'schema-audit': 'Site Audit › Schema Markup',
+  'compliance-audit': 'Site Audit › Compliance',
+  'speed-audit': 'Site Audit › Page Speed',
+  'blog-audit': 'Blog Audit',
+  'ad-audit': 'Ad Audit › Full Audit',
+  'ad-audit-google': 'Ad Audit › Google Ads',
+  'ad-audit-meta': 'Ad Audit › Meta',
+  'ad-audit-linkedin': 'Ad Audit › LinkedIn',
+  'ad-audit-reddit': 'Ad Audit › Reddit',
+  'ad-audit-budget': 'Ad Audit › Budget & Spend',
+  'ad-audit-performance': 'Ad Audit › Performance',
+  'ad-audit-creative': 'Ad Audit › Creative & Copy',
+  'ad-audit-attribution': 'Ad Audit › Attribution',
+  'ad-audit-structure': 'Ad Audit › Account Structure',
+  'blog-opportunity': 'Content › Blog Ideas',
+  'blog-automate': 'Content › Blog Writer',
+  'advertising': 'Content › Ad Keywords',
+  'build-rebuild': 'Pages › Optimize Page',
+  'build-new': 'Pages › Create Page',
+  'tasks': 'Tasks',
+  'activity': 'Activity Log',
 };
 
 type AdAuditType = 'google' | 'meta' | 'linkedin' | 'reddit' | 'budget' | 'performance' | 'creative' | 'attribution' | 'structure';
@@ -246,7 +236,7 @@ function App() {
       setVisitedAudits(new Set());
     } else {
       localStorage.setItem('kt_active_view', view);
-      if (SEO_AUDIT_VIEWS.has(view) || AD_AUDIT_VIEWS.has(view) || BLOG_VIEWS.has(view) || BUILD_VIEWS.has(view)) {
+      if (SITE_AUDIT_VIEWS.has(view) || AD_AUDIT_VIEWS.has(view)) {
         setVisitedAudits((prev) => new Set(prev).add(view));
       }
     }
@@ -588,37 +578,11 @@ function App() {
             <BuildNewView siteUrl={activeProject.siteUrl} />
           )}
 
-          {/* ── Scoped Tasklists ── */}
-          {currentView === 'organic-tasklist' && activeProject && (
-            <TasklistView siteUrl={activeProject.siteUrl} scope="organic" />
-          )}
-          {currentView === 'seo-tasklist' && activeProject && (
-            <TasklistView siteUrl={activeProject.siteUrl} scope="seo" />
-          )}
-          {currentView === 'ad-tasklist' && activeProject && (
-            <TasklistView siteUrl={activeProject.siteUrl} scope="ad" />
-          )}
-          {currentView === 'blog-tasklist' && activeProject && (
-            <TasklistView siteUrl={activeProject.siteUrl} scope="blog" />
-          )}
-          {currentView === 'build-tasklist' && activeProject && (
+          {/* ── Consolidated Tasks & Activity ── */}
+          {currentView === 'tasks' && activeProject && (
             <TasklistView siteUrl={activeProject.siteUrl} scope="all" />
           )}
-
-          {/* ── Scoped Activity Logs ── */}
-          {currentView === 'organic-activity' && activeProject && (
-            <ActivityLogView siteUrl={activeProject.siteUrl} scope="organic" />
-          )}
-          {currentView === 'seo-activity' && activeProject && (
-            <ActivityLogView siteUrl={activeProject.siteUrl} scope="seo" />
-          )}
-          {currentView === 'ad-activity' && activeProject && (
-            <ActivityLogView siteUrl={activeProject.siteUrl} scope="ad" />
-          )}
-          {currentView === 'blog-activity' && activeProject && (
-            <ActivityLogView siteUrl={activeProject.siteUrl} scope="blog" />
-          )}
-          {currentView === 'build-activity' && activeProject && (
+          {currentView === 'activity' && activeProject && (
             <ActivityLogView siteUrl={activeProject.siteUrl} scope="all" />
           )}
         </main>

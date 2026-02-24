@@ -38,11 +38,11 @@ function isBlogKeyword(kw: string) { return kw.startsWith('blog:'); }
 function isBuildKeyword(kw: string) { return kw.startsWith('build:'); }
 
 function getScopeLabel(kw: string): string {
-  if (kw.startsWith('audit:')) return 'SEO';
-  if (kw.startsWith('ad-')) return 'Advertising';
-  if (kw.startsWith('blog:')) return 'Blog';
-  if (kw.startsWith('build:')) return 'Build';
-  return 'Organic';
+  if (kw.startsWith('audit:')) return 'Site Audit';
+  if (kw.startsWith('ad-')) return 'Ad Audit';
+  if (kw.startsWith('blog:')) return 'Content';
+  if (kw.startsWith('build:')) return 'Pages';
+  return 'Search';
 }
 
 function matchesScope(keyword: string, scope: TasklistScope) {
@@ -57,9 +57,9 @@ function matchesScope(keyword: string, scope: TasklistScope) {
 
 const SCOPE_DESCRIPTIONS: Record<TasklistScope, string> = {
   organic: 'Recommendations from keyword scans',
-  seo: 'Recommendations from SEO page audits',
-  ad: 'Recommendations from advertising audits',
-  blog: 'Recommendations from blog audits',
+  seo: 'Recommendations from site audits',
+  ad: 'Recommendations from ad audits',
+  blog: 'Recommendations from content creation',
   build: 'Recommendations from page builds',
   all: 'All recommendations across every section',
 };
@@ -277,11 +277,11 @@ export default function RecommendationsView({ siteUrl, scope }: RecommendationsV
               <select value={filterScope} onChange={(e) => setFilterScope(e.target.value as typeof filterScope)}
                 className="px-3 py-2 text-apple-sm rounded-apple-sm border border-apple-border bg-white text-apple-text-secondary cursor-pointer">
                 <option value="all">All Types</option>
-                <option value="organic">Organic</option>
-                <option value="seo">SEO</option>
-                <option value="ad">Advertising</option>
-                <option value="blog">Blog</option>
-                <option value="build">Build</option>
+                <option value="organic">Search</option>
+                <option value="seo">Site Audit</option>
+                <option value="ad">Ad Audit</option>
+                <option value="blog">Content</option>
+                <option value="build">Pages</option>
               </select>
             )}
             {activeTab === 'current' && (
