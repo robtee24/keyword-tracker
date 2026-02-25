@@ -4,6 +4,14 @@ import { API_ENDPOINTS } from '../config/api';
 
 interface ConnectionsViewProps {
   siteUrl: string;
+  projectId: string;
+  gscProperty: string | null;
+  onGscPropertySelected: (property: string) => void;
+}
+
+interface GscSite {
+  siteUrl: string;
+  permissionLevel: string;
 }
 
 interface ConnectionStatus {
@@ -65,10 +73,13 @@ const SERVICES = [
   },
 ] as const;
 
-export default function ConnectionsView({ siteUrl }: ConnectionsViewProps) {
+export default function ConnectionsView({ siteUrl, projectId, gscProperty, onGscPropertySelected }: ConnectionsViewProps) {
   const [connections, setConnections] = useState<ConnectionStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState<string | null>(null);
+  const [gscSites, setGscSites] = useState<GscSite[]>([]);
+  const [gscLoading, setGscLoading] = useState(false);
+  const [showGscPicker, setShowGscPicker] = useState(false);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -87,6 +98,29 @@ export default function ConnectionsView({ siteUrl }: ConnectionsViewProps) {
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
+
+  const fetchGscSites = useCallback(async () => {
+    setGscLoading(true);
+    try {
+      const res = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.sites);
+      const data = await res.json();
+      setGscSites(data.sites || []);
+      if ((data.sites || []).length > 0 && !gscProperty) {
+        setShowGscPicker(true);
+      }
+    } catch {
+      setGscSites([]);
+    } finally {
+      setGscLoading(false);
+    }
+  }, [gscProperty]);
+
+  useEffect(() => {
+    const gscConn = connections.find((c) => c.service === 'google_search_console');
+    if (gscConn && !gscProperty) {
+      fetchGscSites();
+    }
+  }, [connections, gscProperty, fetchGscSites]);
 
   useEffect(() => {
     const handler = (event: MessageEvent) => {
@@ -170,6 +204,59 @@ export default function ConnectionsView({ siteUrl }: ConnectionsViewProps) {
           Link external platforms to pull data into this project. Tokens are stored securely on the server.
         </p>
       </div>
+
+      {/* GSC Property Picker */}
+      {showGscPicker && !gscProperty && (
+        <div className="mb-8 card p-6 ring-1 ring-blue-200">
+          <h3 className="text-apple-base font-semibold text-apple-text mb-2">
+            Select a Search Console Property
+          </h3>
+          <p className="text-apple-sm text-apple-text-secondary mb-4">
+            Choose which property to use for keyword tracking in this project.
+          </p>
+          {gscLoading ? (
+            <div className="flex items-center gap-2 py-2 text-apple-sm text-apple-text-tertiary">
+              <div className="w-4 h-4 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
+              Loading properties...
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {gscSites.map((site) => (
+                <button
+                  key={site.siteUrl}
+                  onClick={() => {
+                    onGscPropertySelected(site.siteUrl);
+                    setShowGscPicker(false);
+                  }}
+                  className="w-full text-left px-4 py-3 rounded-apple-sm border border-apple-border hover:border-apple-blue hover:bg-blue-50 transition-all text-apple-sm text-apple-text"
+                >
+                  {site.siteUrl}
+                </button>
+              ))}
+              {gscSites.length === 0 && (
+                <p className="text-apple-sm text-apple-text-tertiary">
+                  No properties found. Make sure you have access in Google Search Console.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {gscProperty && (
+        <div className="mb-8 card p-4 flex items-center justify-between">
+          <div>
+            <span className="text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider">Search Console Property</span>
+            <p className="text-apple-sm text-apple-text font-medium mt-0.5">{gscProperty}</p>
+          </div>
+          <button
+            onClick={() => setShowGscPicker(true)}
+            className="text-apple-xs text-apple-blue hover:underline"
+          >
+            Change
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {SERVICES.map((svc) => {

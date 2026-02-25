@@ -16,6 +16,13 @@ const getApiBaseUrl = () => {
 export const API_BASE_URL = getApiBaseUrl();
 
 export const API_ENDPOINTS = {
+  projects: {
+    list: `${API_BASE_URL}/api/projects`,
+    create: `${API_BASE_URL}/api/projects`,
+    update: `${API_BASE_URL}/api/projects`,
+    delete: `${API_BASE_URL}/api/projects`,
+    members: `${API_BASE_URL}/api/projects/members`,
+  },
   connections: {
     authorize: `${API_BASE_URL}/api/connections/authorize`,
     callback: `${API_BASE_URL}/api/connections/callback`,

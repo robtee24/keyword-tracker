@@ -40,12 +40,11 @@ import { supabase } from './services/supabaseClient';
 import { API_ENDPOINTS } from './config/api';
 import { PlanProvider, usePlan } from './contexts/PlanContext';
 import UpgradePrompt from './components/UpgradePrompt';
-import type { DateRange, SearchConsoleSite } from './types';
+import SettingsView from './components/SettingsView';
+import type { DateRange } from './types';
 import type { Session } from '@supabase/supabase-js';
 
 type AppState = 'loading' | 'unauthenticated' | 'authenticated';
-
-const PROJECTS_KEY = 'kt_projects';
 
 const SITE_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit']);
 const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-tiktok', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure']);
@@ -70,6 +69,7 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   'ad-audit-reddit': 'Ad Audit › Reddit',
   'ad-audit-tiktok': 'Ad Audit › TikTok',
   'connections': 'Connections',
+  'settings': 'Settings',
   'ad-audit-budget': 'Ad Audit › Budget & Spend',
   'ad-audit-performance': 'Ad Audit › Performance',
   'ad-audit-creative': 'Ad Audit › Creative & Copy',
@@ -146,16 +146,8 @@ function PlanGatedView({ children, feature, limitField }: { children: React.Reac
   return <>{children}</>;
 }
 
-function loadProjects(): Project[] {
-  try {
-    return JSON.parse(localStorage.getItem(PROJECTS_KEY) || '[]');
-  } catch {
-    return [];
-  }
-}
-
-function saveProjects(projects: Project[]) {
-  localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+function getSiteUrl(project: Project): string {
+  return project.gsc_property || project.domain;
 }
 
 function App() {
@@ -165,11 +157,9 @@ function App() {
   const [currentView, setCurrentView] = useState<View>('projects');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const [projects, setProjects] = useState<Project[]>(loadProjects);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
-
-  const [sites, setSites] = useState<SearchConsoleSite[]>([]);
-  const [sitesLoading, setSitesLoading] = useState(false);
+  const [projectsLoading, setProjectsLoading] = useState(false);
 
   const [visitedAudits, setVisitedAudits] = useState<Set<string>>(new Set());
 
@@ -216,27 +206,34 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (appState !== 'authenticated') return;
-    setSitesLoading(true);
-    authenticatedFetch(API_ENDPOINTS.google.searchConsole.sites)
-      .then((r) => r.json())
-      .then((data) => setSites(data.sites || []))
-      .catch(() => {})
-      .finally(() => setSitesLoading(false));
-  }, [appState]);
+  const fetchProjects = async () => {
+    setProjectsLoading(true);
+    try {
+      const res = await authenticatedFetch(API_ENDPOINTS.projects.list);
+      const data = await res.json();
+      const fetched: Project[] = data.projects || [];
+      setProjects(fetched);
+
+      const lastId = localStorage.getItem('kt_active_project');
+      const lastView = localStorage.getItem('kt_active_view') as View | null;
+      if (lastId) {
+        const p = fetched.find((pr) => pr.id === lastId);
+        if (p) {
+          setActiveProject(p);
+          setCurrentView(lastView && lastView !== 'projects' ? lastView : 'overview');
+        }
+      }
+    } catch {
+      setProjects([]);
+    } finally {
+      setProjectsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const lastId = localStorage.getItem('kt_active_project');
-    const lastView = localStorage.getItem('kt_active_view') as View | null;
-    if (lastId) {
-      const p = projects.find((pr) => pr.id === lastId);
-      if (p) {
-        setActiveProject(p);
-        setCurrentView(lastView && lastView !== 'projects' ? lastView : 'overview');
-      }
-    }
-  }, []);
+    if (appState !== 'authenticated') return;
+    fetchProjects();
+  }, [appState]);
 
   const parseLocalDate = (dateStr: string): Date => {
     const [year, month, day] = dateStr.split('-').map(Number);
@@ -256,39 +253,64 @@ function App() {
     setSession(null);
     setAppState('unauthenticated');
     setActiveProject(null);
+    setProjects([]);
     setHasLoadedOnce(false);
     setLoadTrigger(0);
+    localStorage.removeItem('kt_active_project');
+    localStorage.removeItem('kt_active_view');
   };
 
-  const handleCreateProject = (name: string, siteUrl: string) => {
-    const newProject: Project = {
-      id: crypto.randomUUID(),
-      name,
-      siteUrl,
-      createdAt: new Date().toISOString(),
-    };
-    const updated = [...projects, newProject];
-    setProjects(updated);
-    saveProjects(updated);
+  const handleCreateProject = async (name: string, domain: string) => {
+    try {
+      const res = await authenticatedFetch(API_ENDPOINTS.projects.create, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, domain }),
+      });
+      const data = await res.json();
+      if (res.ok && data.project) {
+        setProjects((prev) => [data.project, ...prev]);
+      }
+    } catch { /* silently fail */ }
   };
 
-  const handleDeleteProject = (id: string) => {
-    const updated = projects.filter((p) => p.id !== id);
-    setProjects(updated);
-    saveProjects(updated);
-    if (activeProject?.id === id) {
-      setActiveProject(null);
-      setCurrentView('projects');
-      localStorage.removeItem('kt_active_project');
-      localStorage.removeItem('kt_active_view');
-    }
+  const handleDeleteProject = async (id: string) => {
+    try {
+      await authenticatedFetch(`${API_ENDPOINTS.projects.delete}?id=${id}`, {
+        method: 'DELETE',
+      });
+      setProjects((prev) => prev.filter((p) => p.id !== id));
+      if (activeProject?.id === id) {
+        setActiveProject(null);
+        setCurrentView('projects');
+        localStorage.removeItem('kt_active_project');
+        localStorage.removeItem('kt_active_view');
+      }
+    } catch { /* silently fail */ }
+  };
+
+  const handleUpdateProject = async (id: string, updates: { name?: string; gsc_property?: string }) => {
+    try {
+      const res = await authenticatedFetch(API_ENDPOINTS.projects.update, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...updates }),
+      });
+      const data = await res.json();
+      if (res.ok && data.project) {
+        setProjects((prev) => prev.map((p) => p.id === id ? { ...p, ...data.project } : p));
+        if (activeProject?.id === id) {
+          setActiveProject((prev) => prev ? { ...prev, ...data.project } : prev);
+        }
+      }
+    } catch { /* silently fail */ }
   };
 
   const handleSelectProject = (project: Project) => {
     setActiveProject(project);
-    setCurrentView('objectives');
+    setCurrentView(project.gsc_property ? 'objectives' : 'connections');
     localStorage.setItem('kt_active_project', project.id);
-    localStorage.setItem('kt_active_view', 'objectives');
+    localStorage.setItem('kt_active_view', project.gsc_property ? 'objectives' : 'connections');
     setHasLoadedOnce(false);
     setLoadTrigger(0);
   };
@@ -349,7 +371,7 @@ function App() {
       setAppState('unauthenticated');
     };
     const loc = window.location.pathname;
-    const showAuth = loc === '/app' || loc === '/';
+    const showAuth = loc === '/app';
 
     if (showAuth) {
       return <AuthPage onAuthenticated={() => setAppState('authenticated')} />;
@@ -525,8 +547,6 @@ function App() {
           {currentView === 'projects' && (
             <ProjectsView
               projects={projects}
-              sites={sites}
-              sitesLoading={sitesLoading}
               onCreateProject={handleCreateProject}
               onDeleteProject={handleDeleteProject}
               onSelectProject={handleSelectProject}
@@ -534,17 +554,30 @@ function App() {
           )}
 
           {currentView === 'objectives' && activeProject && (
-            <ObjectivesView projectId={activeProject.id} projectName={activeProject.name} siteUrl={activeProject.siteUrl} />
+            <ObjectivesView projectId={activeProject.id} projectName={activeProject.name} siteUrl={getSiteUrl(activeProject)} />
           )}
 
           {currentView === 'connections' && activeProject && (
-            <ConnectionsView siteUrl={activeProject.siteUrl} />
+            <ConnectionsView
+              siteUrl={getSiteUrl(activeProject)}
+              projectId={activeProject.id}
+              gscProperty={activeProject.gsc_property}
+              onGscPropertySelected={(prop) => handleUpdateProject(activeProject.id, { gsc_property: prop })}
+            />
+          )}
+
+          {currentView === 'settings' && activeProject && (
+            <SettingsView
+              projectId={activeProject.id}
+              projectName={activeProject.name}
+              isOwner={activeProject.role === 'owner'}
+            />
           )}
 
           {activeProject && (
             <div style={{ display: currentView === 'overview' ? 'block' : 'none' }}>
               <OverviewView
-                siteUrl={activeProject.siteUrl}
+                siteUrl={getSiteUrl(activeProject)}
                 dateRange={dateRange}
                 compareDateRange={compareDateRange}
               />
@@ -556,7 +589,7 @@ function App() {
               <GoogleSearchConsole
                 dateRange={committedDateRange}
                 compareDateRange={committedCompareDateRange}
-                siteUrl={activeProject.siteUrl}
+                siteUrl={getSiteUrl(activeProject)}
                 loadTrigger={loadTrigger}
                 projectId={activeProject.id}
               />
@@ -564,52 +597,52 @@ function App() {
           )}
 
           {currentView === 'lost-keywords' && activeProject && (
-            <LostKeywordsView siteUrl={activeProject.siteUrl} />
+            <LostKeywordsView siteUrl={getSiteUrl(activeProject)} />
           )}
 
           {/* ── SEO Audit Views ── */}
           {activeProject && visitedAudits.has('audit') && (
             <div style={{ display: currentView === 'audit' ? 'block' : 'none' }}>
               <PlanGatedView feature="full_site_audit">
-                <AuditMainView siteUrl={activeProject.siteUrl} />
+                <AuditMainView siteUrl={getSiteUrl(activeProject)} />
               </PlanGatedView>
             </div>
           )}
           {activeProject && visitedAudits.has('seo-audit') && (
             <div style={{ display: currentView === 'seo-audit' ? 'block' : 'none' }}>
-              <AuditView siteUrl={activeProject.siteUrl} auditType="seo" title="SEO Audit" description="Comprehensive technical SEO audit of every page in your sitemap. Analyzes title tags, meta descriptions, headings, internal links, images, and more." isVisible={currentView === 'seo-audit'} />
+              <AuditView siteUrl={getSiteUrl(activeProject)} auditType="seo" title="SEO Audit" description="Comprehensive technical SEO audit of every page in your sitemap. Analyzes title tags, meta descriptions, headings, internal links, images, and more." isVisible={currentView === 'seo-audit'} />
             </div>
           )}
           {activeProject && visitedAudits.has('content-audit') && (
             <div style={{ display: currentView === 'content-audit' ? 'block' : 'none' }}>
-              <AuditView siteUrl={activeProject.siteUrl} auditType="content" title="Content Audit" description="Evaluates copy quality, conversion optimization, and marketing psychology across every page." isVisible={currentView === 'content-audit'} />
+              <AuditView siteUrl={getSiteUrl(activeProject)} auditType="content" title="Content Audit" description="Evaluates copy quality, conversion optimization, and marketing psychology across every page." isVisible={currentView === 'content-audit'} />
             </div>
           )}
           {activeProject && visitedAudits.has('aeo-audit') && (
             <div style={{ display: currentView === 'aeo-audit' ? 'block' : 'none' }}>
               <PlanGatedAuditView auditType="aeo">
-                <AuditView siteUrl={activeProject.siteUrl} auditType="aeo" title="AEO Audit" description="AI Engine Optimization audit — analyzes how well your pages would be cited by AI assistants." isVisible={currentView === 'aeo-audit'} />
+                <AuditView siteUrl={getSiteUrl(activeProject)} auditType="aeo" title="AEO Audit" description="AI Engine Optimization audit — analyzes how well your pages would be cited by AI assistants." isVisible={currentView === 'aeo-audit'} />
               </PlanGatedAuditView>
             </div>
           )}
           {activeProject && visitedAudits.has('schema-audit') && (
             <div style={{ display: currentView === 'schema-audit' ? 'block' : 'none' }}>
               <PlanGatedAuditView auditType="schema">
-                <AuditView siteUrl={activeProject.siteUrl} auditType="schema" title="Schema Audit" description="Validates existing schema markup and identifies missing structured data opportunities." isVisible={currentView === 'schema-audit'} />
+                <AuditView siteUrl={getSiteUrl(activeProject)} auditType="schema" title="Schema Audit" description="Validates existing schema markup and identifies missing structured data opportunities." isVisible={currentView === 'schema-audit'} />
               </PlanGatedAuditView>
             </div>
           )}
           {activeProject && visitedAudits.has('compliance-audit') && (
             <div style={{ display: currentView === 'compliance-audit' ? 'block' : 'none' }}>
               <PlanGatedAuditView auditType="compliance">
-                <AuditView siteUrl={activeProject.siteUrl} auditType="compliance" title="Compliance Audit" description="Audits for GDPR, CCPA, ADA/WCAG accessibility, privacy, security headers, and all applicable compliance requirements." isVisible={currentView === 'compliance-audit'} />
+                <AuditView siteUrl={getSiteUrl(activeProject)} auditType="compliance" title="Compliance Audit" description="Audits for GDPR, CCPA, ADA/WCAG accessibility, privacy, security headers, and all applicable compliance requirements." isVisible={currentView === 'compliance-audit'} />
               </PlanGatedAuditView>
             </div>
           )}
           {activeProject && visitedAudits.has('speed-audit') && (
             <div style={{ display: currentView === 'speed-audit' ? 'block' : 'none' }}>
               <PlanGatedAuditView auditType="speed">
-                <AuditView siteUrl={activeProject.siteUrl} auditType="speed" title="Page Speed Audit" description="Analyzes Core Web Vitals signals, render-blocking resources, image optimization, font loading, and page load performance." isVisible={currentView === 'speed-audit'} />
+                <AuditView siteUrl={getSiteUrl(activeProject)} auditType="speed" title="Page Speed Audit" description="Analyzes Core Web Vitals signals, render-blocking resources, image optimization, font loading, and page load performance." isVisible={currentView === 'speed-audit'} />
               </PlanGatedAuditView>
             </div>
           )}
@@ -617,14 +650,14 @@ function App() {
           {/* ── Advertising Audit Views ── */}
           {activeProject && visitedAudits.has('ad-audit') && (
             <div style={{ display: currentView === 'ad-audit' ? 'block' : 'none' }}>
-              <AdAuditMainView siteUrl={activeProject.siteUrl} />
+              <AdAuditMainView siteUrl={getSiteUrl(activeProject)} />
             </div>
           )}
           {activeProject && Object.entries(AD_AUDIT_VIEW_MAP).map(([viewId, adType]) =>
             visitedAudits.has(viewId) ? (
               <div key={viewId} style={{ display: currentView === viewId ? 'block' : 'none' }}>
                 <AdAuditView
-                  siteUrl={activeProject.siteUrl}
+                  siteUrl={getSiteUrl(activeProject)}
                   adAuditType={adType}
                   title={AD_AUDIT_TITLES[adType].title}
                   description={AD_AUDIT_TITLES[adType].description}
@@ -636,39 +669,39 @@ function App() {
 
           {currentView === 'advertising' && activeProject && (
             <PlanGatedView feature="advertising">
-              <AdvertisingView siteUrl={activeProject.siteUrl} projectId={activeProject.id} />
+              <AdvertisingView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
             </PlanGatedView>
           )}
 
           {/* ── Blog Views ── */}
           {currentView === 'blog-audit' && activeProject && (
-            <BlogAuditView siteUrl={activeProject.siteUrl} />
+            <BlogAuditView siteUrl={getSiteUrl(activeProject)} />
           )}
           {currentView === 'blog-opportunity' && activeProject && (
-            <BlogOpportunityView siteUrl={activeProject.siteUrl} />
+            <BlogOpportunityView siteUrl={getSiteUrl(activeProject)} />
           )}
           {currentView === 'blog-automate' && activeProject && (
-            <BlogAutomateView siteUrl={activeProject.siteUrl} />
+            <BlogAutomateView siteUrl={getSiteUrl(activeProject)} />
           )}
 
           {/* ── Build Views ── */}
           {currentView === 'build-rebuild' && activeProject && (
             <PlanGatedView limitField="page_builds">
-              <BuildRebuildView siteUrl={activeProject.siteUrl} />
+              <BuildRebuildView siteUrl={getSiteUrl(activeProject)} />
             </PlanGatedView>
           )}
           {currentView === 'build-new' && activeProject && (
             <PlanGatedView limitField="page_builds">
-              <BuildNewView siteUrl={activeProject.siteUrl} />
+              <BuildNewView siteUrl={getSiteUrl(activeProject)} />
             </PlanGatedView>
           )}
 
           {/* ── Consolidated Tasks & Activity ── */}
           {currentView === 'tasks' && activeProject && (
-            <TasklistView siteUrl={activeProject.siteUrl} scope="all" />
+            <TasklistView siteUrl={getSiteUrl(activeProject)} scope="all" />
           )}
           {currentView === 'activity' && activeProject && (
-            <ActivityLogView siteUrl={activeProject.siteUrl} scope="all" />
+            <ActivityLogView siteUrl={getSiteUrl(activeProject)} scope="all" />
           )}
         </main>
       </div>

@@ -1,26 +1,25 @@
 import { useState } from 'react';
-import type { SearchConsoleSite } from '../types';
 
 export interface Project {
   id: string;
+  owner_id: string;
   name: string;
-  siteUrl: string;
-  createdAt: string;
+  domain: string;
+  gsc_property: string | null;
+  created_at: string;
+  updated_at: string;
+  role: string;
 }
 
 interface ProjectsViewProps {
   projects: Project[];
-  sites: SearchConsoleSite[];
-  sitesLoading: boolean;
-  onCreateProject: (name: string, siteUrl: string) => void;
+  onCreateProject: (name: string, domain: string) => void;
   onDeleteProject: (id: string) => void;
   onSelectProject: (project: Project) => void;
 }
 
 export default function ProjectsView({
   projects,
-  sites,
-  sitesLoading,
   onCreateProject,
   onDeleteProject,
   onSelectProject,
@@ -28,24 +27,25 @@ export default function ProjectsView({
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newSiteUrl, setNewSiteUrl] = useState('');
+  const [newDomain, setNewDomain] = useState('');
+  const [createError, setCreateError] = useState('');
 
   const filtered = projects.filter((p) =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.siteUrl.toLowerCase().includes(searchTerm.toLowerCase())
+    p.domain.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleCreate = () => {
-    if (!newName.trim() || !newSiteUrl) return;
-    onCreateProject(newName.trim(), newSiteUrl);
+    if (!newName.trim() || !newDomain.trim()) return;
+    setCreateError('');
+    onCreateProject(newName.trim(), newDomain.trim());
     setNewName('');
-    setNewSiteUrl('');
+    setNewDomain('');
     setShowCreate(false);
   };
 
   return (
     <div className="max-w-5xl mx-auto">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-apple-title1 font-bold text-apple-text tracking-tight">
@@ -66,23 +66,23 @@ export default function ProjectsView({
         </button>
       </div>
 
-      {/* Search */}
-      <div className="mb-6">
-        <div className="relative">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search projects..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="input w-full pl-10"
-          />
+      {projects.length > 3 && (
+        <div className="mb-6">
+          <div className="relative">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search projects..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="input w-full pl-10"
+            />
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Create Project Modal */}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
           <div className="bg-white rounded-apple shadow-apple-lg w-full max-w-md mx-4 p-6">
@@ -103,7 +103,6 @@ export default function ProjectsView({
                   className="input w-full"
                   autoFocus
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleCreate();
                     if (e.key === 'Escape') setShowCreate(false);
                   }}
                 />
@@ -111,40 +110,39 @@ export default function ProjectsView({
 
               <div>
                 <label className="block text-apple-sm font-medium text-apple-text-secondary mb-1.5">
-                  Search Console Property
+                  Domain
                 </label>
-                {sitesLoading ? (
-                  <div className="flex items-center gap-2 py-2 text-apple-sm text-apple-text-tertiary">
-                    <div className="w-4 h-4 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
-                    Loading properties...
-                  </div>
-                ) : (
-                  <select
-                    value={newSiteUrl}
-                    onChange={(e) => setNewSiteUrl(e.target.value)}
-                    className="input w-full cursor-pointer"
-                  >
-                    <option value="" disabled>Select a property...</option>
-                    {sites.map((site) => (
-                      <option key={site.siteUrl} value={site.siteUrl}>
-                        {site.siteUrl}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                <input
+                  type="text"
+                  value={newDomain}
+                  onChange={(e) => setNewDomain(e.target.value)}
+                  placeholder="e.g. example.com"
+                  className="input w-full"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreate();
+                    if (e.key === 'Escape') setShowCreate(false);
+                  }}
+                />
+                <p className="text-apple-xs text-apple-text-tertiary mt-1">
+                  Enter the root domain without https:// or paths
+                </p>
               </div>
+
+              {createError && (
+                <p className="text-apple-sm text-apple-red">{createError}</p>
+              )}
             </div>
 
             <div className="flex justify-end gap-3 mt-6">
               <button
-                onClick={() => { setShowCreate(false); setNewName(''); setNewSiteUrl(''); }}
+                onClick={() => { setShowCreate(false); setNewName(''); setNewDomain(''); setCreateError(''); }}
                 className="btn-secondary"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreate}
-                disabled={!newName.trim() || !newSiteUrl}
+                disabled={!newName.trim() || !newDomain.trim()}
                 className="btn-primary"
               >
                 Create Project
@@ -154,7 +152,6 @@ export default function ProjectsView({
         </div>
       )}
 
-      {/* Project Cards */}
       {filtered.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((project) => (
@@ -163,20 +160,22 @@ export default function ProjectsView({
               onClick={() => onSelectProject(project)}
               className="group relative card p-5 cursor-pointer hover:shadow-apple-md transition-all duration-200 hover:-translate-y-0.5"
             >
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (confirm(`Delete project "${project.name}"?`)) {
-                    onDeleteProject(project.id);
-                  }
-                }}
-                className="absolute top-3 right-3 p-1.5 rounded-apple-sm text-apple-text-tertiary opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-apple-red transition-all duration-150"
-                title="Delete project"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
+              {project.role === 'owner' && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm(`Delete project "${project.name}"?`)) {
+                      onDeleteProject(project.id);
+                    }
+                  }}
+                  className="absolute top-3 right-3 p-1.5 rounded-apple-sm text-apple-text-tertiary opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-apple-red transition-all duration-150"
+                  title="Delete project"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              )}
 
               <div className="flex items-start gap-3 mb-3">
                 <div className="w-10 h-10 rounded-apple-sm bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-apple-base shrink-0">
@@ -187,13 +186,25 @@ export default function ProjectsView({
                     {project.name}
                   </h3>
                   <p className="text-apple-xs text-apple-text-tertiary truncate mt-0.5">
-                    {project.siteUrl}
+                    {project.domain}
                   </p>
                 </div>
               </div>
 
-              <div className="text-apple-xs text-apple-text-tertiary">
-                Created {new Date(project.createdAt).toLocaleDateString()}
+              <div className="flex items-center justify-between">
+                <div className="text-apple-xs text-apple-text-tertiary">
+                  Created {new Date(project.created_at).toLocaleDateString()}
+                </div>
+                {project.role !== 'owner' && (
+                  <span className="text-[10px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                    {project.role}
+                  </span>
+                )}
+                {!project.gsc_property && (
+                  <span className="text-[10px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">
+                    GSC not linked
+                  </span>
+                )}
               </div>
             </div>
           ))}
@@ -209,7 +220,7 @@ export default function ProjectsView({
             No projects yet
           </h3>
           <p className="text-apple-base text-apple-text-secondary max-w-sm mx-auto mb-6">
-            Create your first project to start tracking keyword rankings.
+            Create your first project to start tracking and optimizing your site.
           </p>
           <button
             onClick={() => setShowCreate(true)}
