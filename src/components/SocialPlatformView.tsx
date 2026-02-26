@@ -433,10 +433,102 @@ function AuditTab({ siteUrl, projectId, platform, config, isConnected }: {
    IDEAS TAB
    ═══════════════════════════════════════════════════════════════ */
 
+const VOICE_OPTIONS = [
+  'Professional', 'Casual', 'Witty', 'Authoritative', 'Friendly',
+  'Bold & Provocative', 'Educational', 'Inspirational', 'Conversational', 'Empathetic',
+];
+
+function useObjectivesSuggestions(projectId: string) {
+  const [suggestions, setSuggestions] = useState<{
+    niches: string[];
+    audiences: string[];
+    topics: string[];
+  }>({ niches: [], audiences: [], topics: [] });
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(`kt_objectives_${projectId}`);
+      if (!stored) return;
+      const obj = JSON.parse(stored);
+
+      const niches: string[] = [];
+      if (obj.siteType) niches.push(obj.siteType);
+      if (obj.coreOfferings?.length) {
+        obj.coreOfferings.forEach((o: any) => { if (o.name) niches.push(o.name); });
+      }
+
+      const audiences: string[] = [];
+      if (obj.targetAudience) {
+        const segments = obj.targetAudience
+          .split(/[,;]|and\s/i)
+          .map((s: string) => s.trim())
+          .filter((s: string) => s.length > 2 && s.length < 60);
+        audiences.push(...segments);
+        if (segments.length === 0) audiences.push(obj.targetAudience.slice(0, 80));
+      }
+
+      const topics: string[] = [];
+      if (obj.coreOfferings?.length) {
+        obj.coreOfferings.forEach((o: any) => {
+          if (o.topKeyword) topics.push(o.topKeyword);
+          if (o.name && !niches.includes(o.name)) topics.push(o.name);
+        });
+      }
+      if (obj.primaryObjective) topics.push(obj.primaryObjective);
+      if (obj.secondaryObjectives?.length) {
+        obj.secondaryObjectives.slice(0, 3).forEach((o: string) => topics.push(o));
+      }
+
+      setSuggestions({
+        niches: [...new Set(niches)].slice(0, 6),
+        audiences: [...new Set(audiences)].slice(0, 6),
+        topics: [...new Set(topics)].slice(0, 8),
+      });
+    } catch { /* */ }
+  }, [projectId]);
+
+  return suggestions;
+}
+
+function SelectableField({ label, options, value, onChange, otherPlaceholder }: {
+  label: string; options: string[]; value: string; onChange: (v: string) => void; otherPlaceholder: string;
+}) {
+  const isOther = value !== '' && !options.includes(value);
+  const [showOther, setShowOther] = useState(false);
+
+  return (
+    <div>
+      <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1.5">{label}</label>
+      <div className="flex flex-wrap gap-1.5 mb-1.5">
+        {options.map((opt) => (
+          <button key={opt} onClick={() => { onChange(opt); setShowOther(false); }}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
+              value === opt ? 'bg-apple-blue text-white' : 'bg-apple-fill-secondary text-apple-text-secondary hover:bg-gray-200'
+            }`}>
+            {opt}
+          </button>
+        ))}
+        <button onClick={() => { setShowOther(true); onChange(''); }}
+          className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
+            showOther || isOther ? 'bg-apple-blue text-white' : 'bg-apple-fill-secondary text-apple-text-secondary hover:bg-gray-200'
+          }`}>
+          Other
+        </button>
+      </div>
+      {(showOther || isOther) && (
+        <input type="text" value={isOther ? value : ''} onChange={(e) => onChange(e.target.value)}
+          placeholder={otherPlaceholder} autoFocus
+          className="w-full px-3 py-1.5 rounded-apple-sm border border-apple-border text-apple-xs focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue" />
+      )}
+    </div>
+  );
+}
+
 function IdeasTab({ siteUrl, projectId, platform, config, onGenerateFromIdea }: {
   siteUrl: string; projectId: string; platform: SocialPlatform;
   config: typeof PLATFORM_CONFIG[SocialPlatform]; onGenerateFromIdea: (idea: PostIdea) => void;
 }) {
+  const suggestions = useObjectivesSuggestions(projectId);
   const [niche, setNiche] = useState('');
   const [audience, setAudience] = useState('');
   const [voice, setVoice] = useState('');
@@ -447,6 +539,12 @@ function IdeasTab({ siteUrl, projectId, platform, config, onGenerateFromIdea }: 
   const [loading, setLoading] = useState(true);
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
   const [expandedIdea, setExpandedIdea] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!niche && suggestions.niches.length > 0) setNiche(suggestions.niches[0]);
+    if (!audience && suggestions.audiences.length > 0) setAudience(suggestions.audiences[0]);
+    if (!topics && suggestions.topics.length > 0) setTopics(suggestions.topics[0]);
+  }, [suggestions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadSavedBatches = useCallback(async () => {
     try {
@@ -542,24 +640,28 @@ function IdeasTab({ siteUrl, projectId, platform, config, onGenerateFromIdea }: 
       {/* Context Form */}
       <div className="rounded-apple border border-apple-divider bg-white p-5 mb-6">
         <h3 className="text-apple-sm font-semibold text-apple-text mb-1">Generate {config.name} Post Ideas</h3>
-        <p className="text-apple-xs text-apple-text-tertiary mb-4">Provide context about your brand to get tailored ideas. All fields are optional.</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+        <p className="text-apple-xs text-apple-text-tertiary mb-4">
+          {suggestions.niches.length > 0
+            ? 'Options auto-generated from your site objectives. Select one or choose Other.'
+            : 'Provide context about your brand to get tailored ideas. Set up Objectives for auto-generated options.'}
+        </p>
+        <div className="space-y-4 mb-4">
+          <SelectableField label="Niche / Industry" options={suggestions.niches} value={niche} onChange={setNiche} otherPlaceholder="e.g., SaaS, fitness, real estate" />
+          <SelectableField label="Target Audience" options={suggestions.audiences} value={audience} onChange={setAudience} otherPlaceholder="e.g., startup founders, marketers" />
           <div>
-            <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1">Niche / Industry</label>
-            <input type="text" value={niche} onChange={(e) => setNiche(e.target.value)} placeholder="e.g., SaaS, fitness, real estate" className="w-full px-3 py-2 rounded-apple-sm border border-apple-border text-apple-sm focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue" />
+            <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1.5">Brand Voice</label>
+            <div className="flex flex-wrap gap-1.5">
+              {VOICE_OPTIONS.map((v) => (
+                <button key={v} onClick={() => setVoice(voice === v ? '' : v)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
+                    voice === v ? 'bg-apple-blue text-white' : 'bg-apple-fill-secondary text-apple-text-secondary hover:bg-gray-200'
+                  }`}>
+                  {v}
+                </button>
+              ))}
+            </div>
           </div>
-          <div>
-            <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1">Target Audience</label>
-            <input type="text" value={audience} onChange={(e) => setAudience(e.target.value)} placeholder="e.g., startup founders, marketers" className="w-full px-3 py-2 rounded-apple-sm border border-apple-border text-apple-sm focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue" />
-          </div>
-          <div>
-            <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1">Brand Voice</label>
-            <input type="text" value={voice} onChange={(e) => setVoice(e.target.value)} placeholder="e.g., professional, witty, casual" className="w-full px-3 py-2 rounded-apple-sm border border-apple-border text-apple-sm focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue" />
-          </div>
-          <div>
-            <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1">Focus Topics</label>
-            <input type="text" value={topics} onChange={(e) => setTopics(e.target.value)} placeholder="e.g., SEO tips, growth hacking" className="w-full px-3 py-2 rounded-apple-sm border border-apple-border text-apple-sm focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue" />
-          </div>
+          <SelectableField label="Focus Topics" options={suggestions.topics} value={topics} onChange={setTopics} otherPlaceholder="e.g., SEO tips, growth hacking" />
         </div>
         <button onClick={generateIdeas} disabled={running}
           className="px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50">
