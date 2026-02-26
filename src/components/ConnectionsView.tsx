@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { authenticatedFetch } from '../services/authService';
 import { API_ENDPOINTS } from '../config/api';
+import { matchesRootDomain } from '../utils/domainMatch';
+import { InfoTooltip } from './Tooltip';
 
 interface ConnectionsViewProps {
   siteUrl: string;
   projectId: string;
+  projectDomain: string;
   gscProperty: string | null;
   onGscPropertySelected: (property: string) => void;
 }
@@ -73,7 +76,7 @@ const SERVICES = [
   },
 ] as const;
 
-export default function ConnectionsView({ siteUrl, projectId, gscProperty, onGscPropertySelected }: ConnectionsViewProps) {
+export default function ConnectionsView({ siteUrl, projectId, projectDomain, gscProperty, onGscPropertySelected }: ConnectionsViewProps) {
   const [connections, setConnections] = useState<ConnectionStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState<string | null>(null);
@@ -104,8 +107,10 @@ export default function ConnectionsView({ siteUrl, projectId, gscProperty, onGsc
     try {
       const res = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.sites);
       const data = await res.json();
-      setGscSites(data.sites || []);
-      if ((data.sites || []).length > 0 && !gscProperty) {
+      const all: GscSite[] = data.sites || [];
+      const filtered = all.filter((s) => matchesRootDomain(s.siteUrl, projectDomain));
+      setGscSites(filtered);
+      if (filtered.length > 0 && !gscProperty) {
         setShowGscPicker(true);
       }
     } catch {
@@ -113,7 +118,7 @@ export default function ConnectionsView({ siteUrl, projectId, gscProperty, onGsc
     } finally {
       setGscLoading(false);
     }
-  }, [gscProperty]);
+  }, [gscProperty, projectDomain]);
 
   useEffect(() => {
     const gscConn = connections.find((c) => c.service === 'google_search_console');
@@ -199,18 +204,22 @@ export default function ConnectionsView({ siteUrl, projectId, gscProperty, onGsc
   return (
     <div className="max-w-4xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-apple-title2 font-bold text-apple-text">Connections</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-apple-title2 font-bold text-apple-text">Connections</h1>
+          <InfoTooltip text="Connect external services to pull data into your project. OAuth tokens are stored server-side and never exposed to the browser." position="right" />
+        </div>
         <p className="text-apple-sm text-apple-text-secondary mt-1">
-          Link external platforms to pull data into this project. Tokens are stored securely on the server.
+          Link external platforms to pull data into this project.
         </p>
       </div>
 
       {/* GSC Property Picker */}
       {showGscPicker && !gscProperty && (
         <div className="mb-8 card p-6 ring-1 ring-blue-200">
-          <h3 className="text-apple-base font-semibold text-apple-text mb-2">
-            Select a Search Console Property
-          </h3>
+          <div className="flex items-center gap-2 mb-2">
+            <h3 className="text-apple-base font-semibold text-apple-text">Select a Search Console Property</h3>
+            <InfoTooltip text="Only properties matching your project's root domain are shown. The selected property determines which data appears in keyword rankings and overview." position="right" />
+          </div>
           <p className="text-apple-sm text-apple-text-secondary mb-4">
             Choose which property to use for keyword tracking in this project.
           </p>

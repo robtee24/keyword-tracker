@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { usePlan } from '../contexts/PlanContext';
 import { PlanBadge } from './UpgradePrompt';
+import { InfoTooltip } from './Tooltip';
 
 export type View =
   | 'projects' | 'objectives' | 'connections'

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { authenticatedFetch } from '../services/authService';
 import { API_ENDPOINTS } from '../config/api';
+import { InfoTooltip } from './Tooltip';
 
 interface SettingsViewProps {
   projectId: string;
@@ -99,7 +100,10 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
       </div>
 
       <div className="card p-6 mb-6">
-        <h2 className="text-apple-title3 font-semibold text-apple-text mb-4">Team Members</h2>
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-apple-title3 font-semibold text-apple-text">Team Members</h2>
+          <InfoTooltip text="Owner has full control. Editors can run audits and manage content. Viewers have read-only access." position="right" />
+        </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-8">

@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { API_ENDPOINTS } from '../config/api';
-import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
+import { InfoTooltip } from './Tooltip';
 
 type AuditType = 'seo' | 'content' | 'aeo' | 'schema' | 'compliance' | 'speed';
-type AuditMode = 'page' | 'keyword' | 'group' | 'site';
+type AuditMode = 'page' | 'pages' | 'site';
 
 interface Recommendation {
   priority: 'high' | 'medium' | 'low';
@@ -27,11 +27,6 @@ interface PageAuditResult {
   error?: string;
 }
 
-interface KeywordGroup {
-  id: number;
-  name: string;
-  keywords: string[];
-}
 
 interface AuditMainViewProps {
   siteUrl: string;
@@ -68,11 +63,10 @@ const AUDIT_TYPE_COLORS: Record<AuditType, string> = {
 function getScoreColor(s: number) { return s >= 80 ? 'text-green-600' : s >= 60 ? 'text-amber-600' : 'text-red-600'; }
 function getScoreBg(s: number) { return s >= 80 ? 'bg-green-50 border-green-200' : s >= 60 ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'; }
 
-const MODE_INFO: Record<AuditMode, { label: string; icon: string; desc: string }> = {
-  page: { label: 'By Page', icon: '📄', desc: 'Audit a specific URL' },
-  keyword: { label: 'By Keyword', icon: '🔑', desc: 'Audit pages ranking for a keyword' },
-  group: { label: 'By Group', icon: '📁', desc: 'Audit all pages in a keyword group' },
-  site: { label: 'Full Site', icon: '🌐', desc: 'Audit every page in your sitemap' },
+const MODE_INFO: Record<AuditMode, { label: string; icon: string; desc: string; tip: string }> = {
+  page: { label: 'Single Page', icon: '📄', desc: 'Audit a specific URL', tip: 'Enter any URL to run all selected audit types on that single page.' },
+  pages: { label: 'Multiple Pages', icon: '📑', desc: 'Select up to 10 pages to audit', tip: 'Manually add URLs or pick from your sitemap. Max 10 pages per audit run.' },
+  site: { label: 'Full Site', icon: '🌐', desc: 'Audit every unique page in your sitemap', tip: 'Fetches your sitemap, detects dynamic/template pages, and audits only unique page structures.' },
 };
 
 function recKey(pageUrl: string, auditType: string, idx: number) { return `${auditType}::${pageUrl}::${idx}`; }
@@ -102,15 +96,18 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
   const [selectedTypes, setSelectedTypes] = useState<Set<AuditType>>(new Set(['seo', 'content', 'aeo', 'schema', 'compliance', 'speed']));
   const [mode, setMode] = useState<AuditMode | null>(null);
   const [pageUrlInput, setPageUrlInput] = useState('');
-  const [keywordSearch, setKeywordSearch] = useState('');
-  const [allKeywords, setAllKeywords] = useState<string[]>([]);
-  const [selectedKeyword, setSelectedKeyword] = useState<string | null>(null);
-  const [keywordPages, setKeywordPages] = useState<string[]>([]);
-  const [loadingKeywordPages, setLoadingKeywordPages] = useState(false);
-  const [groups, setGroups] = useState<KeywordGroup[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState<KeywordGroup | null>(null);
-  const [groupPages, setGroupPages] = useState<string[]>([]);
-  const [loadingGroupPages, setLoadingGroupPages] = useState(false);
+  const [multiPages, setMultiPages] = useState<string[]>([]);
+  const [multiPageInput, setMultiPageInput] = useState('');
+  const [showSitemapPicker, setShowSitemapPicker] = useState(false);
+  const [sitemapUrls, setSitemapUrls] = useState<string[]>([]);
+  const [sitemapSearch, setSitemapSearch] = useState('');
+  const [loadingSitemapPicker, setLoadingSitemapPicker] = useState(false);
+
+  const [templateGroups, setTemplateGroups] = useState<any[] | null>(null);
+  const [templateSummary, setTemplateSummary] = useState<any>(null);
+  const [classifying, setClassifying] = useState(false);
+  const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null);
+  const [disabledTemplates, setDisabledTemplates] = useState<Set<string>>(new Set());
 
   const [results, setResults] = useState<PageAuditResult[]>([]);
   const [targetUrls, setTargetUrls] = useState<string[]>([]);
@@ -184,20 +181,27 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
     loadTasks();
   }, [siteUrl]);
 
-  useEffect(() => {
-    if (!siteUrl) return;
-    fetch(`${API_ENDPOINTS.db.keywords}?siteUrl=${encodeURIComponent(siteUrl)}`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (data?.keywords) setAllKeywords(data.keywords.map((k: any) => k.keyword)); })
-      .catch(() => {});
-  }, [siteUrl]);
+  const addMultiPage = (url: string) => {
+    const full = url.startsWith('http') ? url : `${siteUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+    if (multiPages.length >= 10 || multiPages.includes(full)) return;
+    setMultiPages((prev) => [...prev, full]);
+    setMultiPageInput('');
+  };
 
-  useEffect(() => {
-    if (!siteUrl) return;
-    fetch(`${API_ENDPOINTS.db.keywordGroups}?siteUrl=${encodeURIComponent(siteUrl)}`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (data?.groups) setGroups(data.groups); })
-      .catch(() => {});
+  const removeMultiPage = (url: string) => {
+    setMultiPages((prev) => prev.filter((p) => p !== url));
+  };
+
+  const loadSitemapForPicker = useCallback(async () => {
+    setLoadingSitemapPicker(true);
+    try {
+      const resp = await fetch(`${API_ENDPOINTS.audit.sitemap}?siteUrl=${encodeURIComponent(siteUrl)}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        setSitemapUrls(data.urls || []);
+      }
+    } catch { /* */ }
+    setLoadingSitemapPicker(false);
   }, [siteUrl]);
 
   const toggleAuditType = (type: AuditType) => {
@@ -211,44 +215,6 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
 
   const selectAllTypes = () => setSelectedTypes(new Set(ALL_AUDIT_TYPES.map((t) => t.id)));
   const allSelected = selectedTypes.size === ALL_AUDIT_TYPES.length;
-
-  const filteredKeywords = keywordSearch.length >= 2
-    ? allKeywords.filter((kw) => kw.toLowerCase().includes(keywordSearch.toLowerCase())).slice(0, 10)
-    : [];
-
-  const fetchPagesForKeyword = useCallback(async (keyword: string) => {
-    setLoadingKeywordPages(true); setKeywordPages([]);
-    try {
-      const end = new Date(); const start = new Date(); start.setDate(start.getDate() - 90);
-      const resp = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.keywordPages, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, keyword, startDate: start.toISOString().split('T')[0], endDate: end.toISOString().split('T')[0] }),
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        const pages: string[] = (data.rows || []).map((r: any) => r.keys?.[1] || '').filter(Boolean);
-        setKeywordPages([...new Set(pages)]);
-      }
-    } catch { /* */ }
-    setLoadingKeywordPages(false);
-  }, [siteUrl]);
-
-  const fetchPagesForGroup = useCallback(async (group: KeywordGroup) => {
-    setLoadingGroupPages(true); setGroupPages([]);
-    const allPages = new Set<string>();
-    const end = new Date(); const start = new Date(); start.setDate(start.getDate() - 90);
-    for (const keyword of group.keywords.slice(0, 20)) {
-      try {
-        const resp = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.keywordPages, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ siteUrl, keyword, startDate: start.toISOString().split('T')[0], endDate: end.toISOString().split('T')[0] }),
-        });
-        if (resp.ok) { const data = await resp.json(); for (const r of data.rows || []) { const p = r.keys?.[1]; if (p) allPages.add(p); } }
-      } catch { /* */ }
-    }
-    setGroupPages([...allPages]);
-    setLoadingGroupPages(false);
-  }, [siteUrl]);
 
   const fetchSitemap = useCallback(async () => {
     setLoadingSitemap(true); setError(null);
@@ -333,11 +299,33 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
     const fullUrl = url.startsWith('http') ? url : `${siteUrl}${url.startsWith('/') ? '' : '/'}${url}`;
     runMultiAudit([fullUrl], false);
   };
-  const handleStartKeyword = () => { if (keywordPages.length > 0) runMultiAudit(keywordPages, false); };
-  const handleStartGroup = () => { if (groupPages.length > 0) runMultiAudit(groupPages, false); };
-  const handleStartSite = async () => {
+  const handleStartMultiPages = () => { if (multiPages.length > 0) runMultiAudit(multiPages, false); };
+  const handleClassifySite = async () => {
+    setClassifying(true); setError(null);
     const urls = await fetchSitemap();
-    if (urls.length > 0) runMultiAudit(urls, false);
+    if (urls.length === 0) { setClassifying(false); return; }
+    try {
+      const resp = await fetch(API_ENDPOINTS.audit.classifyPages, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        setTemplateGroups(data.groups || []);
+        setTemplateSummary({ totalPages: data.totalPages, uniqueTemplates: data.uniqueTemplates, dynamicGroups: data.dynamicGroups, auditablePages: data.auditablePages, blogGroups: data.blogGroups });
+      }
+    } catch { setError('Failed to classify pages'); }
+    setClassifying(false);
+  };
+  const handleStartSiteFromTemplates = () => {
+    if (!templateGroups) return;
+    const auditUrls: string[] = [];
+    for (const g of templateGroups) {
+      if (disabledTemplates.has(g.templateId)) continue;
+      if (g.isBlog) auditUrls.push(...g.urls);
+      else auditUrls.push(g.representative);
+    }
+    if (auditUrls.length > 0) runMultiAudit(auditUrls, false);
   };
   const handleResume = () => runMultiAudit(targetUrls, false);
   const stopAudit = () => { abortRef.current = true; };
@@ -449,13 +437,16 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
 
       {/* Mode Selection */}
       {!isRunning && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-3 gap-3 mb-6">
           {(Object.keys(MODE_INFO) as AuditMode[]).map((m) => {
             const info = MODE_INFO[m]; const isActive = mode === m;
             return (
-              <button key={m} onClick={() => { setMode(isActive ? null : m); setError(null); }}
+              <button key={m} onClick={() => { setMode(isActive ? null : m); setError(null); setTemplateGroups(null); setTemplateSummary(null); }}
                 className={`rounded-apple border p-4 text-left transition-all ${isActive ? 'border-apple-blue bg-apple-blue/5 ring-1 ring-apple-blue' : 'border-apple-divider bg-white hover:border-apple-blue/40'}`}>
-                <div className="text-lg mb-1">{info.icon}</div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-lg">{info.icon}</span>
+                  <InfoTooltip text={info.tip} position="top" />
+                </div>
                 <div className="text-apple-sm font-semibold text-apple-text">{info.label}</div>
                 <div className="text-apple-xs text-apple-text-tertiary mt-0.5">{info.desc}</div>
               </button>
@@ -477,51 +468,128 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
           </div>
         </div>
       )}
-      {mode === 'keyword' && !isRunning && (
+      {mode === 'pages' && !isRunning && (
         <div className="rounded-apple border border-apple-divider bg-white p-4 mb-6">
-          <label className="block text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider mb-2">Search Keyword</label>
-          <div className="relative">
-            <input type="text" value={keywordSearch} onChange={(e) => { setKeywordSearch(e.target.value); setSelectedKeyword(null); setKeywordPages([]); }} placeholder="Type to search your tracked keywords…"
-              className="w-full px-3 py-2 rounded-apple-sm border border-apple-border text-apple-sm focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue" />
-            {filteredKeywords.length > 0 && !selectedKeyword && (
-              <div className="absolute z-50 mt-1 w-full bg-white rounded-apple-sm border border-apple-divider shadow-lg max-h-48 overflow-y-auto">
-                {filteredKeywords.map((kw) => (<button key={kw} onClick={() => { setSelectedKeyword(kw); setKeywordSearch(kw); fetchPagesForKeyword(kw); }} className="w-full text-left px-3 py-2 text-apple-sm hover:bg-apple-fill-secondary transition-colors">{kw}</button>))}
-              </div>
-            )}
+          <div className="flex items-center justify-between mb-3">
+            <label className="text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider">Select Pages</label>
+            <span className="text-apple-xs text-apple-text-tertiary">{multiPages.length}/10 selected</span>
           </div>
-          {selectedKeyword && (
-            <div className="mt-3">
-              {loadingKeywordPages ? <div className="flex items-center gap-2 text-apple-sm text-apple-text-secondary"><div className="w-4 h-4 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />Finding pages…</div>
-              : keywordPages.length > 0 ? <div><p className="text-apple-sm text-apple-text-secondary mb-2">{keywordPages.length} page{keywordPages.length !== 1 ? 's' : ''} found</p><button onClick={handleStartKeyword} className="px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors">Audit {keywordPages.length} Page{keywordPages.length !== 1 ? 's' : ''} ({selectedTypes.size} types)</button></div>
-              : <p className="text-apple-sm text-apple-text-tertiary">No pages found.</p>}
+          <div className="flex gap-2 mb-3">
+            <input type="text" value={multiPageInput} onChange={(e) => setMultiPageInput(e.target.value)} placeholder={`${siteUrl}/page-path or full URL`}
+              className="flex-1 px-3 py-2 rounded-apple-sm border border-apple-border text-apple-sm focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue"
+              onKeyDown={(e) => { if (e.key === 'Enter' && multiPageInput.trim()) addMultiPage(multiPageInput.trim()); }} disabled={multiPages.length >= 10} />
+            <button onClick={() => { if (multiPageInput.trim()) addMultiPage(multiPageInput.trim()); }} disabled={!multiPageInput.trim() || multiPages.length >= 10}
+              className="px-3 py-2 rounded-apple-sm border border-apple-border text-apple-sm text-apple-text-secondary hover:bg-apple-fill-secondary transition-colors disabled:opacity-50">Add</button>
+            <button onClick={() => { setShowSitemapPicker(true); if (sitemapUrls.length === 0) loadSitemapForPicker(); }} disabled={multiPages.length >= 10}
+              className="px-3 py-2 rounded-apple-sm border border-apple-border text-apple-sm text-apple-text-secondary hover:bg-apple-fill-secondary transition-colors disabled:opacity-50 shrink-0">Import from Sitemap</button>
+          </div>
+          {multiPages.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {multiPages.map((url) => (
+                <span key={url} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-apple-pill bg-apple-blue/10 text-apple-blue text-apple-xs font-medium max-w-[300px]">
+                  <span className="truncate">{url.replace(/^https?:\/\/[^/]+/, '')}</span>
+                  <button onClick={() => removeMultiPage(url)} className="shrink-0 hover:text-apple-red transition-colors">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {multiPages.length > 0 && (
+            <button onClick={handleStartMultiPages} className="px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors">
+              Audit {multiPages.length} Page{multiPages.length !== 1 ? 's' : ''} ({selectedTypes.size} types)
+            </button>
+          )}
+          {showSitemapPicker && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+              <div className="bg-white rounded-apple shadow-apple-lg w-full max-w-lg mx-4 p-6 max-h-[80vh] flex flex-col">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-apple-base font-semibold text-apple-text">Select from Sitemap</h3>
+                  <button onClick={() => setShowSitemapPicker(false)} className="p-1 rounded hover:bg-apple-fill-secondary transition-colors">
+                    <svg className="w-5 h-5 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+                {loadingSitemapPicker ? (
+                  <div className="flex items-center justify-center py-8"><div className="w-5 h-5 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" /><span className="ml-2 text-apple-sm text-apple-text-secondary">Loading sitemap...</span></div>
+                ) : (
+                  <>
+                    <input type="text" value={sitemapSearch} onChange={(e) => setSitemapSearch(e.target.value)} placeholder="Filter URLs..."
+                      className="px-3 py-2 rounded-apple-sm border border-apple-border text-apple-sm mb-3 focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue" />
+                    <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+                      {sitemapUrls.filter((u) => !sitemapSearch || u.toLowerCase().includes(sitemapSearch.toLowerCase())).slice(0, 100).map((url) => {
+                        const isSelected = multiPages.includes(url);
+                        return (<button key={url} onClick={() => { if (isSelected) removeMultiPage(url); else addMultiPage(url); }} disabled={!isSelected && multiPages.length >= 10}
+                          className={`w-full text-left px-3 py-2 rounded-apple-sm text-apple-xs transition-colors truncate ${isSelected ? 'bg-apple-blue/10 text-apple-blue font-medium' : 'hover:bg-apple-fill-secondary text-apple-text disabled:opacity-40'}`}>
+                          {isSelected && <span className="mr-1.5">✓</span>}{url.replace(/^https?:\/\/[^/]+/, '')}
+                        </button>);
+                      })}
+                      {sitemapUrls.length === 0 && <p className="text-apple-sm text-apple-text-tertiary text-center py-4">No URLs found in sitemap.</p>}
+                    </div>
+                    <div className="flex justify-end mt-4 pt-3 border-t border-apple-divider"><button onClick={() => setShowSitemapPicker(false)} className="btn-primary">Done</button></div>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
       )}
-      {mode === 'group' && !isRunning && (
-        <div className="rounded-apple border border-apple-divider bg-white p-4 mb-6">
-          <label className="block text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider mb-2">Select Group</label>
-          {groups.length === 0 ? <p className="text-apple-sm text-apple-text-tertiary">No keyword groups found.</p> : (
-            <div className="space-y-2">
-              {groups.map((group) => { const isSel = selectedGroup?.id === group.id; return (
-                <button key={group.id} onClick={() => { if (isSel) { setSelectedGroup(null); setGroupPages([]); } else { setSelectedGroup(group); fetchPagesForGroup(group); } }}
-                  className={`w-full text-left px-3 py-2.5 rounded-apple-sm border transition-all flex items-center justify-between ${isSel ? 'border-apple-blue bg-apple-blue/5' : 'border-apple-divider hover:border-apple-blue/40'}`}>
-                  <div><span className="text-apple-sm font-medium text-apple-text">{group.name}</span><span className="text-apple-xs text-apple-text-tertiary ml-2">{group.keywords.length} keywords</span></div>
-                  {isSel && <svg className="w-4 h-4 text-apple-blue" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
-                </button>); })}
-            </div>
-          )}
-          {selectedGroup && (
-            <div className="mt-3">{loadingGroupPages ? <div className="flex items-center gap-2 text-apple-sm text-apple-text-secondary"><div className="w-4 h-4 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />Finding pages…</div>
-            : groupPages.length > 0 ? <div><p className="text-apple-sm text-apple-text-secondary mb-2">{groupPages.length} unique pages found</p><button onClick={handleStartGroup} className="px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors">Audit {groupPages.length} Page{groupPages.length !== 1 ? 's' : ''} ({selectedTypes.size} types)</button></div>
-            : <p className="text-apple-sm text-apple-text-tertiary">No pages found.</p>}</div>
-          )}
-        </div>
-      )}
-      {mode === 'site' && !isRunning && (
+      {mode === 'site' && !isRunning && !templateGroups && (
         <div className="rounded-apple border border-apple-divider bg-white p-4 mb-6 flex items-center justify-between">
-          <div><p className="text-apple-sm font-medium text-apple-text">Full Site Audit</p><p className="text-apple-xs text-apple-text-tertiary mt-0.5">Crawls your entire sitemap and runs {selectedTypes.size} audit type{selectedTypes.size !== 1 ? 's' : ''} on every page.</p></div>
-          <button onClick={handleStartSite} disabled={loadingSitemap} className="px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50 shrink-0">{loadingSitemap ? 'Loading…' : 'Start Full Audit'}</button>
+          <div>
+            <p className="text-apple-sm font-medium text-apple-text">Full Site Audit</p>
+            <p className="text-apple-xs text-apple-text-tertiary mt-0.5">Analyzes your sitemap, detects dynamic templates, and runs {selectedTypes.size} audit type{selectedTypes.size !== 1 ? 's' : ''} on unique pages.</p>
+          </div>
+          <button onClick={handleClassifySite} disabled={loadingSitemap || classifying} className="px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50 shrink-0">
+            {classifying ? 'Analyzing...' : loadingSitemap ? 'Loading...' : 'Analyze Site'}
+          </button>
+        </div>
+      )}
+      {mode === 'site' && !isRunning && templateGroups && templateSummary && (
+        <div className="rounded-apple border border-apple-divider bg-white p-5 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-apple-base font-semibold text-apple-text">Site Analysis Complete</p>
+              <p className="text-apple-xs text-apple-text-tertiary mt-0.5">{templateSummary.totalPages} pages · {templateSummary.uniqueTemplates} templates · {templateSummary.auditablePages} to audit · {selectedTypes.size} type{selectedTypes.size !== 1 ? 's' : ''}</p>
+            </div>
+            <button onClick={handleStartSiteFromTemplates} className="px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors shrink-0">Start Audit</button>
+          </div>
+          {templateSummary.dynamicGroups > 0 && (
+            <div className="px-3 py-2 rounded-apple-sm bg-amber-50 border border-amber-200 text-apple-xs text-amber-800 mb-4">
+              {templateSummary.dynamicGroups} dynamic template{templateSummary.dynamicGroups !== 1 ? 's' : ''} detected — only 1 representative page per template will be audited.
+            </div>
+          )}
+          <div className="space-y-2 max-h-[400px] overflow-y-auto">
+            {templateGroups.map((g) => {
+              const isDisabled = disabledTemplates.has(g.templateId);
+              const isExpanded = expandedTemplate === g.templateId;
+              return (
+                <div key={g.templateId} className={`rounded-apple-sm border transition-all ${isDisabled ? 'border-apple-divider bg-apple-fill-secondary opacity-60' : 'border-apple-divider bg-white'}`}>
+                  <div className="flex items-center gap-3 px-3 py-2.5">
+                    <button onClick={() => setDisabledTemplates((prev) => { const n = new Set(prev); if (n.has(g.templateId)) n.delete(g.templateId); else n.add(g.templateId); return n; })}
+                      className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${isDisabled ? 'border-apple-text-tertiary' : 'border-apple-blue bg-apple-blue'}`}>
+                      {!isDisabled && <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-apple-sm font-medium text-apple-text truncate">{g.pattern}</span>
+                        {g.isDynamic && <span className="text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 shrink-0">Template · {g.count} pages</span>}
+                        {g.isBlog && <span className="text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 shrink-0">Blog · {g.count} posts</span>}
+                        {!g.isDynamic && !g.isBlog && g.count === 1 && <span className="text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 shrink-0">Unique</span>}
+                      </div>
+                      <p className="text-apple-xs text-apple-text-tertiary truncate mt-0.5">{g.isDynamic ? `Auditing: ${g.representative.replace(/^https?:\/\/[^/]+/, '')}` : g.representative.replace(/^https?:\/\/[^/]+/, '')}</p>
+                    </div>
+                    {g.count > 1 && <button onClick={() => setExpandedTemplate(isExpanded ? null : g.templateId)} className="text-apple-xs text-apple-blue hover:underline shrink-0">{isExpanded ? 'Hide' : `${g.count} URLs`}</button>}
+                  </div>
+                  {isExpanded && g.count > 1 && (
+                    <div className="px-3 pb-2.5 ml-7 space-y-0.5 max-h-[200px] overflow-y-auto border-t border-apple-divider pt-2">
+                      {g.urls.slice(0, 50).map((u: string) => (<p key={u} className="text-apple-xs text-apple-text-tertiary truncate">{u.replace(/^https?:\/\/[^/]+/, '')}</p>))}
+                      {g.urls.length > 50 && <p className="text-apple-xs text-apple-text-tertiary italic">...and {g.urls.length - 50} more</p>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -594,8 +662,14 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
                 {/* Card Header */}
                 <div className="p-4 flex items-center gap-4 cursor-pointer hover:bg-apple-fill-secondary/30 transition-colors"
                   onClick={() => setExpandedRun(isExp ? null : runIdx)}>
-                  <div className={`w-14 h-14 rounded-apple-sm border-2 flex items-center justify-center shrink-0 ${getScoreBg(avgScore)}`}>
-                    <span className={`text-xl font-bold ${getScoreColor(avgScore)}`}>{avgScore}</span>
+                  <div className="relative w-14 h-14 shrink-0">
+                    <svg className="w-14 h-14 -rotate-90" viewBox="0 0 56 56">
+                      <circle cx="28" cy="28" r="24" fill="none" stroke="currentColor" strokeWidth="4" className="text-apple-fill-secondary" />
+                      <circle cx="28" cy="28" r="24" fill="none" strokeWidth="4" strokeLinecap="round"
+                        className={avgScore >= 80 ? 'text-green-500' : avgScore >= 60 ? 'text-amber-500' : 'text-red-500'}
+                        strokeDasharray={`${avgScore * 1.508} 150.8`} />
+                    </svg>
+                    <span className={`absolute inset-0 flex items-center justify-center text-apple-sm font-bold ${getScoreColor(avgScore)}`}>{avgScore}</span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -606,8 +680,22 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
                     <div className="text-apple-sm font-medium text-apple-text">
                       {uniquePages.length} page{uniquePages.length !== 1 ? 's' : ''} audited · {totalRecs} recommendation{totalRecs !== 1 ? 's' : ''}
                     </div>
-                    <div className="text-apple-xs text-apple-text-tertiary mt-0.5">
-                      {new Date(latestDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(latestDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-apple-xs text-apple-text-tertiary">
+                        {new Date(latestDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(latestDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      {totalRecs > 0 && (() => {
+                        const doneCount = run.reduce((sum, r) => sum + r.recommendations.filter((_, ri) => completedRecs.has(recKey(r.page_url, r.audit_type, ri))).length, 0);
+                        const pct = Math.round((doneCount / totalRecs) * 100);
+                        return (
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-apple-xs text-apple-text-tertiary">{doneCount}/{totalRecs}</span>
+                            <span className="w-16 h-1.5 bg-apple-fill-secondary rounded-full overflow-hidden">
+                              <span className="block h-full bg-green-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                            </span>
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">

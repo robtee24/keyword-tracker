@@ -53,6 +53,7 @@ export const API_ENDPOINTS = {
     runBatch: `${API_BASE_URL}/api/audit/run-batch`,
     runMulti: `${API_BASE_URL}/api/audit/run-multi`,
     runAdAudit: `${API_BASE_URL}/api/audit/run-ad-audit`,
+    classifyPages: `${API_BASE_URL}/api/audit/classify-pages`,
   },
   advertising: {
     generate: `${API_BASE_URL}/api/advertising/generate`,

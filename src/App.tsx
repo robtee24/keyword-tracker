@@ -41,11 +41,14 @@ import { API_ENDPOINTS } from './config/api';
 import { PlanProvider, usePlan } from './contexts/PlanContext';
 import UpgradePrompt from './components/UpgradePrompt';
 import SettingsView from './components/SettingsView';
+import GscPropertyDropdown from './components/GscPropertyDropdown';
+import GscRequiredModal from './components/GscRequiredModal';
 import type { DateRange } from './types';
 import type { Session } from '@supabase/supabase-js';
 
 type AppState = 'loading' | 'unauthenticated' | 'authenticated';
 
+const GSC_REQUIRED_VIEWS = new Set<View>(['overview', 'keywords', 'lost-keywords']);
 const SITE_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit']);
 const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-tiktok', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure']);
 
@@ -366,19 +369,12 @@ function App() {
 
   if (appState === 'unauthenticated') {
     const openApp = () => {
-      // Navigate to /app to show the auth page
-      window.history.pushState({}, '', '/app');
-      setAppState('unauthenticated');
+      navigate('/app');
     };
-    const loc = window.location.pathname;
-    const showAuth = loc === '/app';
-
-    if (showAuth) {
-      return <AuthPage onAuthenticated={() => setAppState('authenticated')} />;
-    }
 
     return (
       <Routes>
+        <Route path="/app" element={<AuthPage onAuthenticated={() => setAppState('authenticated')} />} />
         <Route path="/features/seo-audit-tool" element={<SeoAuditToolPage onOpenApp={openApp} />} />
         <Route path="/features/keyword-rank-tracker" element={<KeywordRankTrackerPage onOpenApp={openApp} />} />
         <Route path="/features/ai-content-generator" element={<AiContentGeneratorPage onOpenApp={openApp} />} />
@@ -439,6 +435,14 @@ function App() {
           </div>
 
           <div className="flex-1" />
+
+          {activeProject && GSC_REQUIRED_VIEWS.has(currentView) && activeProject.gsc_property && (
+            <GscPropertyDropdown
+              projectDomain={activeProject.domain}
+              currentProperty={activeProject.gsc_property}
+              onPropertyChange={(prop) => handleUpdateProject(activeProject.id, { gsc_property: prop })}
+            />
+          )}
 
           {showsDateControls && (
             <div className="flex items-center gap-2">
@@ -561,6 +565,7 @@ function App() {
             <ConnectionsView
               siteUrl={getSiteUrl(activeProject)}
               projectId={activeProject.id}
+              projectDomain={activeProject.domain}
               gscProperty={activeProject.gsc_property}
               onGscPropertySelected={(prop) => handleUpdateProject(activeProject.id, { gsc_property: prop })}
             />
@@ -574,7 +579,11 @@ function App() {
             />
           )}
 
-          {activeProject && (
+          {activeProject && !activeProject.gsc_property && GSC_REQUIRED_VIEWS.has(currentView) && (
+            <GscRequiredModal onGoToConnections={() => handleNavigate('connections')} />
+          )}
+
+          {activeProject && activeProject.gsc_property && (
             <div style={{ display: currentView === 'overview' ? 'block' : 'none' }}>
               <OverviewView
                 siteUrl={getSiteUrl(activeProject)}
@@ -584,7 +593,7 @@ function App() {
             </div>
           )}
 
-          {activeProject && committedDateRange && (
+          {activeProject && activeProject.gsc_property && committedDateRange && (
             <div style={{ display: currentView === 'keywords' ? 'block' : 'none' }}>
               <GoogleSearchConsole
                 dateRange={committedDateRange}
@@ -596,7 +605,7 @@ function App() {
             </div>
           )}
 
-          {currentView === 'lost-keywords' && activeProject && (
+          {currentView === 'lost-keywords' && activeProject && activeProject.gsc_property && (
             <LostKeywordsView siteUrl={getSiteUrl(activeProject)} />
           )}
 
