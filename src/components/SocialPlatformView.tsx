@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { authenticatedFetch } from '../services/authService';
 import { API_ENDPOINTS } from '../config/api';
 import { logActivity } from '../utils/activityLog';
@@ -1082,7 +1082,7 @@ function PostPreview({ platform, config, content, hashtags, mediaUrl, mediaType,
     return <img src={mediaUrl} alt="" className="w-full" />;
   };
 
-  const mockups: Record<SocialPlatform, () => JSX.Element> = {
+  const mockups: Record<SocialPlatform, () => ReactNode> = {
     instagram: () => (
       <div className="bg-white rounded-xl overflow-hidden shadow-xl max-w-[375px] mx-auto border border-gray-200">
         <div className="flex items-center gap-2.5 px-3 py-2.5 border-b border-gray-100">
