@@ -68,6 +68,7 @@ export const API_ENDPOINTS = {
     audit: `${API_BASE_URL}/api/social/audit`,
     ideas: `${API_BASE_URL}/api/social/ideas`,
     generate: `${API_BASE_URL}/api/social/generate`,
+    generateVideo: `${API_BASE_URL}/api/social/generate-video`,
   },
   build: {
     crawl: `${API_BASE_URL}/api/build/crawl`,

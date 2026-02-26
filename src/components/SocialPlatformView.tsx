@@ -97,6 +97,8 @@ const PLATFORM_CONFIG: Record<SocialPlatform, {
   pinterest: { name: 'Pinterest', color: 'text-red-600', bgColor: 'bg-red-50', formats: ['Pin Description', 'Idea Pin Sequence'], charLimit: 500, description: 'Visual discovery and SEO-rich descriptions', profilePlaceholder: 'https://pinterest.com/yourbrand' },
 };
 
+const VIDEO_FORMATS = new Set(['Reel Script', 'Video Script', 'Video Post', 'Story Sequence']);
+
 const PRIORITY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   high: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' },
   medium: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
@@ -633,9 +635,14 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
   const [copied, setCopied] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishTooltip, setPublishTooltip] = useState(false);
+  const [generatingVideo, setGeneratingVideo] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
   const [savedPosts, setSavedPosts] = useState<SavedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedPost, setExpandedPost] = useState<string | null>(null);
+
+  const isVideoFormat = VIDEO_FORMATS.has(postType);
 
   // Handle prefill from Ideas tab
   useEffect(() => {
@@ -683,6 +690,43 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
       }
     } catch { /* */ }
     setRunning(false);
+  };
+
+  const generateVideo = async () => {
+    if (!generated?.content) return;
+    setGeneratingVideo(true);
+    setVideoUrl(null);
+    setVideoError(null);
+    try {
+      const videoPrompt = `Create a visually engaging social media video for ${config.name}: ${generated.content.slice(0, 500)}`;
+      const resp = await authenticatedFetch(API_ENDPOINTS.social.generateVideo, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform, prompt: videoPrompt }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.error) {
+          setVideoError(data.error);
+        } else {
+          setVideoUrl(data.videoUrl);
+          logActivity(siteUrl, 'social', 'video', `Generated ${config.name} video for: "${topic.slice(0, 50)}"`);
+        }
+      }
+    } catch {
+      setVideoError('Failed to generate video. Please try again.');
+    }
+    setGeneratingVideo(false);
+  };
+
+  const downloadVideo = () => {
+    if (!videoUrl) return;
+    const link = document.createElement('a');
+    link.href = videoUrl;
+    link.download = `${platform}-video-${Date.now()}.mp4`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const copyToClipboard = async (text: string) => {
@@ -829,6 +873,56 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
               )}
             </div>
           </div>
+
+          {/* Video Generation for video formats */}
+          {isVideoFormat && (
+            <div className="mt-4 rounded-apple-sm border border-apple-divider bg-apple-fill-secondary/20 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h4 className="text-apple-sm font-semibold text-apple-text flex items-center gap-2">
+                    <svg className="w-4 h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                    Generate Video
+                  </h4>
+                  <p className="text-apple-xs text-apple-text-tertiary mt-0.5">Create an AI-generated video based on your post content using LTX Video.</p>
+                </div>
+                <button onClick={generateVideo} disabled={generatingVideo}
+                  className="px-4 py-2 rounded-apple-sm bg-purple-600 text-white text-apple-sm font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 flex items-center gap-2 shrink-0">
+                  {generatingVideo ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Generating Video...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      Generate Video
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {videoError && (
+                <div className="mt-3 rounded-apple-sm border border-red-200 bg-red-50 p-3">
+                  <p className="text-apple-xs text-red-700">{videoError}</p>
+                </div>
+              )}
+
+              {videoUrl && (
+                <div className="mt-3 space-y-3">
+                  <video
+                    src={videoUrl}
+                    controls
+                    className="w-full max-w-lg rounded-apple-sm border border-apple-divider"
+                  />
+                  <button onClick={downloadVideo}
+                    className="px-4 py-2 rounded-apple-sm border border-apple-border text-apple-sm font-medium text-apple-text hover:bg-apple-fill-secondary transition-colors flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    Download Video
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
