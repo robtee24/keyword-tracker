@@ -14,11 +14,19 @@ const PLATFORM_VIDEO_SPECS = {
 };
 
 /**
+ * Build a cinematic prompt from structured shots array.
+ */
+function buildPromptFromShots(shots, platform) {
+  if (!shots || !Array.isArray(shots) || shots.length === 0) return null;
+  const scenes = shots.map((s, i) =>
+    `Scene ${i + 1} (${s.time || ''}): ${s.visual || s.description || ''}`
+  ).join('. ');
+  return `Cinematic social media video for ${platform}. ${scenes}. Professional lighting, smooth transitions, modern aesthetic.`;
+}
+
+/**
  * POST /api/social/generate-video
- * Generates a video using the LTX text-to-video API.
- *
- * Body: { platform, prompt, duration?, model? }
- * Returns: { videoUrl } with base64 data URL
+ * Body: { platform, prompt?, shots?, duration?, model? }
  */
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -30,8 +38,10 @@ export default async function handler(req, res) {
   const ltxKey = process.env.LTX_API_KEY;
   if (!ltxKey) return res.status(500).json({ error: 'LTX_API_KEY is not configured' });
 
-  const { platform, prompt, duration, model } = req.body || {};
-  if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+  const { platform, prompt, shots, duration, model } = req.body || {};
+
+  const videoPrompt = buildPromptFromShots(shots, platform) || prompt;
+  if (!videoPrompt) return res.status(400).json({ error: 'Either prompt or shots array is required' });
 
   const specs = PLATFORM_VIDEO_SPECS[platform] || PLATFORM_VIDEO_SPECS.instagram;
   const VALID_DURATIONS = [6, 8, 10, 12, 14, 16, 18, 20];
@@ -49,7 +59,7 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        prompt,
+        prompt: videoPrompt.slice(0, 2000),
         model: videoModel,
         duration: videoDuration,
         resolution: specs.resolution,

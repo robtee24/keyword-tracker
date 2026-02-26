@@ -60,6 +60,14 @@ interface IdeaBatch {
   created_at: string;
 }
 
+interface VideoShot {
+  time: string;
+  visual: string;
+  text_overlay?: string;
+  audio?: string;
+  purpose?: string;
+}
+
 interface GeneratedPost {
   content: string;
   hashtags: string[];
@@ -67,6 +75,9 @@ interface GeneratedPost {
   charCount: number;
   tips: string;
   bestTime: string;
+  script?: string;
+  shots?: VideoShot[];
+  imagePrompt?: string;
 }
 
 interface SavedPost {
@@ -85,16 +96,18 @@ const PLATFORM_CONFIG: Record<SocialPlatform, {
   color: string;
   bgColor: string;
   formats: string[];
+  videoFormats: string[];
+  staticFormats: string[];
   charLimit: number;
   description: string;
   profilePlaceholder: string;
 }> = {
-  instagram: { name: 'Instagram', color: 'text-pink-600', bgColor: 'bg-pink-50', formats: ['Reel Script', 'Carousel Slides', 'Single Post', 'Story Sequence'], charLimit: 2200, description: 'Visual content, Reels, Carousels, and Stories', profilePlaceholder: 'https://instagram.com/yourbrand' },
-  linkedin: { name: 'LinkedIn', color: 'text-blue-700', bgColor: 'bg-blue-50', formats: ['Text Post', 'Carousel Slides', 'Article', 'Poll'], charLimit: 3000, description: 'Professional content and thought leadership', profilePlaceholder: 'https://linkedin.com/company/yourbrand' },
-  x: { name: 'X (Twitter)', color: 'text-gray-900', bgColor: 'bg-gray-50', formats: ['Single Tweet', 'Thread', 'Poll'], charLimit: 280, description: 'Short-form content, threads, and real-time engagement', profilePlaceholder: 'https://x.com/yourbrand' },
-  facebook: { name: 'Facebook', color: 'text-blue-600', bgColor: 'bg-blue-50', formats: ['Text Post', 'Photo Caption', 'Video Post', 'Poll'], charLimit: 63206, description: 'Community engagement and native video', profilePlaceholder: 'https://facebook.com/yourbrand' },
-  tiktok: { name: 'TikTok', color: 'text-gray-900', bgColor: 'bg-gray-50', formats: ['Video Script', 'Photo Carousel Caption'], charLimit: 4000, description: 'Short-form video scripts and captions', profilePlaceholder: 'https://tiktok.com/@yourbrand' },
-  pinterest: { name: 'Pinterest', color: 'text-red-600', bgColor: 'bg-red-50', formats: ['Pin Description', 'Idea Pin Sequence'], charLimit: 500, description: 'Visual discovery and SEO-rich descriptions', profilePlaceholder: 'https://pinterest.com/yourbrand' },
+  instagram: { name: 'Instagram', color: 'text-pink-600', bgColor: 'bg-pink-50', formats: ['Reel Script', 'Carousel Slides', 'Single Post', 'Story Sequence'], videoFormats: ['Reel Script', 'Story Sequence'], staticFormats: ['Single Post', 'Carousel Slides'], charLimit: 2200, description: 'Visual content, Reels, Carousels, and Stories', profilePlaceholder: 'https://instagram.com/yourbrand' },
+  linkedin: { name: 'LinkedIn', color: 'text-blue-700', bgColor: 'bg-blue-50', formats: ['Text Post', 'Carousel Slides', 'Article', 'Poll'], videoFormats: ['Video Post'], staticFormats: ['Text Post', 'Carousel Slides', 'Article', 'Poll'], charLimit: 3000, description: 'Professional content and thought leadership', profilePlaceholder: 'https://linkedin.com/company/yourbrand' },
+  x: { name: 'X (Twitter)', color: 'text-gray-900', bgColor: 'bg-gray-50', formats: ['Single Tweet', 'Thread', 'Poll'], videoFormats: ['Video Post'], staticFormats: ['Single Tweet', 'Thread', 'Poll'], charLimit: 280, description: 'Short-form content, threads, and real-time engagement', profilePlaceholder: 'https://x.com/yourbrand' },
+  facebook: { name: 'Facebook', color: 'text-blue-600', bgColor: 'bg-blue-50', formats: ['Text Post', 'Photo Caption', 'Video Post', 'Poll'], videoFormats: ['Video Post'], staticFormats: ['Text Post', 'Photo Caption', 'Poll'], charLimit: 63206, description: 'Community engagement and native video', profilePlaceholder: 'https://facebook.com/yourbrand' },
+  tiktok: { name: 'TikTok', color: 'text-gray-900', bgColor: 'bg-gray-50', formats: ['Video Script', 'Photo Carousel Caption'], videoFormats: ['Video Script'], staticFormats: ['Photo Carousel Caption'], charLimit: 4000, description: 'Short-form video scripts and captions', profilePlaceholder: 'https://tiktok.com/@yourbrand' },
+  pinterest: { name: 'Pinterest', color: 'text-red-600', bgColor: 'bg-red-50', formats: ['Pin Description', 'Idea Pin Sequence'], videoFormats: ['Video Pin'], staticFormats: ['Pin Description', 'Idea Pin Sequence'], charLimit: 500, description: 'Visual discovery and SEO-rich descriptions', profilePlaceholder: 'https://pinterest.com/yourbrand' },
 };
 
 const VIDEO_FORMATS = new Set(['Reel Script', 'Video Script', 'Video Post', 'Story Sequence']);
@@ -620,6 +633,8 @@ function IdeasTab({ siteUrl, projectId, platform, config, onGenerateFromIdea }: 
    CREATE TAB
    ═══════════════════════════════════════════════════════════════ */
 
+type MediaType = 'static' | 'video';
+
 function CreateTab({ siteUrl, projectId, platform, config, isConnected, connectionLoading, prefillPostType, prefillTopic, prefillIdeaContext, onPrefillConsumed }: {
   siteUrl: string; projectId: string; platform: SocialPlatform;
   config: typeof PLATFORM_CONFIG[SocialPlatform]; isConnected: boolean; connectionLoading: boolean;
@@ -627,7 +642,8 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
   prefillIdeaContext: { hook: string; outline: string } | null;
   onPrefillConsumed: () => void;
 }) {
-  const [postType, setPostType] = useState(config.formats[0]);
+  const [mediaType, setMediaType] = useState<MediaType>('static');
+  const [postType, setPostType] = useState(config.staticFormats[0] || config.formats[0]);
   const [topic, setTopic] = useState('');
   const [ideaContext, setIdeaContext] = useState<{ hook: string; outline: string } | null>(null);
   const [running, setRunning] = useState(false);
@@ -635,36 +651,44 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
   const [copied, setCopied] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishTooltip, setPublishTooltip] = useState(false);
-  const [generatingVideo, setGeneratingVideo] = useState(false);
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [videoError, setVideoError] = useState<string | null>(null);
+
+  const [generatingMedia, setGeneratingMedia] = useState(false);
+  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
+  const [mediaError, setMediaError] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+
   const [savedPosts, setSavedPosts] = useState<SavedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedPost, setExpandedPost] = useState<string | null>(null);
 
-  const isVideoFormat = VIDEO_FORMATS.has(postType);
+  const availableFormats = mediaType === 'video' ? config.videoFormats : config.staticFormats;
 
-  // Handle prefill from Ideas tab
+  useEffect(() => {
+    if (!availableFormats.includes(postType)) {
+      setPostType(availableFormats[0] || config.formats[0]);
+    }
+  }, [mediaType, availableFormats, postType, config.formats]);
+
   useEffect(() => {
     if (prefillPostType || prefillTopic || prefillIdeaContext) {
-      if (prefillPostType && config.formats.includes(prefillPostType)) {
-        setPostType(prefillPostType);
+      if (prefillPostType) {
+        const isVideo = VIDEO_FORMATS.has(prefillPostType);
+        setMediaType(isVideo ? 'video' : 'static');
+        const fmts = isVideo ? config.videoFormats : config.staticFormats;
+        setPostType(fmts.includes(prefillPostType) ? prefillPostType : fmts[0]);
       }
       if (prefillTopic) setTopic(prefillTopic);
       if (prefillIdeaContext) setIdeaContext(prefillIdeaContext);
       onPrefillConsumed();
     }
-  }, [prefillPostType, prefillTopic, prefillIdeaContext, config.formats, onPrefillConsumed]);
+  }, [prefillPostType, prefillTopic, prefillIdeaContext, config, onPrefillConsumed]);
 
   const loadSavedPosts = useCallback(async () => {
     try {
       const resp = await authenticatedFetch(
         `${API_ENDPOINTS.db.socialPosts}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}&platform=${platform}`
       );
-      if (resp.ok) {
-        const data = await resp.json();
-        setSavedPosts(data.posts || []);
-      }
+      if (resp.ok) { setSavedPosts((await resp.json()).posts || []); }
     } catch { /* */ }
     setLoading(false);
   }, [siteUrl, projectId, platform]);
@@ -675,11 +699,13 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
     if (!topic.trim()) return;
     setRunning(true);
     setGenerated(null);
+    setMediaUrl(null);
+    setMediaError(null);
     try {
       const resp = await authenticatedFetch(API_ENDPOINTS.social.generate, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, projectId, platform, postType, topic, ideaContext }),
+        body: JSON.stringify({ siteUrl, projectId, platform, postType, topic, ideaContext, mediaType }),
       });
       if (resp.ok) {
         const data = await resp.json();
@@ -687,72 +713,76 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
         setIdeaContext(null);
         await loadSavedPosts();
         logActivity(siteUrl, 'social', 'generate', `Generated ${config.name} ${postType}: "${topic.slice(0, 50)}"`);
+
+        // Auto-generate media
+        if (mediaType === 'video' && data.shots?.length > 0) {
+          autoGenerateVideo(data.shots);
+        } else if (mediaType === 'static' && data.imagePrompt) {
+          autoGenerateImage(data.imagePrompt);
+        }
       }
     } catch { /* */ }
     setRunning(false);
   };
 
-  const generateVideo = async () => {
-    if (!generated?.content) return;
-    setGeneratingVideo(true);
-    setVideoUrl(null);
-    setVideoError(null);
+  const autoGenerateVideo = async (shots: any[]) => {
+    setGeneratingMedia(true);
+    setMediaError(null);
     try {
-      const videoPrompt = `Create a visually engaging social media video for ${config.name}: ${generated.content.slice(0, 500)}`;
       const resp = await authenticatedFetch(API_ENDPOINTS.social.generateVideo, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, prompt: videoPrompt }),
+        body: JSON.stringify({ platform, shots }),
       });
       if (resp.ok) {
         const data = await resp.json();
-        if (data.error) {
-          setVideoError(data.error);
-        } else {
-          setVideoUrl(data.videoUrl);
-          logActivity(siteUrl, 'social', 'video', `Generated ${config.name} video for: "${topic.slice(0, 50)}"`);
-        }
+        if (data.error) setMediaError(data.error);
+        else { setMediaUrl(data.videoUrl); logActivity(siteUrl, 'social', 'video', `Generated ${config.name} video`); }
       }
-    } catch {
-      setVideoError('Failed to generate video. Please try again.');
-    }
-    setGeneratingVideo(false);
+    } catch { setMediaError('Video generation failed.'); }
+    setGeneratingMedia(false);
   };
 
-  const downloadVideo = () => {
-    if (!videoUrl) return;
+  const autoGenerateImage = async (imagePrompt: string) => {
+    setGeneratingMedia(true);
+    setMediaError(null);
+    try {
+      const resp = await authenticatedFetch(API_ENDPOINTS.social.generateImage, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: imagePrompt, platform }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.error) setMediaError(data.error);
+        else { setMediaUrl(data.imageUrl); logActivity(siteUrl, 'social', 'image', `Generated ${config.name} image`); }
+      }
+    } catch { setMediaError('Image generation failed.'); }
+    setGeneratingMedia(false);
+  };
+
+  const downloadMedia = () => {
+    if (!mediaUrl) return;
     const link = document.createElement('a');
-    link.href = videoUrl;
-    link.download = `${platform}-video-${Date.now()}.mp4`;
+    link.href = mediaUrl;
+    link.download = `${platform}-${mediaType === 'video' ? 'video' : 'image'}-${Date.now()}.${mediaType === 'video' ? 'mp4' : 'png'}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch { /* */ }
+    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* */ }
   };
 
   const handlePublish = async () => {
     if (!isConnected || !generated) return;
     setPublishing(true);
-    // Placeholder: when API publishing is implemented, this will call the publish endpoint
-    setTimeout(() => {
-      setPublishing(false);
-      alert(`Publishing to ${config.name} is not yet available. This feature will be enabled once ${config.name} API integration is complete.`);
-    }, 500);
+    setTimeout(() => { setPublishing(false); alert(`Publishing to ${config.name} is not yet available. This feature will be enabled once ${config.name} API integration is complete.`); }, 500);
   };
 
   const deletePost = async (id: string) => {
-    await authenticatedFetch(API_ENDPOINTS.db.socialPosts, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, projectId }),
-    });
+    await authenticatedFetch(API_ENDPOINTS.db.socialPosts, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, projectId }) });
     setSavedPosts((prev) => prev.filter((p) => p.id !== id));
   };
 
@@ -762,38 +792,76 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
       <div className="rounded-apple border border-apple-divider bg-white p-5 mb-6">
         <h3 className="text-apple-sm font-semibold text-apple-text mb-1">Create a {config.name} Post</h3>
         <p className="text-apple-xs text-apple-text-tertiary mb-4">
-          Select a format and describe what you want to post about.
+          Choose your post type, pick a format, and describe your topic.
           {ideaContext && <span className="text-apple-blue font-medium ml-1">Pre-filled from idea.</span>}
         </p>
 
-        <div className="space-y-3 mb-4">
+        <div className="space-y-4 mb-4">
+          {/* Step 1: Media Type */}
           <div>
-            <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1.5">Post Format</label>
+            <label className="block text-apple-xs font-medium text-apple-text-secondary mb-2">Post Type</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => setMediaType('static')}
+                className={`p-4 rounded-apple-sm border-2 text-left transition-all ${
+                  mediaType === 'static' ? 'border-apple-blue bg-apple-blue/5' : 'border-apple-divider hover:border-apple-blue/30'
+                }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${mediaType === 'static' ? 'bg-apple-blue/10' : 'bg-apple-fill-secondary'}`}>
+                    <svg className={`w-5 h-5 ${mediaType === 'static' ? 'text-apple-blue' : 'text-apple-text-tertiary'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                  </div>
+                  <div>
+                    <p className={`text-apple-sm font-semibold ${mediaType === 'static' ? 'text-apple-blue' : 'text-apple-text'}`}>Static Post</p>
+                    <p className="text-apple-xs text-apple-text-tertiary">Image + caption</p>
+                  </div>
+                </div>
+              </button>
+              <button onClick={() => setMediaType('video')}
+                className={`p-4 rounded-apple-sm border-2 text-left transition-all ${
+                  mediaType === 'video' ? 'border-purple-500 bg-purple-50/50' : 'border-apple-divider hover:border-purple-300'
+                }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${mediaType === 'video' ? 'bg-purple-100' : 'bg-apple-fill-secondary'}`}>
+                    <svg className={`w-5 h-5 ${mediaType === 'video' ? 'text-purple-600' : 'text-apple-text-tertiary'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                  </div>
+                  <div>
+                    <p className={`text-apple-sm font-semibold ${mediaType === 'video' ? 'text-purple-600' : 'text-apple-text'}`}>Video Post</p>
+                    <p className="text-apple-xs text-apple-text-tertiary">Video + script + caption</p>
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Step 2: Format */}
+          <div>
+            <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1.5">Format</label>
             <div className="flex flex-wrap gap-2">
-              {config.formats.map((fmt) => (
+              {availableFormats.map((fmt) => (
                 <button key={fmt} onClick={() => setPostType(fmt)}
                   className={`px-3 py-1.5 rounded-apple-sm text-apple-xs font-medium transition-all ${
-                    postType === fmt ? 'bg-apple-blue text-white' : 'border border-apple-border text-apple-text-secondary hover:border-apple-blue/40'
+                    postType === fmt
+                      ? (mediaType === 'video' ? 'bg-purple-600 text-white' : 'bg-apple-blue text-white')
+                      : 'border border-apple-border text-apple-text-secondary hover:border-apple-blue/40'
                   }`}>
                   {fmt}
                 </button>
               ))}
             </div>
           </div>
+
+          {/* Step 3: Topic */}
           <div>
             <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1.5">Topic / Brief</label>
-            <textarea
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder={`What should this ${postType.toLowerCase()} be about? Be specific for better results...`}
-              rows={3}
-              className="w-full px-3 py-2 rounded-apple-sm border border-apple-border text-apple-sm focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue resize-none"
-            />
+            <textarea value={topic} onChange={(e) => setTopic(e.target.value)}
+              placeholder={`What should this ${postType.toLowerCase()} be about?`} rows={3}
+              className="w-full px-3 py-2 rounded-apple-sm border border-apple-border text-apple-sm focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue resize-none" />
           </div>
         </div>
 
         <button onClick={generatePost} disabled={running || !topic.trim()}
-          className="px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50">
+          className={`px-4 py-2 rounded-apple-sm text-white text-apple-sm font-medium transition-colors disabled:opacity-50 ${
+            mediaType === 'video' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-apple-blue hover:bg-apple-blue-hover'
+          }`}>
           {running ? 'Generating...' : `Generate ${postType}`}
         </button>
       </div>
@@ -814,9 +882,36 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
             </div>
           </div>
 
+          {/* Caption / Post Text */}
           <div className="rounded-apple-sm border border-apple-divider bg-apple-fill-secondary/30 p-4 mb-4 whitespace-pre-wrap text-apple-sm text-apple-text font-mono leading-relaxed">
             {generated.content}
           </div>
+
+          {/* Video Script + Shots (video only) */}
+          {mediaType === 'video' && generated.script && (
+            <div className="mb-4">
+              <p className="text-[10px] font-semibold text-apple-text-secondary uppercase mb-2">Video Script</p>
+              <div className="rounded-apple-sm border border-purple-200 bg-purple-50/50 p-3 text-apple-xs text-apple-text whitespace-pre-wrap mb-3">{generated.script}</div>
+              {generated.shots && generated.shots.length > 0 && (
+                <>
+                  <p className="text-[10px] font-semibold text-apple-text-secondary uppercase mb-2">Shot List</p>
+                  <div className="space-y-2">
+                    {generated.shots.map((shot, i) => (
+                      <div key={i} className="rounded-apple-sm border border-apple-divider bg-white p-3 flex gap-3">
+                        <span className="text-[10px] font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded self-start shrink-0">{shot.time}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-apple-xs text-apple-text">{shot.visual}</p>
+                          {shot.text_overlay && <p className="text-[10px] text-apple-blue mt-1">Text: "{shot.text_overlay}"</p>}
+                          {shot.audio && <p className="text-[10px] text-apple-text-tertiary mt-0.5">Audio: {shot.audio}</p>}
+                          {shot.purpose && <p className="text-[10px] text-purple-500 mt-0.5 italic">{shot.purpose}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {generated.hashtags?.length > 0 && (
             <div className="mb-3">
@@ -832,23 +927,61 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
             {generated.tips && <span>{generated.tips}</span>}
           </div>
 
-          {/* Publish Button */}
-          <div className="flex items-center gap-3">
+          {/* Media Generation Status */}
+          {generatingMedia && (
+            <div className="mb-4 rounded-apple-sm border border-apple-divider bg-apple-fill-secondary/20 p-4 flex items-center gap-3">
+              <div className="w-5 h-5 border-2 border-apple-blue border-t-transparent rounded-full animate-spin shrink-0" />
+              <p className="text-apple-sm text-apple-text">
+                {mediaType === 'video' ? 'Generating video from shot list...' : 'Generating image with DALL-E 3...'}
+              </p>
+            </div>
+          )}
+
+          {mediaError && (
+            <div className="mb-4 rounded-apple-sm border border-red-200 bg-red-50 p-3 flex items-center justify-between">
+              <p className="text-apple-xs text-red-700">{mediaError}</p>
+              <button onClick={() => { if (mediaType === 'video' && generated.shots) autoGenerateVideo(generated.shots); else if (generated.imagePrompt) autoGenerateImage(generated.imagePrompt); }}
+                className="text-apple-xs text-red-600 font-medium hover:underline shrink-0 ml-3">Retry</button>
+            </div>
+          )}
+
+          {/* Generated Media */}
+          {mediaUrl && (
+            <div className="mb-4">
+              {mediaType === 'video' ? (
+                <video src={mediaUrl} controls className="w-full max-w-lg rounded-apple-sm border border-apple-divider" />
+              ) : (
+                <img src={mediaUrl} alt="Generated creative" className="w-full max-w-lg rounded-apple-sm border border-apple-divider" />
+              )}
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-3 flex-wrap">
             <button onClick={() => copyToClipboard(generated.content)}
-              className="px-4 py-2 rounded-apple-sm border border-apple-border text-apple-sm font-medium text-apple-text hover:bg-apple-fill-secondary transition-colors">
-              <span className="flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                Copy to Clipboard
-              </span>
+              className="px-4 py-2 rounded-apple-sm border border-apple-border text-apple-sm font-medium text-apple-text hover:bg-apple-fill-secondary transition-colors flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+              Copy Text
             </button>
+
+            {mediaUrl && (
+              <>
+                <button onClick={downloadMedia}
+                  className="px-4 py-2 rounded-apple-sm border border-apple-border text-apple-sm font-medium text-apple-text hover:bg-apple-fill-secondary transition-colors flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                  Download {mediaType === 'video' ? 'Video' : 'Image'}
+                </button>
+                <button onClick={() => setShowPreview(true)}
+                  className="px-4 py-2 rounded-apple-sm border border-apple-border text-apple-sm font-medium text-apple-text hover:bg-apple-fill-secondary transition-colors flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                  Preview
+                </button>
+              </>
+            )}
 
             <div className="relative">
               {!connectionLoading && !isConnected ? (
-                <div
-                  onMouseEnter={() => setPublishTooltip(true)}
-                  onMouseLeave={() => setPublishTooltip(false)}
-                  className="relative"
-                >
+                <div onMouseEnter={() => setPublishTooltip(true)} onMouseLeave={() => setPublishTooltip(false)} className="relative">
                   <button disabled className="px-4 py-2 rounded-apple-sm bg-gray-100 text-gray-400 text-apple-sm font-medium cursor-not-allowed flex items-center gap-2">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                     Publish
@@ -863,74 +996,23 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
               ) : (
                 <button onClick={handlePublish} disabled={publishing || connectionLoading}
                   className="px-4 py-2 rounded-apple-sm bg-green-600 text-white text-apple-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center gap-2">
-                  {publishing ? (
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                  )}
+                  {publishing ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>}
                   Publish
                 </button>
               )}
             </div>
           </div>
-
-          {/* Video Generation for video formats */}
-          {isVideoFormat && (
-            <div className="mt-4 rounded-apple-sm border border-apple-divider bg-apple-fill-secondary/20 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <h4 className="text-apple-sm font-semibold text-apple-text flex items-center gap-2">
-                    <svg className="w-4 h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                    Generate Video
-                  </h4>
-                  <p className="text-apple-xs text-apple-text-tertiary mt-0.5">Create an AI-generated video based on your post content using LTX Video.</p>
-                </div>
-                <button onClick={generateVideo} disabled={generatingVideo}
-                  className="px-4 py-2 rounded-apple-sm bg-purple-600 text-white text-apple-sm font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 flex items-center gap-2 shrink-0">
-                  {generatingVideo ? (
-                    <>
-                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Generating Video...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                      Generate Video
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {videoError && (
-                <div className="mt-3 rounded-apple-sm border border-red-200 bg-red-50 p-3">
-                  <p className="text-apple-xs text-red-700">{videoError}</p>
-                </div>
-              )}
-
-              {videoUrl && (
-                <div className="mt-3 space-y-3">
-                  <video
-                    src={videoUrl}
-                    controls
-                    className="w-full max-w-lg rounded-apple-sm border border-apple-divider"
-                  />
-                  <button onClick={downloadVideo}
-                    className="px-4 py-2 rounded-apple-sm border border-apple-border text-apple-sm font-medium text-apple-text hover:bg-apple-fill-secondary transition-colors flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                    Download Video
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
         </div>
+      )}
+
+      {/* Post Preview Modal */}
+      {showPreview && generated && mediaUrl && (
+        <PostPreview platform={platform} config={config} content={generated.content} hashtags={generated.hashtags} mediaUrl={mediaUrl} mediaType={mediaType} onClose={() => setShowPreview(false)} />
       )}
 
       {/* Saved Drafts */}
       {loading ? (
-        <div className="flex items-center justify-center py-8">
-          <div className="w-5 h-5 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
-        </div>
+        <div className="flex items-center justify-center py-8"><div className="w-5 h-5 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" /></div>
       ) : savedPosts.length > 0 && (
         <div>
           <h3 className="text-apple-sm font-semibold text-apple-text-secondary uppercase tracking-wider mb-3">Saved Drafts</h3>
@@ -940,36 +1022,29 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
               return (
                 <div key={post.id} className="rounded-apple border border-apple-divider bg-white overflow-hidden">
                   <div className="p-4 flex items-center gap-3 cursor-pointer hover:bg-apple-fill-secondary/30 transition-colors" onClick={() => setExpandedPost(isExp ? null : post.id)}>
-                    <span className="text-lg">✏️</span>
+                    <span className="text-lg">{post.metadata?.mediaType === 'video' ? '🎬' : '✏️'}</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className="text-apple-xs font-medium text-apple-blue">{post.post_type}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                          post.status === 'published' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
-                        }`}>{post.status}</span>
+                        {post.metadata?.mediaType && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">{post.metadata.mediaType}</span>}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${post.status === 'published' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{post.status}</span>
                       </div>
                       <p className="text-apple-sm text-apple-text truncate">{post.topic || post.content.slice(0, 80)}</p>
                       <p className="text-apple-xs text-apple-text-tertiary">{new Date(post.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                     </div>
-                    <button onClick={(e) => { e.stopPropagation(); copyToClipboard(post.content); }}
-                      className="p-1.5 rounded hover:bg-apple-fill-secondary text-apple-text-tertiary hover:text-apple-text transition-colors shrink-0" title="Copy">
+                    <button onClick={(e) => { e.stopPropagation(); copyToClipboard(post.content); }} className="p-1.5 rounded hover:bg-apple-fill-secondary text-apple-text-tertiary hover:text-apple-text transition-colors shrink-0" title="Copy">
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); if (confirm('Delete this draft?')) deletePost(post.id); }}
-                      className="p-1.5 rounded hover:bg-red-50 text-apple-text-tertiary hover:text-red-500 transition-colors shrink-0">
+                    <button onClick={(e) => { e.stopPropagation(); if (confirm('Delete this draft?')) deletePost(post.id); }} className="p-1.5 rounded hover:bg-red-50 text-apple-text-tertiary hover:text-red-500 transition-colors shrink-0">
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     </button>
                     <svg className={`w-4 h-4 text-apple-text-tertiary transition-transform ${isExp ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
                   </div>
                   {isExp && (
                     <div className="border-t border-apple-divider p-4">
-                      <div className="rounded-apple-sm border border-apple-divider bg-apple-fill-secondary/30 p-4 whitespace-pre-wrap text-apple-sm text-apple-text font-mono leading-relaxed mb-3">
-                        {post.content}
-                      </div>
+                      <div className="rounded-apple-sm border border-apple-divider bg-apple-fill-secondary/30 p-4 whitespace-pre-wrap text-apple-sm text-apple-text font-mono leading-relaxed mb-3">{post.content}</div>
                       {post.metadata?.hashtags?.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {post.metadata.hashtags.map((h: string, i: number) => <span key={i} className="text-apple-xs text-apple-blue font-medium">#{h.replace(/^#/, '')}</span>)}
-                        </div>
+                        <div className="flex flex-wrap gap-1.5">{post.metadata.hashtags.map((h: string, i: number) => <span key={i} className="text-apple-xs text-apple-blue font-medium">#{h.replace(/^#/, '')}</span>)}</div>
                       )}
                     </div>
                   )}
@@ -982,13 +1057,139 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
 
       {!loading && savedPosts.length === 0 && !generated && (
         <div className="card p-12 text-center">
-          <div className="w-14 h-14 rounded-full bg-apple-fill-secondary mx-auto mb-4 flex items-center justify-center">
-            <span className="text-2xl">✏️</span>
-          </div>
+          <div className="w-14 h-14 rounded-full bg-apple-fill-secondary mx-auto mb-4 flex items-center justify-center"><span className="text-2xl">✏️</span></div>
           <h3 className="text-apple-base font-semibold text-apple-text mb-1">No posts yet</h3>
-          <p className="text-apple-sm text-apple-text-secondary">Select a format and topic above to generate your first {config.name} post.</p>
+          <p className="text-apple-sm text-apple-text-secondary">Choose a post type above to generate your first {config.name} post.</p>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   POST PREVIEW MODAL
+   ═══════════════════════════════════════════════════════════════ */
+
+function PostPreview({ platform, config, content, hashtags, mediaUrl, mediaType, onClose }: {
+  platform: SocialPlatform; config: typeof PLATFORM_CONFIG[SocialPlatform];
+  content: string; hashtags: string[]; mediaUrl: string; mediaType: MediaType; onClose: () => void;
+}) {
+  const hashtagText = hashtags?.length > 0 ? '\n' + hashtags.map(h => `#${h.replace(/^#/, '')}`).join(' ') : '';
+  const truncatedContent = content.length > 300 ? content.slice(0, 300) + '...' : content;
+
+  const renderMedia = () => {
+    if (mediaType === 'video') return <video src={mediaUrl} controls className="w-full" />;
+    return <img src={mediaUrl} alt="" className="w-full" />;
+  };
+
+  const mockups: Record<SocialPlatform, () => JSX.Element> = {
+    instagram: () => (
+      <div className="bg-white rounded-xl overflow-hidden shadow-xl max-w-[375px] mx-auto border border-gray-200">
+        <div className="flex items-center gap-2.5 px-3 py-2.5 border-b border-gray-100">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 via-red-500 to-yellow-500 flex items-center justify-center"><div className="w-7 h-7 rounded-full bg-white flex items-center justify-center"><div className="w-6 h-6 rounded-full bg-gray-200" /></div></div>
+          <div className="flex-1"><p className="text-[13px] font-semibold text-gray-900">yourbrand</p></div>
+          <svg className="w-5 h-5 text-gray-900" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 12h.01M12 12h.01M19 12h.01" /></svg>
+        </div>
+        {renderMedia()}
+        <div className="px-3 py-2">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-4">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" /></svg>
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 01-.923 1.785A5.969 5.969 0 006 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337z" /></svg>
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" /></svg>
+            </div>
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" /></svg>
+          </div>
+          <p className="text-[13px] text-gray-900 leading-[18px]"><span className="font-semibold">yourbrand</span> {truncatedContent}</p>
+          {hashtagText && <p className="text-[13px] text-blue-900 mt-0.5">{hashtagText.trim()}</p>}
+          <p className="text-[11px] text-gray-400 mt-1 uppercase">Just now</p>
+        </div>
+      </div>
+    ),
+    linkedin: () => (
+      <div className="bg-white rounded-lg overflow-hidden shadow-xl max-w-[500px] mx-auto border border-gray-200">
+        <div className="px-4 pt-3 pb-2 flex items-start gap-3">
+          <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center shrink-0"><span className="text-blue-700 font-bold text-sm">YB</span></div>
+          <div><p className="text-[14px] font-semibold text-gray-900">Your Brand</p><p className="text-[12px] text-gray-500">Company &middot; Just now</p></div>
+        </div>
+        <div className="px-4 pb-2"><p className="text-[14px] text-gray-800 leading-[20px] whitespace-pre-wrap">{truncatedContent}{hashtagText && <span className="text-blue-600">{hashtagText}</span>}</p></div>
+        {renderMedia()}
+        <div className="px-4 py-1.5 border-t border-gray-100 text-[12px] text-gray-500">0 reactions &middot; 0 comments</div>
+        <div className="px-4 py-2 border-t border-gray-100 flex justify-around">
+          {['Like', 'Comment', 'Repost', 'Send'].map(a => <button key={a} className="text-[12px] text-gray-600 font-medium py-1 px-2 hover:bg-gray-50 rounded">{a}</button>)}
+        </div>
+      </div>
+    ),
+    x: () => (
+      <div className="bg-white rounded-xl overflow-hidden shadow-xl max-w-[500px] mx-auto border border-gray-200">
+        <div className="p-4 flex gap-3">
+          <div className="w-10 h-10 rounded-full bg-gray-200 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1 mb-0.5"><span className="text-[15px] font-bold text-gray-900">Your Brand</span><span className="text-[15px] text-gray-500">@yourbrand &middot; now</span></div>
+            <p className="text-[15px] text-gray-900 leading-[20px] whitespace-pre-wrap mb-3">{truncatedContent}{hashtagText && <span className="text-blue-500">{hashtagText}</span>}</p>
+            <div className="rounded-xl overflow-hidden border border-gray-200">{renderMedia()}</div>
+            <div className="flex justify-between mt-3 max-w-[350px]">
+              {[{d:'M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 01-.923 1.785A5.969 5.969 0 006 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337z'},{d:'M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3l-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 003.7 3.7 48.656 48.656 0 007.324 0 4.006 4.006 0 003.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3l-3 3'},{d:'M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z'},{d:'M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5'}].map((ic, i) => (
+                <button key={i} className="text-gray-500 hover:text-blue-500"><svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d={ic.d} /></svg></button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    ),
+    facebook: () => (
+      <div className="bg-white rounded-lg overflow-hidden shadow-xl max-w-[500px] mx-auto border border-gray-200">
+        <div className="px-4 pt-3 pb-2 flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center"><span className="text-blue-600 font-bold text-sm">YB</span></div>
+          <div><p className="text-[15px] font-semibold text-gray-900">Your Brand</p><p className="text-[13px] text-gray-500">Just now &middot; Public</p></div>
+        </div>
+        <div className="px-4 pb-2"><p className="text-[15px] text-gray-900 leading-[20px] whitespace-pre-wrap">{truncatedContent}{hashtagText && <span className="text-blue-600">{hashtagText}</span>}</p></div>
+        {renderMedia()}
+        <div className="px-4 py-2 border-t border-gray-100 flex justify-around">
+          {['Like', 'Comment', 'Share'].map(a => <button key={a} className="text-[14px] text-gray-600 font-medium py-1.5 px-4 hover:bg-gray-50 rounded-md flex-1 text-center">{a}</button>)}
+        </div>
+      </div>
+    ),
+    tiktok: () => (
+      <div className="bg-black rounded-xl overflow-hidden shadow-xl max-w-[340px] mx-auto relative" style={{ aspectRatio: '9/16' }}>
+        <div className="absolute inset-0">{mediaType === 'video' ? <video src={mediaUrl} className="w-full h-full object-cover" autoPlay muted loop /> : <img src={mediaUrl} alt="" className="w-full h-full object-cover" />}</div>
+        <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent">
+          <p className="text-white text-[13px] font-semibold mb-1">@yourbrand</p>
+          <p className="text-white/90 text-[12px] leading-[16px]">{truncatedContent.slice(0, 150)}</p>
+          {hashtagText && <p className="text-white/70 text-[11px] mt-0.5">{hashtagText.trim()}</p>}
+        </div>
+        <div className="absolute right-2 bottom-20 flex flex-col items-center gap-4">
+          {['heart', 'chat', 'share', 'bookmark'].map(ic => (
+            <div key={ic} className="flex flex-col items-center">
+              <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center"><svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" /></svg></div>
+              <span className="text-white text-[10px] mt-0.5">0</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    ),
+    pinterest: () => (
+      <div className="bg-white rounded-2xl overflow-hidden shadow-xl max-w-[280px] mx-auto border border-gray-200">
+        <div className="relative">{renderMedia()}<button className="absolute top-3 right-3 bg-red-600 text-white text-[14px] font-bold px-4 py-2 rounded-full">Save</button></div>
+        <div className="p-3">
+          <p className="text-[16px] font-semibold text-gray-900 mb-1">{content.slice(0, 60)}</p>
+          <p className="text-[13px] text-gray-600 leading-[18px]">{truncatedContent.slice(0, 100)}</p>
+          {hashtagText && <p className="text-[12px] text-gray-400 mt-1">{hashtagText.trim()}</p>}
+        </div>
+      </div>
+    ),
+  };
+
+  const Mockup = mockups[platform] || mockups.instagram;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="relative max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute -top-2 -right-2 z-10 w-8 h-8 rounded-full bg-white shadow-lg flex items-center justify-center text-gray-500 hover:text-gray-900 transition-colors">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+        <Mockup />
+      </div>
     </div>
   );
 }
