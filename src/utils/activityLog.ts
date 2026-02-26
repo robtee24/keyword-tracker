@@ -10,7 +10,7 @@ export async function logActivity(
   action: string,
   detail: string,
 ) {
-  const prefixMap = { organic: '', seo: 'audit:', ad: 'ad-', blog: 'blog:', build: 'build:' };
+  const prefixMap = { organic: '', seo: 'audit:', ad: 'ad-', blog: 'blog:', build: 'build:', social: 'social:' };
   const keyword = `${prefixMap[scope]}${action}`;
 
   try {
