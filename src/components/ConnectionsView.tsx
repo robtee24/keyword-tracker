@@ -102,24 +102,19 @@ export default function ConnectionsView({ siteUrl, projectId, projectDomain, gsc
     fetchStatus();
   }, [fetchStatus]);
 
-  const [allGscSites, setAllGscSites] = useState<GscSite[]>([]);
-
   const fetchGscSites = useCallback(async () => {
     setGscLoading(true);
     try {
       const res = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.sites);
       const data = await res.json();
       const all: GscSite[] = data.sites || [];
-      setAllGscSites(all);
       const matching = all.filter((s) => matchesRootDomain(s.siteUrl, projectDomain));
-      const nonMatching = all.filter((s) => !matchesRootDomain(s.siteUrl, projectDomain));
-      setGscSites([...matching, ...nonMatching]);
+      setGscSites(matching);
       if (!gscProperty) {
         setShowGscPicker(true);
       }
     } catch {
       setGscSites([]);
-      setAllGscSites([]);
     } finally {
       setGscLoading(false);
     }
@@ -219,11 +214,13 @@ export default function ConnectionsView({ siteUrl, projectId, projectDomain, gsc
       </div>
 
       {/* GSC Property Picker */}
-      {showGscPicker && !gscProperty && (
+      {showGscPicker && (
         <div className="mb-8 card p-6 ring-1 ring-blue-200">
           <div className="flex items-center gap-2 mb-2">
-            <h3 className="text-apple-base font-semibold text-apple-text">Select a Search Console Property</h3>
-            <InfoTooltip text="Only properties matching your project's root domain are shown. The selected property determines which data appears in keyword rankings and overview." position="right" />
+            <h3 className="text-apple-base font-semibold text-apple-text">
+              {gscProperty ? 'Change Search Console Property' : 'Select a Search Console Property'}
+            </h3>
+            <InfoTooltip text="Properties matching your project's domain are shown. The selected property determines which data appears in keyword rankings and overview." position="right" />
           </div>
           <p className="text-apple-sm text-apple-text-secondary mb-4">
             Choose which property to use for keyword tracking in this project.
@@ -236,7 +233,7 @@ export default function ConnectionsView({ siteUrl, projectId, projectDomain, gsc
           ) : (
             <div className="space-y-2">
               {gscSites.map((site) => {
-                const isMatch = matchesRootDomain(site.siteUrl, projectDomain);
+                const isSelected = site.siteUrl === gscProperty;
                 return (
                   <button
                     key={site.siteUrl}
@@ -244,37 +241,48 @@ export default function ConnectionsView({ siteUrl, projectId, projectDomain, gsc
                       onGscPropertySelected(site.siteUrl);
                       setShowGscPicker(false);
                     }}
-                    className={`w-full text-left px-4 py-3 rounded-apple-sm border transition-all text-apple-sm text-apple-text ${
-                      isMatch
-                        ? 'border-blue-300 bg-blue-50/50 hover:border-apple-blue hover:bg-blue-50'
-                        : 'border-apple-border hover:border-apple-blue hover:bg-blue-50'
+                    className={`w-full text-left px-4 py-3 rounded-apple-sm border transition-all text-apple-sm ${
+                      isSelected
+                        ? 'border-green-300 bg-green-50/50 text-apple-text'
+                        : 'border-apple-border text-apple-text hover:border-apple-blue hover:bg-blue-50'
                     }`}
                   >
                     <span>{site.siteUrl}</span>
-                    {isMatch && (
-                      <span className="ml-2 text-apple-xs text-blue-500 font-medium">Matches project</span>
+                    {isSelected && (
+                      <span className="ml-2 text-apple-xs text-green-600 font-medium">Current</span>
                     )}
                   </button>
                 );
               })}
               {gscSites.length === 0 && (
                 <p className="text-apple-sm text-apple-text-tertiary">
-                  No properties found. Make sure you have access in Google Search Console.
+                  No matching properties found for this project's domain. Make sure you have access to properties for <strong>{projectDomain}</strong> in Google Search Console.
                 </p>
               )}
             </div>
           )}
+          {gscProperty && (
+            <button
+              onClick={() => setShowGscPicker(false)}
+              className="mt-3 text-apple-xs text-apple-text-tertiary hover:text-apple-text"
+            >
+              Cancel
+            </button>
+          )}
         </div>
       )}
 
-      {gscProperty && (
+      {gscProperty && !showGscPicker && (
         <div className="mb-8 card p-4 flex items-center justify-between">
           <div>
             <span className="text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider">Search Console Property</span>
             <p className="text-apple-sm text-apple-text font-medium mt-0.5">{gscProperty}</p>
           </div>
           <button
-            onClick={() => setShowGscPicker(true)}
+            onClick={() => {
+              fetchGscSites();
+              setShowGscPicker(true);
+            }}
             className="text-apple-xs text-apple-blue hover:underline"
           >
             Change
