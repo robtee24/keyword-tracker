@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { authenticatedFetch } from '../services/authService';
 import { API_ENDPOINTS } from '../config/api';
 import { matchesRootDomain } from '../utils/domainMatch';
@@ -29,7 +29,7 @@ interface ServiceDef {
   id: string;
   name: string;
   description: string;
-  icon: () => JSX.Element;
+  icon: () => ReactNode;
   ready: boolean;
 }
 

@@ -6,7 +6,7 @@ import { API_ENDPOINTS } from '../config/api';
  */
 export async function logActivity(
   siteUrl: string,
-  scope: 'organic' | 'seo' | 'ad' | 'blog' | 'build',
+  scope: 'organic' | 'seo' | 'ad' | 'blog' | 'build' | 'social',
   action: string,
   detail: string,
 ) {
