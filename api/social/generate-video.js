@@ -2,13 +2,15 @@ import { authenticateRequest } from '../_config.js';
 
 export const config = { maxDuration: 120 };
 
+// LTX API only supports: 1920x1080, 2560x1440, 3840x2160
+// Durations must be even: 6, 8, 10, 12, 14, 16, 18, 20
 const PLATFORM_VIDEO_SPECS = {
-  instagram: { resolution: '1080x1920', duration: 15, description: 'Instagram Reel (9:16 vertical)' },
-  linkedin: { resolution: '1920x1080', duration: 10, description: 'LinkedIn Video (16:9 landscape)' },
-  x: { resolution: '1920x1080', duration: 10, description: 'X/Twitter Video (16:9 landscape)' },
-  facebook: { resolution: '1920x1080', duration: 15, description: 'Facebook Video (16:9 landscape)' },
-  tiktok: { resolution: '1080x1920', duration: 10, description: 'TikTok Video (9:16 vertical)' },
-  pinterest: { resolution: '1000x1500', duration: 8, description: 'Pinterest Video Pin (2:3 vertical)' },
+  instagram: { resolution: '1920x1080', duration: 14, description: 'Instagram Reel' },
+  linkedin: { resolution: '1920x1080', duration: 10, description: 'LinkedIn Video' },
+  x: { resolution: '1920x1080', duration: 10, description: 'X/Twitter Video' },
+  facebook: { resolution: '1920x1080', duration: 14, description: 'Facebook Video' },
+  tiktok: { resolution: '1920x1080', duration: 10, description: 'TikTok Video' },
+  pinterest: { resolution: '1920x1080', duration: 8, description: 'Pinterest Video Pin' },
 };
 
 /**
@@ -32,7 +34,11 @@ export default async function handler(req, res) {
   if (!prompt) return res.status(400).json({ error: 'prompt is required' });
 
   const specs = PLATFORM_VIDEO_SPECS[platform] || PLATFORM_VIDEO_SPECS.instagram;
-  const videoDuration = Math.min(duration || specs.duration, 20);
+  const VALID_DURATIONS = [6, 8, 10, 12, 14, 16, 18, 20];
+  const rawDuration = Math.min(duration || specs.duration, 20);
+  const videoDuration = VALID_DURATIONS.reduce((prev, curr) =>
+    Math.abs(curr - rawDuration) < Math.abs(prev - rawDuration) ? curr : prev
+  );
   const videoModel = model || 'ltx-2-fast';
 
   try {
