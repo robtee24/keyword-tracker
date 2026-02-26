@@ -6,6 +6,15 @@ import { logActivity } from '../utils/activityLog';
 type SocialPlatform = 'instagram' | 'linkedin' | 'x' | 'facebook' | 'tiktok' | 'pinterest';
 type SocialTab = 'audit' | 'ideas' | 'create';
 
+const PLATFORM_CONNECTION_MAP: Record<SocialPlatform, string> = {
+  instagram: 'instagram',
+  linkedin: 'linkedin_social',
+  x: 'x_twitter',
+  facebook: 'facebook',
+  tiktok: 'tiktok_social',
+  pinterest: 'pinterest',
+};
+
 interface Recommendation {
   priority: string;
   category: string;
@@ -78,13 +87,14 @@ const PLATFORM_CONFIG: Record<SocialPlatform, {
   formats: string[];
   charLimit: number;
   description: string;
+  profilePlaceholder: string;
 }> = {
-  instagram: { name: 'Instagram', color: 'text-pink-600', bgColor: 'bg-pink-50', formats: ['Reel Script', 'Carousel Slides', 'Single Post', 'Story Sequence'], charLimit: 2200, description: 'Visual content, Reels, Carousels, and Stories' },
-  linkedin: { name: 'LinkedIn', color: 'text-blue-700', bgColor: 'bg-blue-50', formats: ['Text Post', 'Carousel Slides', 'Article', 'Poll'], charLimit: 3000, description: 'Professional content and thought leadership' },
-  x: { name: 'X (Twitter)', color: 'text-gray-900', bgColor: 'bg-gray-50', formats: ['Single Tweet', 'Thread', 'Poll'], charLimit: 280, description: 'Short-form content, threads, and real-time engagement' },
-  facebook: { name: 'Facebook', color: 'text-blue-600', bgColor: 'bg-blue-50', formats: ['Text Post', 'Photo Caption', 'Video Post', 'Poll'], charLimit: 63206, description: 'Community engagement and native video' },
-  tiktok: { name: 'TikTok', color: 'text-gray-900', bgColor: 'bg-gray-50', formats: ['Video Script', 'Photo Carousel Caption'], charLimit: 4000, description: 'Short-form video scripts and captions' },
-  pinterest: { name: 'Pinterest', color: 'text-red-600', bgColor: 'bg-red-50', formats: ['Pin Description', 'Idea Pin Sequence'], charLimit: 500, description: 'Visual discovery and SEO-rich descriptions' },
+  instagram: { name: 'Instagram', color: 'text-pink-600', bgColor: 'bg-pink-50', formats: ['Reel Script', 'Carousel Slides', 'Single Post', 'Story Sequence'], charLimit: 2200, description: 'Visual content, Reels, Carousels, and Stories', profilePlaceholder: 'https://instagram.com/yourbrand' },
+  linkedin: { name: 'LinkedIn', color: 'text-blue-700', bgColor: 'bg-blue-50', formats: ['Text Post', 'Carousel Slides', 'Article', 'Poll'], charLimit: 3000, description: 'Professional content and thought leadership', profilePlaceholder: 'https://linkedin.com/company/yourbrand' },
+  x: { name: 'X (Twitter)', color: 'text-gray-900', bgColor: 'bg-gray-50', formats: ['Single Tweet', 'Thread', 'Poll'], charLimit: 280, description: 'Short-form content, threads, and real-time engagement', profilePlaceholder: 'https://x.com/yourbrand' },
+  facebook: { name: 'Facebook', color: 'text-blue-600', bgColor: 'bg-blue-50', formats: ['Text Post', 'Photo Caption', 'Video Post', 'Poll'], charLimit: 63206, description: 'Community engagement and native video', profilePlaceholder: 'https://facebook.com/yourbrand' },
+  tiktok: { name: 'TikTok', color: 'text-gray-900', bgColor: 'bg-gray-50', formats: ['Video Script', 'Photo Carousel Caption'], charLimit: 4000, description: 'Short-form video scripts and captions', profilePlaceholder: 'https://tiktok.com/@yourbrand' },
+  pinterest: { name: 'Pinterest', color: 'text-red-600', bgColor: 'bg-red-50', formats: ['Pin Description', 'Idea Pin Sequence'], charLimit: 500, description: 'Visual discovery and SEO-rich descriptions', profilePlaceholder: 'https://pinterest.com/yourbrand' },
 };
 
 const PRIORITY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -110,6 +120,38 @@ interface SocialPlatformViewProps {
 export default function SocialPlatformView({ siteUrl, projectId, platform }: SocialPlatformViewProps) {
   const config = PLATFORM_CONFIG[platform];
   const [activeTab, setActiveTab] = useState<SocialTab>('audit');
+  const [isConnected, setIsConnected] = useState(false);
+  const [connectionLoading, setConnectionLoading] = useState(true);
+
+  // State for idea-to-create flow
+  const [prefillPostType, setPrefillPostType] = useState<string | null>(null);
+  const [prefillTopic, setPrefillTopic] = useState<string | null>(null);
+  const [prefillIdeaContext, setPrefillIdeaContext] = useState<{ hook: string; outline: string } | null>(null);
+
+  useEffect(() => {
+    const checkConnection = async () => {
+      try {
+        const resp = await authenticatedFetch(
+          `${API_ENDPOINTS.connections.status}?site_url=${encodeURIComponent(siteUrl)}`
+        );
+        if (resp.ok) {
+          const data = await resp.json();
+          const serviceId = PLATFORM_CONNECTION_MAP[platform];
+          const conn = (data.connections || []).find((c: any) => c.service === serviceId);
+          setIsConnected(!!conn);
+        }
+      } catch { /* */ }
+      setConnectionLoading(false);
+    };
+    checkConnection();
+  }, [siteUrl, platform]);
+
+  const handleGenerateFromIdea = (idea: PostIdea) => {
+    setPrefillPostType(idea.format);
+    setPrefillTopic(idea.title);
+    setPrefillIdeaContext({ hook: idea.hook, outline: idea.outline });
+    setActiveTab('create');
+  };
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -139,9 +181,22 @@ export default function SocialPlatformView({ siteUrl, projectId, platform }: Soc
         ))}
       </div>
 
-      {activeTab === 'audit' && <AuditTab siteUrl={siteUrl} projectId={projectId} platform={platform} config={config} />}
-      {activeTab === 'ideas' && <IdeasTab siteUrl={siteUrl} projectId={projectId} platform={platform} config={config} />}
-      {activeTab === 'create' && <CreateTab siteUrl={siteUrl} projectId={projectId} platform={platform} config={config} />}
+      {activeTab === 'audit' && <AuditTab siteUrl={siteUrl} projectId={projectId} platform={platform} config={config} isConnected={isConnected} />}
+      {activeTab === 'ideas' && <IdeasTab siteUrl={siteUrl} projectId={projectId} platform={platform} config={config} onGenerateFromIdea={handleGenerateFromIdea} />}
+      {activeTab === 'create' && (
+        <CreateTab
+          siteUrl={siteUrl}
+          projectId={projectId}
+          platform={platform}
+          config={config}
+          isConnected={isConnected}
+          connectionLoading={connectionLoading}
+          prefillPostType={prefillPostType}
+          prefillTopic={prefillTopic}
+          prefillIdeaContext={prefillIdeaContext}
+          onPrefillConsumed={() => { setPrefillPostType(null); setPrefillTopic(null); setPrefillIdeaContext(null); }}
+        />
+      )}
     </div>
   );
 }
@@ -150,8 +205,11 @@ export default function SocialPlatformView({ siteUrl, projectId, platform }: Soc
    AUDIT TAB
    ═══════════════════════════════════════════════════════════════ */
 
-function AuditTab({ siteUrl, projectId, platform, config }: { siteUrl: string; projectId: string; platform: SocialPlatform; config: typeof PLATFORM_CONFIG[SocialPlatform] }) {
-  const [postInputs, setPostInputs] = useState<string[]>(['']);
+function AuditTab({ siteUrl, projectId, platform, config, isConnected }: {
+  siteUrl: string; projectId: string; platform: SocialPlatform;
+  config: typeof PLATFORM_CONFIG[SocialPlatform]; isConnected: boolean;
+}) {
+  const [profileUrl, setProfileUrl] = useState('');
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<AuditResult | null>(null);
   const [savedAudits, setSavedAudits] = useState<SavedAudit[]>([]);
@@ -174,30 +232,21 @@ function AuditTab({ siteUrl, projectId, platform, config }: { siteUrl: string; p
 
   useEffect(() => { loadSavedAudits(); }, [loadSavedAudits]);
 
-  const addPostInput = () => { if (postInputs.length < 10) setPostInputs([...postInputs, '']); };
-  const removePostInput = (idx: number) => setPostInputs(postInputs.filter((_, i) => i !== idx));
-  const updatePostInput = (idx: number, val: string) => {
-    const updated = [...postInputs];
-    updated[idx] = val;
-    setPostInputs(updated);
-  };
-
   const runAudit = async () => {
-    const posts = postInputs.filter((p) => p.trim());
-    if (posts.length === 0) return;
+    if (!profileUrl.trim()) return;
     setRunning(true);
     setResult(null);
     try {
       const resp = await authenticatedFetch(API_ENDPOINTS.social.audit, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, projectId, platform, posts: posts.map((content) => ({ content })) }),
+        body: JSON.stringify({ siteUrl, projectId, platform, profileUrl: profileUrl.trim() }),
       });
       if (resp.ok) {
         const data = await resp.json();
         setResult(data);
         await loadSavedAudits();
-        logActivity(siteUrl, 'social', 'audit', `${config.name} audit: ${posts.length} post(s), score: ${data.score}/100`);
+        logActivity(siteUrl, 'social', 'audit', `${config.name} audit: ${profileUrl}, score: ${data.score}/100`);
       }
     } catch { /* */ }
     setRunning(false);
@@ -252,36 +301,31 @@ function AuditTab({ siteUrl, projectId, platform, config }: { siteUrl: string; p
     <div>
       {/* Input Section */}
       <div className="rounded-apple border border-apple-divider bg-white p-5 mb-6">
-        <h3 className="text-apple-sm font-semibold text-apple-text mb-1">Paste your {config.name} posts</h3>
-        <p className="text-apple-xs text-apple-text-tertiary mb-4">Add up to 10 posts to audit. Paste the full text content of each post.</p>
+        <h3 className="text-apple-sm font-semibold text-apple-text mb-1">Audit your {config.name} content</h3>
+        <p className="text-apple-xs text-apple-text-tertiary mb-4">
+          {isConnected
+            ? `Your ${config.name} account is connected. Posts will be fetched automatically via API.`
+            : `Paste a link to your ${config.name} profile or page to crawl and audit your recent posts.`
+          }
+        </p>
 
-        <div className="space-y-3">
-          {postInputs.map((val, idx) => (
-            <div key={idx} className="flex gap-2">
-              <textarea
-                value={val}
-                onChange={(e) => updatePostInput(idx, e.target.value)}
-                placeholder={`Post ${idx + 1} content...`}
-                rows={3}
-                className="flex-1 px-3 py-2 rounded-apple-sm border border-apple-border text-apple-sm focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue resize-none"
-              />
-              {postInputs.length > 1 && (
-                <button onClick={() => removePostInput(idx)} className="self-start p-2 text-apple-text-tertiary hover:text-apple-red transition-colors">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-3 mt-4">
-          {postInputs.length < 10 && (
-            <button onClick={addPostInput} className="text-apple-xs text-apple-blue hover:underline font-medium">+ Add another post</button>
-          )}
-          <div className="flex-1" />
-          <button onClick={runAudit} disabled={running || postInputs.every((p) => !p.trim())}
-            className="px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50">
-            {running ? 'Auditing...' : `Audit ${postInputs.filter((p) => p.trim()).length} Post${postInputs.filter((p) => p.trim()).length !== 1 ? 's' : ''}`}
+        <div className="flex gap-3">
+          <input
+            type="url"
+            value={profileUrl}
+            onChange={(e) => setProfileUrl(e.target.value)}
+            placeholder={config.profilePlaceholder}
+            className="flex-1 px-3 py-2 rounded-apple-sm border border-apple-border text-apple-sm focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue"
+            onKeyDown={(e) => { if (e.key === 'Enter') runAudit(); }}
+          />
+          <button onClick={runAudit} disabled={running || !profileUrl.trim()}
+            className="px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50 whitespace-nowrap">
+            {running ? (
+              <span className="flex items-center gap-2">
+                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Auditing...
+              </span>
+            ) : 'Audit Posts'}
           </button>
         </div>
       </div>
@@ -363,7 +407,7 @@ function AuditTab({ siteUrl, projectId, platform, config }: { siteUrl: string; p
             <span className="text-2xl">📊</span>
           </div>
           <h3 className="text-apple-base font-semibold text-apple-text mb-1">No audits yet</h3>
-          <p className="text-apple-sm text-apple-text-secondary">Paste your {config.name} post content above to get an AI-powered audit.</p>
+          <p className="text-apple-sm text-apple-text-secondary">Paste a link to your {config.name} profile above to audit your recent posts.</p>
         </div>
       )}
     </div>
@@ -374,7 +418,10 @@ function AuditTab({ siteUrl, projectId, platform, config }: { siteUrl: string; p
    IDEAS TAB
    ═══════════════════════════════════════════════════════════════ */
 
-function IdeasTab({ siteUrl, projectId, platform, config }: { siteUrl: string; projectId: string; platform: SocialPlatform; config: typeof PLATFORM_CONFIG[SocialPlatform] }) {
+function IdeasTab({ siteUrl, projectId, platform, config, onGenerateFromIdea }: {
+  siteUrl: string; projectId: string; platform: SocialPlatform;
+  config: typeof PLATFORM_CONFIG[SocialPlatform]; onGenerateFromIdea: (idea: PostIdea) => void;
+}) {
   const [niche, setNiche] = useState('');
   const [audience, setAudience] = useState('');
   const [voice, setVoice] = useState('');
@@ -459,8 +506,15 @@ function IdeasTab({ siteUrl, projectId, platform, config }: { siteUrl: string; p
                 {idea.hashtags.map((h, i) => <span key={i} className="text-[10px] text-apple-blue">#{h.replace(/^#/, '')}</span>)}
               </div>
             )}
-            <div className="flex items-center gap-3 text-[10px] text-apple-text-tertiary">
-              <span>Best time: {idea.bestTime}</span>
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[10px] text-apple-text-tertiary">Best time: {idea.bestTime}</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); onGenerateFromIdea(idea); }}
+                className="px-3 py-1.5 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors flex items-center gap-1.5"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                Generate This Post
+              </button>
             </div>
           </div>
         )}
@@ -564,15 +618,36 @@ function IdeasTab({ siteUrl, projectId, platform, config }: { siteUrl: string; p
    CREATE TAB
    ═══════════════════════════════════════════════════════════════ */
 
-function CreateTab({ siteUrl, projectId, platform, config }: { siteUrl: string; projectId: string; platform: SocialPlatform; config: typeof PLATFORM_CONFIG[SocialPlatform] }) {
+function CreateTab({ siteUrl, projectId, platform, config, isConnected, connectionLoading, prefillPostType, prefillTopic, prefillIdeaContext, onPrefillConsumed }: {
+  siteUrl: string; projectId: string; platform: SocialPlatform;
+  config: typeof PLATFORM_CONFIG[SocialPlatform]; isConnected: boolean; connectionLoading: boolean;
+  prefillPostType: string | null; prefillTopic: string | null;
+  prefillIdeaContext: { hook: string; outline: string } | null;
+  onPrefillConsumed: () => void;
+}) {
   const [postType, setPostType] = useState(config.formats[0]);
   const [topic, setTopic] = useState('');
+  const [ideaContext, setIdeaContext] = useState<{ hook: string; outline: string } | null>(null);
   const [running, setRunning] = useState(false);
   const [generated, setGenerated] = useState<GeneratedPost | null>(null);
   const [copied, setCopied] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishTooltip, setPublishTooltip] = useState(false);
   const [savedPosts, setSavedPosts] = useState<SavedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedPost, setExpandedPost] = useState<string | null>(null);
+
+  // Handle prefill from Ideas tab
+  useEffect(() => {
+    if (prefillPostType || prefillTopic || prefillIdeaContext) {
+      if (prefillPostType && config.formats.includes(prefillPostType)) {
+        setPostType(prefillPostType);
+      }
+      if (prefillTopic) setTopic(prefillTopic);
+      if (prefillIdeaContext) setIdeaContext(prefillIdeaContext);
+      onPrefillConsumed();
+    }
+  }, [prefillPostType, prefillTopic, prefillIdeaContext, config.formats, onPrefillConsumed]);
 
   const loadSavedPosts = useCallback(async () => {
     try {
@@ -597,11 +672,12 @@ function CreateTab({ siteUrl, projectId, platform, config }: { siteUrl: string; 
       const resp = await authenticatedFetch(API_ENDPOINTS.social.generate, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, projectId, platform, postType, topic }),
+        body: JSON.stringify({ siteUrl, projectId, platform, postType, topic, ideaContext }),
       });
       if (resp.ok) {
         const data = await resp.json();
         setGenerated(data);
+        setIdeaContext(null);
         await loadSavedPosts();
         logActivity(siteUrl, 'social', 'generate', `Generated ${config.name} ${postType}: "${topic.slice(0, 50)}"`);
       }
@@ -615,6 +691,16 @@ function CreateTab({ siteUrl, projectId, platform, config }: { siteUrl: string; 
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch { /* */ }
+  };
+
+  const handlePublish = async () => {
+    if (!isConnected || !generated) return;
+    setPublishing(true);
+    // Placeholder: when API publishing is implemented, this will call the publish endpoint
+    setTimeout(() => {
+      setPublishing(false);
+      alert(`Publishing to ${config.name} is not yet available. This feature will be enabled once ${config.name} API integration is complete.`);
+    }, 500);
   };
 
   const deletePost = async (id: string) => {
@@ -631,7 +717,10 @@ function CreateTab({ siteUrl, projectId, platform, config }: { siteUrl: string; 
       {/* Create Form */}
       <div className="rounded-apple border border-apple-divider bg-white p-5 mb-6">
         <h3 className="text-apple-sm font-semibold text-apple-text mb-1">Create a {config.name} Post</h3>
-        <p className="text-apple-xs text-apple-text-tertiary mb-4">Select a format and describe what you want to post about.</p>
+        <p className="text-apple-xs text-apple-text-tertiary mb-4">
+          Select a format and describe what you want to post about.
+          {ideaContext && <span className="text-apple-blue font-medium ml-1">Pre-filled from idea.</span>}
+        </p>
 
         <div className="space-y-3 mb-4">
           <div>
@@ -699,20 +788,46 @@ function CreateTab({ siteUrl, projectId, platform, config }: { siteUrl: string; 
             {generated.tips && <span>{generated.tips}</span>}
           </div>
 
-          {/* Connect to Publish Placeholder */}
-          <div className="rounded-apple-sm border border-dashed border-apple-divider bg-apple-fill-secondary/20 p-4 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-apple-fill-secondary flex items-center justify-center shrink-0">
-              <svg className="w-4 h-4 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-              </svg>
+          {/* Publish Button */}
+          <div className="flex items-center gap-3">
+            <button onClick={() => copyToClipboard(generated.content)}
+              className="px-4 py-2 rounded-apple-sm border border-apple-border text-apple-sm font-medium text-apple-text hover:bg-apple-fill-secondary transition-colors">
+              <span className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                Copy to Clipboard
+              </span>
+            </button>
+
+            <div className="relative">
+              {!connectionLoading && !isConnected ? (
+                <div
+                  onMouseEnter={() => setPublishTooltip(true)}
+                  onMouseLeave={() => setPublishTooltip(false)}
+                  className="relative"
+                >
+                  <button disabled className="px-4 py-2 rounded-apple-sm bg-gray-100 text-gray-400 text-apple-sm font-medium cursor-not-allowed flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                    Publish
+                  </button>
+                  {publishTooltip && (
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-apple-xs rounded-apple-sm whitespace-nowrap shadow-lg z-10">
+                      Please connect {config.name} Access
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-2 h-2 bg-gray-800 rotate-45" />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button onClick={handlePublish} disabled={publishing || connectionLoading}
+                  className="px-4 py-2 rounded-apple-sm bg-green-600 text-white text-apple-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center gap-2">
+                  {publishing ? (
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                  )}
+                  Publish
+                </button>
+              )}
             </div>
-            <div className="flex-1">
-              <p className="text-apple-sm font-medium text-apple-text">Connect {config.name} to publish directly</p>
-              <p className="text-apple-xs text-apple-text-tertiary">Social publishing is coming soon. For now, copy your post and publish manually.</p>
-            </div>
-            <a href="#" onClick={(e) => { e.preventDefault(); }} className="px-3 py-1.5 rounded-apple-sm border border-apple-border text-apple-xs text-apple-text-secondary font-medium opacity-50 cursor-not-allowed">
-              Coming Soon
-            </a>
           </div>
         </div>
       )}

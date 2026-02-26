@@ -126,7 +126,7 @@ export default function OverviewView({ siteUrl, projectId, dateRange, compareDat
         const endDate = format(dateRange.endDate, 'yyyy-MM-dd');
 
         // Fetch keywords, pages, daily in parallel
-        const [kwResp, pageResp] = await Promise.all([
+        const [kwResp, pageResp, dailyResp] = await Promise.all([
           authenticatedFetch(API_ENDPOINTS.google.searchConsole.keywords, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -137,13 +137,39 @@ export default function OverviewView({ siteUrl, projectId, dateRange, compareDat
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ startDate, endDate, siteUrl, projectId, dimension: 'page' }),
           }),
+          authenticatedFetch(API_ENDPOINTS.google.searchConsole.daily, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ startDate, endDate, siteUrl, projectId }),
+          }),
         ]);
 
         if (kwResp.ok) {
           const kwData = await kwResp.json();
           const keywords = kwData.keywords || [];
-          const totalImpressions = keywords.reduce((s: number, k: any) => s + (k.impressions || 0), 0);
-          const totalClicks = keywords.reduce((s: number, k: any) => s + (k.clicks || 0), 0);
+
+          // Use daily data for accurate totals (matches keyword section)
+          let totalImpressions = 0;
+          let totalClicks = 0;
+          let usedDaily = false;
+
+          if (dailyResp.ok) {
+            const dailyData = await dailyResp.json();
+            const dailyRows = dailyData.rows || dailyData.daily || [];
+            if (Array.isArray(dailyRows) && dailyRows.length > 0) {
+              dailyRows.forEach((row: any) => {
+                totalImpressions += parseInt(row.impressions || '0', 10);
+                totalClicks += parseInt(row.clicks || '0', 10);
+              });
+              usedDaily = true;
+            }
+          }
+
+          if (!usedDaily) {
+            totalImpressions = keywords.reduce((s: number, k: any) => s + (k.impressions || 0), 0);
+            totalClicks = keywords.reduce((s: number, k: any) => s + (k.clicks || 0), 0);
+          }
+
           const validPos = keywords.filter((k: any) => k.position != null && k.position > 0);
           const avgPos = validPos.length > 0
             ? validPos.reduce((s: number, k: any) => s + k.position, 0) / validPos.length

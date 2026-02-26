@@ -74,6 +74,49 @@ RULES:
 - Return 5-15 recommendations sorted by priority
 - Return 3-5 strengths`;
 
+/**
+ * Crawl a social profile page and extract post text content.
+ * Falls back gracefully if the page can't be fetched.
+ */
+async function crawlSocialProfile(profileUrl) {
+  try {
+    const resp = await fetch(profileUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; SEAUTOBot/1.0)',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!resp.ok) return null;
+    const html = await resp.text();
+
+    // Extract text content from common social page patterns
+    // Remove scripts, styles, nav elements
+    const cleaned = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+      .replace(/<header[\s\S]*?<\/header>/gi, '')
+      .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+      .replace(/<[^>]+>/g, '\n')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&#\d+;/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    // Extract meaningful chunks (likely post content)
+    const lines = cleaned.split('\n').filter(l => l.trim().length > 20);
+    const content = lines.slice(0, 200).join('\n');
+    return content.slice(0, 15000) || null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -81,15 +124,46 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { siteUrl, projectId, platform, posts } = req.body || {};
-  if (!siteUrl || !platform || !posts || !Array.isArray(posts) || posts.length === 0) {
-    return res.status(400).json({ error: 'siteUrl, platform, and posts array are required' });
+  const { siteUrl, projectId, platform, profileUrl, posts } = req.body || {};
+  if (!siteUrl || !platform) {
+    return res.status(400).json({ error: 'siteUrl and platform are required' });
+  }
+
+  // Need either a profile URL to crawl or posts array
+  if (!profileUrl && (!posts || !Array.isArray(posts) || posts.length === 0)) {
+    return res.status(400).json({ error: 'Either profileUrl or posts array is required' });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
 
-  const postsText = posts.map((p, i) => `--- Post ${i + 1} ---\n${p.content || p}\n`).join('\n');
+  let postsText = '';
+  let auditUrls = [];
+
+  if (profileUrl) {
+    // Crawl the social profile page
+    const crawledContent = await crawlSocialProfile(profileUrl);
+    if (!crawledContent) {
+      return res.status(200).json({
+        score: 0,
+        summary: `Could not fetch content from ${profileUrl}. The page may require authentication or block automated access. Try connecting your ${platform} account for API access, or paste your post content manually.`,
+        strengths: [],
+        recommendations: [{
+          priority: 'high',
+          category: 'Access',
+          issue: `Unable to crawl ${profileUrl}`,
+          recommendation: `Connect your ${platform} account via the Connections page to enable API-based auditing, or paste individual post content.`,
+          howToFix: 'Go to Connections > Social and connect your account.',
+          impact: 'Enables comprehensive content auditing with full post data.',
+        }],
+      });
+    }
+    postsText = `Content crawled from ${profileUrl}:\n\n${crawledContent}`;
+    auditUrls = [profileUrl];
+  } else {
+    postsText = posts.map((p, i) => `--- Post ${i + 1} ---\n${p.content || p}\n`).join('\n');
+    auditUrls = posts.map((p) => p.url || '');
+  }
 
   try {
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -120,7 +194,7 @@ export default async function handler(req, res) {
         project_id: projectId,
         site_url: siteUrl,
         platform,
-        urls: posts.map((p) => p.url || ''),
+        urls: auditUrls,
         score: result.score || 0,
         summary: result.summary || '',
         strengths: result.strengths || [],
