@@ -270,6 +270,7 @@ export default function GroupRecommendations({
               keywords={keywords}
               scanResults={scanResults}
               siteUrl={siteUrl}
+              projectId={projectId}
             />
           )}
         </>
@@ -461,10 +462,12 @@ function IndividualView({
   keywords,
   scanResults,
   siteUrl,
+  projectId,
 }: {
   keywords: string[];
   scanResults: Map<string, ScanResult>;
   siteUrl: string;
+  projectId?: string;
 }) {
   const [expandedKw, setExpandedKw] = useState<string | null>(null);
 

@@ -1491,6 +1491,7 @@ export default function GoogleSearchConsole({
                       isNew={newKeywords.has(keyword.keyword)}
                       competitorBrands={competitorBrands}
                       aiIntents={aiIntents}
+                      projectId={projectId}
                     />
                   );
                 })
@@ -2007,6 +2008,7 @@ function KeywordRow({
   isNew,
   competitorBrands,
   aiIntents,
+  projectId,
 }: {
   keyword: any;
   compareKeyword: any;
@@ -2030,6 +2032,7 @@ function KeywordRow({
   intentStore: IntentStore;
   onIntentOverride: (keyword: string, intent: KeywordIntent) => void;
   activeGroupId: number | null;
+  projectId?: string;
   onRemoveFromGroup?: (keyword: string) => void;
   isNew: boolean;
   competitorBrands: string[];
