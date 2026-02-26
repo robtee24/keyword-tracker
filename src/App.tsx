@@ -176,6 +176,7 @@ function App() {
   const [loadTrigger, setLoadTrigger] = useState(0);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [connectionVersion, setConnectionVersion] = useState(0);
 
   const navigate = useNavigate();
 
@@ -307,6 +308,13 @@ function App() {
         }
       }
     } catch { /* silently fail */ }
+  };
+
+  const handleConnectionChange = () => {
+    setConnectionVersion((v) => v + 1);
+    setLoadTrigger((v) => v + 1);
+    setHasLoadedOnce(false);
+    setVisitedAudits(new Set());
   };
 
   const handleSelectProject = (project: Project) => {
@@ -568,6 +576,7 @@ function App() {
               projectDomain={activeProject.domain}
               gscProperty={activeProject.gsc_property}
               onGscPropertySelected={(prop) => handleUpdateProject(activeProject.id, { gsc_property: prop })}
+              onConnectionChange={handleConnectionChange}
             />
           )}
 
@@ -590,6 +599,7 @@ function App() {
                 projectId={activeProject.id}
                 dateRange={dateRange}
                 compareDateRange={compareDateRange}
+                connectionVersion={connectionVersion}
               />
             </div>
           )}
@@ -607,7 +617,7 @@ function App() {
           )}
 
           {currentView === 'lost-keywords' && activeProject && activeProject.gsc_property && (
-            <LostKeywordsView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
+            <LostKeywordsView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
           )}
 
           {/* ── SEO Audit Views ── */}
@@ -680,39 +690,39 @@ function App() {
 
           {currentView === 'advertising' && activeProject && (
             <PlanGatedView feature="advertising">
-              <AdvertisingView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
+              <AdvertisingView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
             </PlanGatedView>
           )}
 
           {/* ── Blog Views ── */}
           {currentView === 'blog-audit' && activeProject && (
-            <BlogAuditView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
+            <BlogAuditView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
           )}
           {currentView === 'blog-opportunity' && activeProject && (
-            <BlogOpportunityView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
+            <BlogOpportunityView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
           )}
           {currentView === 'blog-automate' && activeProject && (
-            <BlogAutomateView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
+            <BlogAutomateView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
           )}
 
           {/* ── Build Views ── */}
           {currentView === 'build-rebuild' && activeProject && (
             <PlanGatedView limitField="page_builds">
-              <BuildRebuildView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
+              <BuildRebuildView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
             </PlanGatedView>
           )}
           {currentView === 'build-new' && activeProject && (
             <PlanGatedView limitField="page_builds">
-              <BuildNewView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
+              <BuildNewView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
             </PlanGatedView>
           )}
 
           {/* ── Consolidated Tasks & Activity ── */}
           {currentView === 'tasks' && activeProject && (
-            <TasklistView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} scope="all" />
+            <TasklistView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} scope="all" />
           )}
           {currentView === 'activity' && activeProject && (
-            <ActivityLogView siteUrl={getSiteUrl(activeProject)} scope="all" />
+            <ActivityLogView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} scope="all" />
           )}
         </main>
       </div>

@@ -10,6 +10,7 @@ interface ConnectionsViewProps {
   projectDomain: string;
   gscProperty: string | null;
   onGscPropertySelected: (property: string) => void;
+  onConnectionChange?: () => void;
 }
 
 interface GscSite {
@@ -76,7 +77,7 @@ const SERVICES = [
   },
 ] as const;
 
-export default function ConnectionsView({ siteUrl, projectId, projectDomain, gscProperty, onGscPropertySelected }: ConnectionsViewProps) {
+export default function ConnectionsView({ siteUrl, projectId, projectDomain, gscProperty, onGscPropertySelected, onConnectionChange }: ConnectionsViewProps) {
   const [connections, setConnections] = useState<ConnectionStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState<string | null>(null);
@@ -133,6 +134,7 @@ export default function ConnectionsView({ siteUrl, projectId, projectDomain, gsc
       if (event.data?.type === 'connection-success') {
         setConnecting(null);
         fetchStatus();
+        onConnectionChange?.();
       }
     };
     window.addEventListener('message', handler);
@@ -170,6 +172,7 @@ export default function ConnectionsView({ siteUrl, projectId, projectDomain, gsc
               clearInterval(check);
               setConnecting(null);
               fetchStatus();
+              onConnectionChange?.();
             }
           }, 1000);
         }
@@ -187,6 +190,7 @@ export default function ConnectionsView({ siteUrl, projectId, projectDomain, gsc
         body: JSON.stringify({ service: serviceId, site_url: siteUrl }),
       });
       fetchStatus();
+      onConnectionChange?.();
     } catch {}
   };
 

@@ -46,6 +46,7 @@ interface OverviewViewProps {
   projectId: string;
   dateRange: DateRange | null;
   compareDateRange: DateRange | null;
+  connectionVersion?: number;
 }
 
 function getDateRangeForPeriod(period: TimePeriod): { startDate: Date; endDate: Date } | null {
@@ -62,7 +63,7 @@ function getDateRangeForPeriod(period: TimePeriod): { startDate: Date; endDate: 
   }
 }
 
-export default function OverviewView({ siteUrl, projectId, dateRange, compareDateRange }: OverviewViewProps) {
+export default function OverviewView({ siteUrl, projectId, dateRange, compareDateRange, connectionVersion }: OverviewViewProps) {
   const [chartPeriod, setChartPeriod] = useState<TimePeriod>('1y');
   const [chartData, setChartData] = useState<DailyDataPoint[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
@@ -110,7 +111,7 @@ export default function OverviewView({ siteUrl, projectId, dateRange, compareDat
       setChartLoading(false);
     };
     fetchChart();
-  }, [siteUrl, chartPeriod, dateRange]);
+  }, [siteUrl, chartPeriod, dateRange, connectionVersion]);
 
   // Fetch current (and compare) period stats + top pages/keywords
   useEffect(() => {
@@ -215,7 +216,7 @@ export default function OverviewView({ siteUrl, projectId, dateRange, compareDat
       setPagesLoading(false);
     };
     fetchStats();
-  }, [siteUrl, dateRange, compareDateRange]);
+  }, [siteUrl, dateRange, compareDateRange, connectionVersion]);
 
   const fmtNum = (n: number) => n >= 1000000 ? (n / 1000000).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'K' : n.toLocaleString();
 
