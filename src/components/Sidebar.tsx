@@ -12,6 +12,7 @@ export type View =
   | 'ad-audit' | 'ad-audit-google' | 'ad-audit-meta' | 'ad-audit-linkedin' | 'ad-audit-reddit' | 'ad-audit-tiktok'
   | 'ad-audit-budget' | 'ad-audit-performance' | 'ad-audit-creative' | 'ad-audit-attribution' | 'ad-audit-structure'
   | 'blog-opportunity' | 'blog-automate' | 'advertising'
+  | 'social-instagram' | 'social-linkedin' | 'social-x' | 'social-facebook' | 'social-tiktok' | 'social-pinterest'
   | 'build-rebuild' | 'build-new'
   | 'tasks' | 'activity'
   | 'settings';
@@ -29,6 +30,7 @@ const SEARCH_VIEWS = new Set<View>(['overview', 'keywords', 'lost-keywords']);
 const SITE_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit']);
 const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-tiktok', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure']);
 const CONTENT_VIEWS = new Set<View>(['blog-opportunity', 'blog-automate', 'advertising']);
+const SOCIAL_VIEWS = new Set<View>(['social-instagram', 'social-linkedin', 'social-x', 'social-facebook', 'social-tiktok', 'social-pinterest']);
 const PAGES_VIEWS = new Set<View>(['build-rebuild', 'build-new']);
 
 const searchSubItems: Array<{ id: View; label: string }> = [
@@ -65,6 +67,15 @@ const contentSubItems: Array<{ id: View; label: string }> = [
   { id: 'blog-opportunity', label: 'Blog Ideas' },
   { id: 'blog-automate', label: 'Blog Writer' },
   { id: 'advertising', label: 'Ad Keywords' },
+];
+
+const socialSubItems: Array<{ id: View; label: string }> = [
+  { id: 'social-instagram', label: 'Instagram' },
+  { id: 'social-linkedin', label: 'LinkedIn' },
+  { id: 'social-x', label: 'X (Twitter)' },
+  { id: 'social-facebook', label: 'Facebook' },
+  { id: 'social-tiktok', label: 'TikTok' },
+  { id: 'social-pinterest', label: 'Pinterest' },
 ];
 
 const pagesSubItems: Array<{ id: View; label: string }> = [
@@ -203,12 +214,14 @@ export default function Sidebar({
   const isSiteAuditActive = SITE_AUDIT_VIEWS.has(currentView);
   const isAdAuditActive = AD_AUDIT_VIEWS.has(currentView);
   const isContentActive = CONTENT_VIEWS.has(currentView);
+  const isSocialActive = SOCIAL_VIEWS.has(currentView);
   const isPagesActive = PAGES_VIEWS.has(currentView);
 
   const [searchExpanded, setSearchExpanded] = useState(isSearchActive);
   const [siteAuditExpanded, setSiteAuditExpanded] = useState(isSiteAuditActive);
   const [adAuditExpanded, setAdAuditExpanded] = useState(isAdAuditActive);
   const [contentExpanded, setContentExpanded] = useState(isContentActive);
+  const [socialExpanded, setSocialExpanded] = useState(isSocialActive);
   const [pagesExpanded, setPagesExpanded] = useState(isPagesActive);
 
   const allowedAuditTypes = planInfo?.features?.audit_types || ['seo', 'content'];
@@ -420,6 +433,23 @@ export default function Sidebar({
               onNavigate={onNavigate}
               collapsed={collapsed}
               lockedSubItems={lockedContentSubItems}
+            />
+
+            <NavGroup
+              label="Social"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
+                </svg>
+              }
+              parentView="social-instagram"
+              subItems={socialSubItems}
+              isGroupActive={isSocialActive}
+              expanded={socialExpanded}
+              onToggleExpand={() => setSocialExpanded(!socialExpanded)}
+              currentView={currentView}
+              onNavigate={onNavigate}
+              collapsed={collapsed}
             />
 
             <NavGroup

@@ -64,6 +64,11 @@ export const API_ENDPOINTS = {
     opportunities: `${API_BASE_URL}/api/blog/opportunities`,
     generate: `${API_BASE_URL}/api/blog/generate`,
   },
+  social: {
+    audit: `${API_BASE_URL}/api/social/audit`,
+    ideas: `${API_BASE_URL}/api/social/ideas`,
+    generate: `${API_BASE_URL}/api/social/generate`,
+  },
   build: {
     crawl: `${API_BASE_URL}/api/build/crawl`,
     rebuild: `${API_BASE_URL}/api/build/rebuild`,
@@ -91,5 +96,8 @@ export const API_ENDPOINTS = {
     blogSchedules: `${API_BASE_URL}/api/db/blog-schedules`,
     buildResults: `${API_BASE_URL}/api/db/build-results`,
     buildSuggestions: `${API_BASE_URL}/api/db/build-suggestions`,
+    socialAudits: `${API_BASE_URL}/api/db/social-audits`,
+    socialIdeas: `${API_BASE_URL}/api/db/social-ideas`,
+    socialPosts: `${API_BASE_URL}/api/db/social-posts`,
   },
 };

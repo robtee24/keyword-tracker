@@ -20,6 +20,7 @@ import BlogOpportunityView from './components/BlogOpportunityView';
 import BlogAutomateView from './components/BlogAutomateView';
 import BuildRebuildView from './components/BuildRebuildView';
 import BuildNewView from './components/BuildNewView';
+import SocialPlatformView from './components/SocialPlatformView';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import LandingPage from './components/LandingPage';
 import SeoAuditToolPage from './components/website/SeoAuditToolPage';
@@ -81,6 +82,12 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   'blog-opportunity': 'Content › Blog Ideas',
   'blog-automate': 'Content › Blog Writer',
   'advertising': 'Content › Ad Keywords',
+  'social-instagram': 'Social › Instagram',
+  'social-linkedin': 'Social › LinkedIn',
+  'social-x': 'Social › X (Twitter)',
+  'social-facebook': 'Social › Facebook',
+  'social-tiktok': 'Social › TikTok',
+  'social-pinterest': 'Social › Pinterest',
   'build-rebuild': 'Pages › Optimize Page',
   'build-new': 'Pages › Create Page',
   'tasks': 'Tasks',
@@ -88,6 +95,17 @@ const BREADCRUMB_LABELS: Record<string, string> = {
 };
 
 type AdAuditType = 'google' | 'meta' | 'linkedin' | 'reddit' | 'tiktok' | 'budget' | 'performance' | 'creative' | 'attribution' | 'structure';
+
+type SocialPlatform = 'instagram' | 'linkedin' | 'x' | 'facebook' | 'tiktok' | 'pinterest';
+
+const SOCIAL_VIEW_MAP: Record<string, SocialPlatform> = {
+  'social-instagram': 'instagram',
+  'social-linkedin': 'linkedin',
+  'social-x': 'x',
+  'social-facebook': 'facebook',
+  'social-tiktok': 'tiktok',
+  'social-pinterest': 'pinterest',
+};
 
 const AD_AUDIT_VIEW_MAP: Record<string, AdAuditType> = {
   'ad-audit-google': 'google',
@@ -692,6 +710,18 @@ function App() {
             <PlanGatedView feature="advertising">
               <AdvertisingView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
             </PlanGatedView>
+          )}
+
+          {/* ── Social Views ── */}
+          {activeProject && Object.entries(SOCIAL_VIEW_MAP).map(([viewId, socialPlatform]) =>
+            currentView === viewId ? (
+              <SocialPlatformView
+                key={`${viewId}-${connectionVersion}`}
+                siteUrl={getSiteUrl(activeProject)}
+                projectId={activeProject.id}
+                platform={socialPlatform}
+              />
+            ) : null
           )}
 
           {/* ── Blog Views ── */}
