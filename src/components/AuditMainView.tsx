@@ -30,6 +30,7 @@ interface PageAuditResult {
 
 interface AuditMainViewProps {
   siteUrl: string;
+  projectId: string;
 }
 
 const ALL_AUDIT_TYPES: { id: AuditType; label: string; desc: string }[] = [
@@ -92,7 +93,7 @@ function groupIntoRuns(results: PageAuditResult[]): PageAuditResult[][] {
   return runs;
 }
 
-export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
+export default function AuditMainView({ siteUrl, projectId }: AuditMainViewProps) {
   const [selectedTypes, setSelectedTypes] = useState<Set<AuditType>>(new Set(['seo', 'content', 'aeo', 'schema', 'compliance', 'speed']));
   const [mode, setMode] = useState<AuditMode | null>(null);
   const [pageUrlInput, setPageUrlInput] = useState('');
@@ -128,12 +129,14 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
   const [pendingRecs, setPendingRecs] = useState<Set<string>>(new Set());
   const [completedRecs, setCompletedRecs] = useState<Set<string>>(new Set());
   const [rejectedRecs, setRejectedRecs] = useState<Set<string>>(new Set());
+  const [selectedForTasklist, setSelectedForTasklist] = useState<Set<string>>(new Set());
+  const [addingToTasklist, setAddingToTasklist] = useState(false);
 
   const loadResults = useCallback(async () => {
     if (!siteUrl) return;
     setLoadingResults(true);
     try {
-      const resp = await fetch(`${API_ENDPOINTS.db.pageAudits}?siteUrl=${encodeURIComponent(siteUrl)}`);
+      const resp = await fetch(`${API_ENDPOINTS.db.pageAudits}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`);
       if (resp.ok) {
         const data = await resp.json();
         if (data?.results) {
@@ -161,7 +164,7 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
       const rejected = new Set<string>();
       for (const auditType of ALL_AUDIT_TYPES.map((t) => t.id)) {
         try {
-          const resp = await fetch(`${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(`audit:${auditType}`)}`);
+          const resp = await fetch(`${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(`audit:${auditType}`)}&projectId=${projectId}`);
           if (resp.ok) {
             const data = await resp.json();
             if (data?.tasks) {
@@ -250,7 +253,7 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
           const resp = await fetch(API_ENDPOINTS.audit.runMulti, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ siteUrl, pageUrl, auditTypes: typesArray }),
+            body: JSON.stringify({ siteUrl, projectId, pageUrl, auditTypes: typesArray }),
           });
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
           const data = await resp.json();
@@ -338,13 +341,13 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
           await fetch(API_ENDPOINTS.db.pageAudits, {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: r.id }),
+            body: JSON.stringify({ id: r.id, projectId }),
           });
         } else {
           await fetch(API_ENDPOINTS.db.pageAudits, {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ siteUrl, pageUrl: r.page_url, auditType: r.audit_type, auditedAt: r.audited_at }),
+            body: JSON.stringify({ siteUrl, projectId, pageUrl: r.page_url, auditType: r.audit_type, auditedAt: r.audited_at }),
           });
         }
       } catch { /* */ }
@@ -362,11 +365,11 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
     const isDone = completedRecs.has(key);
     if (isDone) {
       setCompletedRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
-      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key }) }); } catch { /* */ }
+      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, projectId, keyword: `audit:${auditType}`, taskId: key }) }); } catch { /* */ }
     } else {
       setCompletedRecs((prev) => new Set(prev).add(key));
       setPendingRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
-      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'completed' }) }); } catch { /* */ }
+      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, projectId, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'completed' }) }); } catch { /* */ }
     }
   }, [siteUrl, completedRecs]);
 
@@ -374,14 +377,41 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
     const isRejected = rejectedRecs.has(key);
     if (isRejected) {
       setRejectedRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
-      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key }) }); } catch { /* */ }
+      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, projectId, keyword: `audit:${auditType}`, taskId: key }) }); } catch { /* */ }
     } else {
       setRejectedRecs((prev) => new Set(prev).add(key));
       setCompletedRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
       setPendingRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
-      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'rejected' }) }); } catch { /* */ }
+      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, projectId, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'rejected' }) }); } catch { /* */ }
     }
   }, [siteUrl, rejectedRecs]);
+
+  const toggleSelected = useCallback((key: string) => {
+    setSelectedForTasklist((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  }, []);
+
+  const addSelectedToTasklist = useCallback(async () => {
+    if (selectedForTasklist.size === 0) return;
+    setAddingToTasklist(true);
+    for (const key of selectedForTasklist) {
+      if (completedRecs.has(key) || pendingRecs.has(key)) continue;
+      const [auditType, pageUrl, idxStr] = key.split('::');
+      const idx = parseInt(idxStr, 10);
+      const result = results.find((r) => r.page_url === pageUrl && r.audit_type === auditType);
+      const rec = result?.recommendations[idx];
+      if (!rec) continue;
+      setPendingRecs((prev) => new Set(prev).add(key));
+      try {
+        await fetch(API_ENDPOINTS.db.completedTasks, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ siteUrl, projectId, keyword: `audit:${auditType}`, taskId: key, taskText: `[${AUDIT_TYPE_LABELS[auditType as AuditType]}] ${rec.issue} — ${rec.recommendation}`, category: rec.category, status: 'pending' }),
+        });
+      } catch { /* */ }
+    }
+    setSelectedForTasklist(new Set());
+    setAddingToTasklist(false);
+  }, [selectedForTasklist, completedRecs, pendingRecs, results, siteUrl, projectId]);
 
   const toggleRecExpanded = (key: string) => setExpandedRecs((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
 
@@ -759,8 +789,49 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
                               <svg className={`w-3.5 h-3.5 text-apple-text-tertiary transition-transform shrink-0 ${isPageExp ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
                             </button>
 
-                            {isPageExp && (
+                            {isPageExp && (() => {
+                              const allPageRecKeys: string[] = [];
+                              for (const audit of audits) {
+                                audit.recommendations.forEach((_, i) => {
+                                  const key = recKey(audit.page_url, audit.audit_type, i);
+                                  if (!rejectedRecs.has(key) && !completedRecs.has(key) && !pendingRecs.has(key)) {
+                                    allPageRecKeys.push(key);
+                                  }
+                                });
+                              }
+                              const allPageSelected = allPageRecKeys.length > 0 && allPageRecKeys.every((k) => selectedForTasklist.has(k));
+                              const somePageSelected = allPageRecKeys.some((k) => selectedForTasklist.has(k));
+                              const pageSelectedCount = allPageRecKeys.filter((k) => selectedForTasklist.has(k)).length;
+
+                              return (
                               <div className="px-4 pb-4 space-y-4 bg-white/50">
+                                {allPageRecKeys.length > 0 && (
+                                  <div className="flex items-center gap-3 pt-2">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={allPageSelected}
+                                        ref={(el) => { if (el) el.indeterminate = somePageSelected && !allPageSelected; }}
+                                        onChange={() => {
+                                          setSelectedForTasklist((prev) => {
+                                            const n = new Set(prev);
+                                            if (allPageSelected) { for (const k of allPageRecKeys) n.delete(k); }
+                                            else { for (const k of allPageRecKeys) n.add(k); }
+                                            return n;
+                                          });
+                                        }}
+                                        className="rounded"
+                                      />
+                                      <span className="text-apple-xs font-medium text-apple-text-secondary">Select All</span>
+                                    </label>
+                                    {pageSelectedCount > 0 && (
+                                      <button onClick={addSelectedToTasklist} disabled={addingToTasklist}
+                                        className="px-3 py-1 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50">
+                                        {addingToTasklist ? 'Adding…' : `Add ${pageSelectedCount} to Tasklist`}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                                 {audits.map((audit) => (
                                   <div key={audit.audit_type} className="mt-1">
                                     <div className="flex items-center gap-2 mb-2">
@@ -772,15 +843,22 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
                                       const key = recKey(audit.page_url, audit.audit_type, i);
                                       const pc = PRIORITY_COLORS[rec.priority] || PRIORITY_COLORS.low;
                                       const isDone = completedRecs.has(key);
+                                      const isPending = pendingRecs.has(key);
+                                      const isActioned = isDone || isPending;
+                                      const isSelected = selectedForTasklist.has(key);
                                       const isRecExp = expandedRecs.has(key);
                                       return (
                                         <div key={i} className={`rounded-apple-sm border ${pc.border} ${isDone ? 'opacity-50' : ''} ${pc.bg} overflow-hidden mb-2`}>
                                           <div className="p-2.5 flex items-start gap-2">
-                                            <input type="checkbox" checked={isDone} onChange={() => toggleRecDone(key, `${rec.issue} — ${rec.recommendation}`, audit.audit_type)} className="mt-1 shrink-0 rounded" />
+                                            <input type="checkbox" checked={isSelected || isActioned} disabled={isActioned}
+                                              onChange={() => { if (!isActioned) toggleSelected(key); }}
+                                              className="mt-1 shrink-0 rounded" />
                                             <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleRecExpanded(key)}>
                                               <div className="flex items-center gap-2 mb-0.5">
                                                 <span className={`text-[10px] font-bold uppercase ${pc.text}`}>{rec.priority}</span>
                                                 <span className="text-[10px] text-apple-text-tertiary">{rec.category}</span>
+                                                {isPending && <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">On Tasklist</span>}
+                                                {isDone && <span className="text-[10px] font-medium text-green-600 bg-green-50 px-1.5 py-0.5 rounded">Completed</span>}
                                               </div>
                                               <p className={`text-apple-xs font-medium ${isDone ? 'line-through text-apple-text-tertiary' : 'text-apple-text'}`}>{rec.issue}</p>
                                             </div>
@@ -802,7 +880,8 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
                                   </div>
                                 ))}
                               </div>
-                            )}
+                              );
+                            })()}
                           </div>
                         );
                       })}
@@ -826,6 +905,20 @@ export default function AuditMainView({ siteUrl }: AuditMainViewProps) {
           <p className="text-apple-base text-apple-text-secondary max-w-md mx-auto">
             Select audit types and a mode above to run your first audit.
           </p>
+        </div>
+      )}
+
+      {selectedForTasklist.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-white border border-apple-divider shadow-apple-lg rounded-apple px-5 py-3 flex items-center gap-4">
+          <span className="text-apple-sm font-medium text-apple-text">{selectedForTasklist.size} recommendation{selectedForTasklist.size !== 1 ? 's' : ''} selected</span>
+          <button onClick={addSelectedToTasklist} disabled={addingToTasklist}
+            className="px-4 py-1.5 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50">
+            {addingToTasklist ? 'Adding…' : 'Add to Tasklist'}
+          </button>
+          <button onClick={() => setSelectedForTasklist(new Set())}
+            className="text-apple-xs text-apple-text-tertiary hover:text-apple-text transition-colors">
+            Clear
+          </button>
         </div>
       )}
     </div>

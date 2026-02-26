@@ -41,6 +41,7 @@ interface KeywordInsightsPanelProps {
   checklist: ChecklistItem[] | null;
   searchVolume: number | null;
   siteUrl: string;
+  projectId?: string;
   taskToggleCounter: number;
 }
 
@@ -52,6 +53,7 @@ export default function KeywordInsightsPanel({
   checklist,
   searchVolume,
   siteUrl,
+  projectId,
   taskToggleCounter,
 }: KeywordInsightsPanelProps) {
   const trending = calculateTrending(history);
@@ -66,7 +68,7 @@ export default function KeywordInsightsPanel({
     (async () => {
       try {
         const resp = await fetch(
-          `${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(keyword)}`
+          `${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(keyword)}${projectId ? `&projectId=${projectId}` : ''}`
         );
         if (!resp.ok || cancelled) return;
         const { tasks } = await resp.json();

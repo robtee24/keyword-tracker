@@ -43,6 +43,7 @@ interface KeywordData {
 
 interface OverviewViewProps {
   siteUrl: string;
+  projectId: string;
   dateRange: DateRange | null;
   compareDateRange: DateRange | null;
 }
@@ -61,7 +62,7 @@ function getDateRangeForPeriod(period: TimePeriod): { startDate: Date; endDate: 
   }
 }
 
-export default function OverviewView({ siteUrl, dateRange, compareDateRange }: OverviewViewProps) {
+export default function OverviewView({ siteUrl, projectId, dateRange, compareDateRange }: OverviewViewProps) {
   const [chartPeriod, setChartPeriod] = useState<TimePeriod>('1y');
   const [chartData, setChartData] = useState<DailyDataPoint[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
@@ -98,6 +99,7 @@ export default function OverviewView({ siteUrl, dateRange, compareDateRange }: O
             startDate: format(range.startDate, 'yyyy-MM-dd'),
             endDate: format(range.endDate, 'yyyy-MM-dd'),
             siteUrl,
+            projectId,
           }),
         });
         if (resp.ok) {
@@ -127,12 +129,12 @@ export default function OverviewView({ siteUrl, dateRange, compareDateRange }: O
           authenticatedFetch(API_ENDPOINTS.google.searchConsole.keywords, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ startDate, endDate, siteUrl }),
+            body: JSON.stringify({ startDate, endDate, siteUrl, projectId }),
           }),
           authenticatedFetch(`${API_ENDPOINTS.google.searchConsole.keywords}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ startDate, endDate, siteUrl, dimension: 'page' }),
+            body: JSON.stringify({ startDate, endDate, siteUrl, projectId, dimension: 'page' }),
           }),
         ]);
 
@@ -184,6 +186,7 @@ export default function OverviewView({ siteUrl, dateRange, compareDateRange }: O
                 startDate: format(compareDateRange.startDate, 'yyyy-MM-dd'),
                 endDate: format(compareDateRange.endDate, 'yyyy-MM-dd'),
                 siteUrl,
+                projectId,
               }),
             });
             if (cmpResp.ok) {

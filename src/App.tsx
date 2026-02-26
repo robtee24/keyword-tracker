@@ -587,6 +587,7 @@ function App() {
             <div style={{ display: currentView === 'overview' ? 'block' : 'none' }}>
               <OverviewView
                 siteUrl={getSiteUrl(activeProject)}
+                projectId={activeProject.id}
                 dateRange={dateRange}
                 compareDateRange={compareDateRange}
               />
@@ -606,52 +607,52 @@ function App() {
           )}
 
           {currentView === 'lost-keywords' && activeProject && activeProject.gsc_property && (
-            <LostKeywordsView siteUrl={getSiteUrl(activeProject)} />
+            <LostKeywordsView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
           )}
 
           {/* ── SEO Audit Views ── */}
           {activeProject && visitedAudits.has('audit') && (
             <div style={{ display: currentView === 'audit' ? 'block' : 'none' }}>
               <PlanGatedView feature="full_site_audit">
-                <AuditMainView siteUrl={getSiteUrl(activeProject)} />
+                <AuditMainView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
               </PlanGatedView>
             </div>
           )}
           {activeProject && visitedAudits.has('seo-audit') && (
             <div style={{ display: currentView === 'seo-audit' ? 'block' : 'none' }}>
-              <AuditView siteUrl={getSiteUrl(activeProject)} auditType="seo" title="SEO Audit" description="Comprehensive technical SEO audit of every page in your sitemap. Analyzes title tags, meta descriptions, headings, internal links, images, and more." isVisible={currentView === 'seo-audit'} />
+              <AuditView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} auditType="seo" title="SEO Audit" description="Comprehensive technical SEO audit of every page in your sitemap. Analyzes title tags, meta descriptions, headings, internal links, images, and more." isVisible={currentView === 'seo-audit'} />
             </div>
           )}
           {activeProject && visitedAudits.has('content-audit') && (
             <div style={{ display: currentView === 'content-audit' ? 'block' : 'none' }}>
-              <AuditView siteUrl={getSiteUrl(activeProject)} auditType="content" title="Content Audit" description="Evaluates copy quality, conversion optimization, and marketing psychology across every page." isVisible={currentView === 'content-audit'} />
+              <AuditView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} auditType="content" title="Content Audit" description="Evaluates copy quality, conversion optimization, and marketing psychology across every page." isVisible={currentView === 'content-audit'} />
             </div>
           )}
           {activeProject && visitedAudits.has('aeo-audit') && (
             <div style={{ display: currentView === 'aeo-audit' ? 'block' : 'none' }}>
               <PlanGatedAuditView auditType="aeo">
-                <AuditView siteUrl={getSiteUrl(activeProject)} auditType="aeo" title="AEO Audit" description="AI Engine Optimization audit — analyzes how well your pages would be cited by AI assistants." isVisible={currentView === 'aeo-audit'} />
+                <AuditView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} auditType="aeo" title="AEO Audit" description="AI Engine Optimization audit — analyzes how well your pages would be cited by AI assistants." isVisible={currentView === 'aeo-audit'} />
               </PlanGatedAuditView>
             </div>
           )}
           {activeProject && visitedAudits.has('schema-audit') && (
             <div style={{ display: currentView === 'schema-audit' ? 'block' : 'none' }}>
               <PlanGatedAuditView auditType="schema">
-                <AuditView siteUrl={getSiteUrl(activeProject)} auditType="schema" title="Schema Audit" description="Validates existing schema markup and identifies missing structured data opportunities." isVisible={currentView === 'schema-audit'} />
+                <AuditView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} auditType="schema" title="Schema Audit" description="Validates existing schema markup and identifies missing structured data opportunities." isVisible={currentView === 'schema-audit'} />
               </PlanGatedAuditView>
             </div>
           )}
           {activeProject && visitedAudits.has('compliance-audit') && (
             <div style={{ display: currentView === 'compliance-audit' ? 'block' : 'none' }}>
               <PlanGatedAuditView auditType="compliance">
-                <AuditView siteUrl={getSiteUrl(activeProject)} auditType="compliance" title="Compliance Audit" description="Audits for GDPR, CCPA, ADA/WCAG accessibility, privacy, security headers, and all applicable compliance requirements." isVisible={currentView === 'compliance-audit'} />
+                <AuditView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} auditType="compliance" title="Compliance Audit" description="Audits for GDPR, CCPA, ADA/WCAG accessibility, privacy, security headers, and all applicable compliance requirements." isVisible={currentView === 'compliance-audit'} />
               </PlanGatedAuditView>
             </div>
           )}
           {activeProject && visitedAudits.has('speed-audit') && (
             <div style={{ display: currentView === 'speed-audit' ? 'block' : 'none' }}>
               <PlanGatedAuditView auditType="speed">
-                <AuditView siteUrl={getSiteUrl(activeProject)} auditType="speed" title="Page Speed Audit" description="Analyzes Core Web Vitals signals, render-blocking resources, image optimization, font loading, and page load performance." isVisible={currentView === 'speed-audit'} />
+                <AuditView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} auditType="speed" title="Page Speed Audit" description="Analyzes Core Web Vitals signals, render-blocking resources, image optimization, font loading, and page load performance." isVisible={currentView === 'speed-audit'} />
               </PlanGatedAuditView>
             </div>
           )}
@@ -659,7 +660,7 @@ function App() {
           {/* ── Advertising Audit Views ── */}
           {activeProject && visitedAudits.has('ad-audit') && (
             <div style={{ display: currentView === 'ad-audit' ? 'block' : 'none' }}>
-              <AdAuditMainView siteUrl={getSiteUrl(activeProject)} />
+              <AdAuditMainView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
             </div>
           )}
           {activeProject && Object.entries(AD_AUDIT_VIEW_MAP).map(([viewId, adType]) =>
@@ -667,6 +668,7 @@ function App() {
               <div key={viewId} style={{ display: currentView === viewId ? 'block' : 'none' }}>
                 <AdAuditView
                   siteUrl={getSiteUrl(activeProject)}
+                  projectId={activeProject.id}
                   adAuditType={adType}
                   title={AD_AUDIT_TITLES[adType].title}
                   description={AD_AUDIT_TITLES[adType].description}
@@ -684,30 +686,30 @@ function App() {
 
           {/* ── Blog Views ── */}
           {currentView === 'blog-audit' && activeProject && (
-            <BlogAuditView siteUrl={getSiteUrl(activeProject)} />
+            <BlogAuditView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
           )}
           {currentView === 'blog-opportunity' && activeProject && (
-            <BlogOpportunityView siteUrl={getSiteUrl(activeProject)} />
+            <BlogOpportunityView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
           )}
           {currentView === 'blog-automate' && activeProject && (
-            <BlogAutomateView siteUrl={getSiteUrl(activeProject)} />
+            <BlogAutomateView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
           )}
 
           {/* ── Build Views ── */}
           {currentView === 'build-rebuild' && activeProject && (
             <PlanGatedView limitField="page_builds">
-              <BuildRebuildView siteUrl={getSiteUrl(activeProject)} />
+              <BuildRebuildView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
             </PlanGatedView>
           )}
           {currentView === 'build-new' && activeProject && (
             <PlanGatedView limitField="page_builds">
-              <BuildNewView siteUrl={getSiteUrl(activeProject)} />
+              <BuildNewView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
             </PlanGatedView>
           )}
 
           {/* ── Consolidated Tasks & Activity ── */}
           {currentView === 'tasks' && activeProject && (
-            <TasklistView siteUrl={getSiteUrl(activeProject)} scope="all" />
+            <TasklistView siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} scope="all" />
           )}
           {currentView === 'activity' && activeProject && (
             <ActivityLogView siteUrl={getSiteUrl(activeProject)} scope="all" />

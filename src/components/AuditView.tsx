@@ -40,6 +40,7 @@ interface PageResult {
 
 interface AuditViewProps {
   siteUrl: string;
+  projectId: string;
   auditType: AuditType;
   title: string;
   description: string;
@@ -72,7 +73,7 @@ const BATCH_SIZE = 5;
 // Unique key for a rec so we can track completion
 function recKey(pageUrl: string, idx: number) { return `${pageUrl}::${idx}`; }
 
-export default function AuditView({ siteUrl, auditType, title, description, isVisible }: AuditViewProps) {
+export default function AuditView({ siteUrl, projectId, auditType, title, description, isVisible }: AuditViewProps) {
   const [mode, setMode] = useState<AuditMode | null>(null);
   const [pageUrlInput, setPageUrlInput] = useState('');
   const [multiPages, setMultiPages] = useState<string[]>([]);
@@ -119,7 +120,7 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
   const loadResults = useCallback(() => {
     if (!siteUrl) return;
     setLoadingResults(true);
-    fetch(`${API_ENDPOINTS.db.pageAudits}?siteUrl=${encodeURIComponent(siteUrl)}&auditType=${auditType}`)
+    fetch(`${API_ENDPOINTS.db.pageAudits}?siteUrl=${encodeURIComponent(siteUrl)}&auditType=${auditType}&projectId=${projectId}`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data?.results) {
@@ -134,7 +135,7 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
 
   const loadTaskStatuses = useCallback(() => {
     if (!siteUrl) return;
-    fetch(`${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(`audit:${auditType}`)}`)
+    fetch(`${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(`audit:${auditType}`)}&projectId=${projectId}`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data?.tasks) {
@@ -216,7 +217,7 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
         const resp = await fetch(API_ENDPOINTS.audit.runBatch, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ siteUrl, pageUrls: batch, auditType }),
+          body: JSON.stringify({ siteUrl, projectId, pageUrls: batch, auditType }),
         });
         if (resp.ok) {
           const data = await resp.json();
@@ -237,7 +238,7 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
           for (const pageUrl of batch) {
             if (abortRef.current) break;
             try {
-              const r2 = await fetch(API_ENDPOINTS.audit.run, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, pageUrl, auditType }) });
+              const r2 = await fetch(API_ENDPOINTS.audit.run, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, projectId, pageUrl, auditType }) });
               if (r2.ok) {
                 const result = await r2.json();
                 completedUrlsRef.current.add(pageUrl);
@@ -253,7 +254,7 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
         for (const pageUrl of batch) {
           if (abortRef.current) break;
           try {
-            const r2 = await fetch(API_ENDPOINTS.audit.run, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, pageUrl, auditType }) });
+            const r2 = await fetch(API_ENDPOINTS.audit.run, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, projectId, pageUrl, auditType }) });
             if (r2.ok) {
               const result = await r2.json();
               completedUrlsRef.current.add(pageUrl);
@@ -312,14 +313,14 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
       setCompletedRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
       if (wasPending) {
         setPendingRecs((prev) => new Set(prev).add(key));
-        try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'pending' }) }); } catch { /* */ }
+        try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, projectId, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'pending' }) }); } catch { /* */ }
       } else {
-        try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key }) }); } catch { /* */ }
+        try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, projectId, keyword: `audit:${auditType}`, taskId: key }) }); } catch { /* */ }
       }
     } else {
       setCompletedRecs((prev) => new Set(prev).add(key));
       setPendingRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
-      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'completed' }) }); } catch { /* */ }
+      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, projectId, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'completed' }) }); } catch { /* */ }
     }
   }, [siteUrl, auditType, completedRecs, pendingRecs]);
 
@@ -327,12 +328,12 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
     const isRejected = rejectedRecs.has(key);
     if (isRejected) {
       setRejectedRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
-      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key }) }); } catch { /* */ }
+      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, projectId, keyword: `audit:${auditType}`, taskId: key }) }); } catch { /* */ }
     } else {
       setRejectedRecs((prev) => new Set(prev).add(key));
       setCompletedRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
       setPendingRecs((prev) => { const n = new Set(prev); n.delete(key); return n; });
-      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'rejected' }) }); } catch { /* */ }
+      try { await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, projectId, keyword: `audit:${auditType}`, taskId: key, taskText, category: auditType, status: 'rejected' }) }); } catch { /* */ }
     }
   }, [siteUrl, auditType, rejectedRecs]);
 
@@ -348,7 +349,7 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
       if (!rec) continue;
       setPendingRecs((prev) => new Set(prev).add(key));
       try {
-        await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, keyword: `audit:${auditType}`, taskId: key, taskText: `[${AUDIT_TYPE_LABELS[auditType]}] ${rec.issue} — ${rec.recommendation}`, category: rec.category, status: 'pending' }) });
+        await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteUrl, projectId, keyword: `audit:${auditType}`, taskId: key, taskText: `[${AUDIT_TYPE_LABELS[auditType]}] ${rec.issue} — ${rec.recommendation}`, category: rec.category, status: 'pending' }) });
       } catch { /* */ }
     }
     setSelectedForTasklist(new Set());
@@ -364,13 +365,13 @@ export default function AuditView({ siteUrl, auditType, title, description, isVi
         await fetch(API_ENDPOINTS.db.pageAudits, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: result.id }),
+          body: JSON.stringify({ id: result.id, projectId }),
         });
       } else {
         await fetch(API_ENDPOINTS.db.pageAudits, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ siteUrl, pageUrl: result.page_url, auditType: auditType, auditedAt: result.audited_at }),
+          body: JSON.stringify({ siteUrl, projectId, pageUrl: result.page_url, auditType: auditType, auditedAt: result.audited_at }),
         });
       }
       setResults((prev) => prev.filter((r) => !(r.page_url === result.page_url && r.audited_at === result.audited_at)));

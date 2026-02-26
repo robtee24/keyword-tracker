@@ -32,6 +32,7 @@ interface RecommendationsPanelProps {
   scanResult: ScanResult;
   keyword: string;
   siteUrl: string;
+  projectId?: string;
   onTaskToggle?: () => void;
 }
 
@@ -100,7 +101,8 @@ function saveCompletedIds(siteUrl: string, keyword: string, ids: Set<string>) {
 async function logCompletionToDb(
   siteUrl: string,
   keyword: string,
-  item: ChecklistItem
+  item: ChecklistItem,
+  projectId?: string
 ): Promise<void> {
   try {
     await fetch(API_ENDPOINTS.db.completedTasks, {
@@ -108,6 +110,7 @@ async function logCompletionToDb(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         siteUrl,
+        projectId,
         keyword,
         taskId: item.id,
         taskText: item.task,
@@ -122,13 +125,14 @@ async function logCompletionToDb(
 async function removeCompletionFromDb(
   siteUrl: string,
   keyword: string,
-  taskId: string
+  taskId: string,
+  projectId?: string
 ): Promise<void> {
   try {
     await fetch(API_ENDPOINTS.db.completedTasks, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ siteUrl, keyword, taskId }),
+      body: JSON.stringify({ siteUrl, projectId, keyword, taskId }),
     });
   } catch {
     // Best-effort
@@ -143,6 +147,7 @@ export default function RecommendationsPanel({
   scanResult,
   keyword,
   siteUrl,
+  projectId,
   onTaskToggle,
 }: RecommendationsPanelProps) {
   const { strategy, audit, checklist } = scanResult;
@@ -156,7 +161,7 @@ export default function RecommendationsPanel({
     (async () => {
       try {
         const resp = await fetch(
-          `${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(keyword)}`
+          `${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(keyword)}${projectId ? `&projectId=${projectId}` : ''}`
         );
         if (!resp.ok || cancelled) return;
         const { tasks } = await resp.json();
@@ -189,10 +194,10 @@ export default function RecommendationsPanel({
         const next = new Set(prev);
         if (next.has(id)) {
           next.delete(id);
-          removeCompletionFromDb(siteUrl, keyword, id);
+          removeCompletionFromDb(siteUrl, keyword, id, projectId);
         } else {
           next.add(id);
-          if (item) logCompletionToDb(siteUrl, keyword, item);
+          if (item) logCompletionToDb(siteUrl, keyword, item, projectId);
         }
         return next;
       });

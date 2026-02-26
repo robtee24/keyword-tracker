@@ -138,6 +138,7 @@ export default async function handler(req, res) {
       try {
         await supabase.from('gsc_cache').upsert({
           site_url: siteUrl,
+          project_id: projectId || null,
           start_date: startDate,
           end_date: endDate,
           query_type: cacheType,

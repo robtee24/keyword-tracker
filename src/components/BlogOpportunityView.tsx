@@ -35,6 +35,7 @@ interface GeneratedBlog {
 
 interface BlogOpportunityViewProps {
   siteUrl: string;
+  projectId: string;
 }
 
 function normalizeOpp(raw: Record<string, unknown>): Opportunity {
@@ -54,7 +55,7 @@ function normalizeOpp(raw: Record<string, unknown>): Opportunity {
   };
 }
 
-export default function BlogOpportunityView({ siteUrl }: BlogOpportunityViewProps) {
+export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportunityViewProps) {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -65,7 +66,7 @@ export default function BlogOpportunityView({ siteUrl }: BlogOpportunityViewProp
   const loadOpportunities = useCallback(async () => {
     setLoading(true);
     try {
-      const resp = await fetch(`${API_ENDPOINTS.db.blogOpportunities}?siteUrl=${encodeURIComponent(siteUrl)}`);
+      const resp = await fetch(`${API_ENDPOINTS.db.blogOpportunities}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`);
       const data = await resp.json();
       setOpportunities((data.opportunities || []).map((o: Record<string, unknown>) => normalizeOpp(o)));
     } catch { /* ignore */ }
@@ -141,7 +142,7 @@ export default function BlogOpportunityView({ siteUrl }: BlogOpportunityViewProp
       await fetch(API_ENDPOINTS.db.blogOpportunities, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: opp.id, status: newStatus }),
+        body: JSON.stringify({ id: opp.id, projectId, status: newStatus }),
       });
       setOpportunities((prev) =>
         prev.map((o) => (o.id === opp.id ? { ...o, status: newStatus } : o))

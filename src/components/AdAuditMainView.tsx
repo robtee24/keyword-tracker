@@ -28,6 +28,7 @@ interface AdAuditResult {
 
 interface AdAuditMainViewProps {
   siteUrl: string;
+  projectId: string;
 }
 
 const ALL_AD_AUDIT_TYPES: { id: AdAuditType; label: string; desc: string }[] = [
@@ -74,7 +75,7 @@ function recKey(auditType: string, idx: number) { return `ad::${auditType}::${id
 
 const RECS_PER_PAGE = 30;
 
-export default function AdAuditMainView({ siteUrl }: AdAuditMainViewProps) {
+export default function AdAuditMainView({ siteUrl, projectId }: AdAuditMainViewProps) {
   const [selectedTypes, setSelectedTypes] = useState<Set<AdAuditType>>(new Set(ALL_AD_AUDIT_TYPES.map(t => t.id)));
   const [results, setResults] = useState<AdAuditResult[]>([]);
   const [isRunning, setIsRunning] = useState(false);
@@ -97,13 +98,13 @@ export default function AdAuditMainView({ siteUrl }: AdAuditMainViewProps) {
   useEffect(() => {
     const loadAll = async () => {
       try {
-        const res = await authenticatedFetch(`${API_ENDPOINTS.db.pageAudits}?site_url=${encodeURIComponent(siteUrl)}&audit_type=ad-google`);
+        const res = await authenticatedFetch(`${API_ENDPOINTS.db.pageAudits}?site_url=${encodeURIComponent(siteUrl)}&audit_type=ad-google&projectId=${projectId}`);
         if (!res.ok) return;
         // Load all ad audit types
         const allResults: AdAuditResult[] = [];
         for (const t of ALL_AD_AUDIT_TYPES) {
           try {
-            const r = await authenticatedFetch(`${API_ENDPOINTS.db.pageAudits}?site_url=${encodeURIComponent(siteUrl)}&audit_type=ad-${t.id}`);
+            const r = await authenticatedFetch(`${API_ENDPOINTS.db.pageAudits}?site_url=${encodeURIComponent(siteUrl)}&audit_type=ad-${t.id}&projectId=${projectId}`);
             if (r.ok) {
               const data = await r.json();
               if (data.audits?.length) {
@@ -132,7 +133,7 @@ export default function AdAuditMainView({ siteUrl }: AdAuditMainViewProps) {
     const loadTasks = async () => {
       for (const t of ALL_AD_AUDIT_TYPES) {
         try {
-          const r = await authenticatedFetch(`${API_ENDPOINTS.db.completedTasks}?site_url=${encodeURIComponent(siteUrl)}&keyword=ad-${t.id}`);
+          const r = await authenticatedFetch(`${API_ENDPOINTS.db.completedTasks}?site_url=${encodeURIComponent(siteUrl)}&keyword=ad-${t.id}&projectId=${projectId}`);
           if (r.ok) {
             const data = await r.json();
             const tasks = data.tasks || [];
@@ -198,6 +199,7 @@ export default function AdAuditMainView({ siteUrl }: AdAuditMainViewProps) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             siteUrl,
+            projectId,
             auditType,
             fileName: file.name,
             csvData: fileContent,
@@ -250,7 +252,7 @@ export default function AdAuditMainView({ siteUrl }: AdAuditMainViewProps) {
       await authenticatedFetch(API_ENDPOINTS.db.completedTasks, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ site_url: siteUrl, keyword: `ad-${auditType}`, task_id: key, status: newStatus }),
+        body: JSON.stringify({ site_url: siteUrl, projectId, keyword: `ad-${auditType}`, task_id: key, status: newStatus }),
       });
     } catch { /* skip */ }
   }, [siteUrl, doneRecs]);
@@ -262,7 +264,7 @@ export default function AdAuditMainView({ siteUrl }: AdAuditMainViewProps) {
       await authenticatedFetch(API_ENDPOINTS.db.completedTasks, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ site_url: siteUrl, keyword: `ad-${auditType}`, task_id: key, task_text: taskText, status: 'rejected' }),
+        body: JSON.stringify({ site_url: siteUrl, projectId, keyword: `ad-${auditType}`, task_id: key, task_text: taskText, status: 'rejected' }),
       });
     } catch { /* skip */ }
   }, [siteUrl]);
@@ -272,7 +274,7 @@ export default function AdAuditMainView({ siteUrl }: AdAuditMainViewProps) {
       await authenticatedFetch(API_ENDPOINTS.db.completedTasks, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ site_url: siteUrl, keyword: `ad-${auditType}`, task_id: key, task_text: taskText, status: 'pending' }),
+        body: JSON.stringify({ site_url: siteUrl, projectId, keyword: `ad-${auditType}`, task_id: key, task_text: taskText, status: 'pending' }),
       });
       setCheckedRecs(prev => { const n = new Set(prev); n.delete(key); return n; });
     } catch { /* skip */ }

@@ -9,9 +9,10 @@ interface LostKeyword {
 
 interface LostKeywordsViewProps {
   siteUrl: string;
+  projectId: string;
 }
 
-export default function LostKeywordsView({ siteUrl }: LostKeywordsViewProps) {
+export default function LostKeywordsView({ siteUrl, projectId }: LostKeywordsViewProps) {
   const [lostKeywords, setLostKeywords] = useState<LostKeyword[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +28,7 @@ export default function LostKeywordsView({ siteUrl }: LostKeywordsViewProps) {
     setLoading(true);
     setError(null);
 
-    fetch(`${API_ENDPOINTS.db.keywords}?siteUrl=${encodeURIComponent(siteUrl)}`)
+    fetch(`${API_ENDPOINTS.db.keywords}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`)
       .then((resp) => {
         if (!resp.ok) throw new Error('Failed to fetch keywords');
         return resp.json();

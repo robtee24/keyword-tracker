@@ -134,7 +134,7 @@ export default function GoogleSearchConsole({
     (async () => {
       try {
         const resp = await fetch(
-          `${API_ENDPOINTS.db.keywordGroups}?siteUrl=${encodeURIComponent(siteUrl)}`
+          `${API_ENDPOINTS.db.keywordGroups}?siteUrl=${encodeURIComponent(siteUrl)}${projectId ? `&projectId=${projectId}` : ''}`
         );
         if (resp.ok) {
           const { groups: g } = await resp.json();
@@ -149,7 +149,7 @@ export default function GoogleSearchConsole({
       const resp = await fetch(API_ENDPOINTS.db.keywordGroups, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, name }),
+        body: JSON.stringify({ siteUrl, projectId, name }),
       });
       if (resp.ok) {
         const { group } = await resp.json();
@@ -165,7 +165,7 @@ export default function GoogleSearchConsole({
       await fetch(API_ENDPOINTS.db.keywordGroups, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({ id, projectId }),
       });
       setGroups((prev) => prev.filter((g) => g.id !== id));
       if (activeGroup?.id === id) {
@@ -180,7 +180,7 @@ export default function GoogleSearchConsole({
       const resp = await fetch(API_ENDPOINTS.db.keywordGroupMembers, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ groupId, siteUrl, keywords }),
+        body: JSON.stringify({ groupId, siteUrl, projectId, keywords }),
       });
       if (resp.ok) {
         const mergeKeywords = (existing: string[]) => [...new Set([...existing, ...keywords])];
@@ -208,7 +208,7 @@ export default function GoogleSearchConsole({
       await fetch(API_ENDPOINTS.db.keywordGroupMembers, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ groupId, keyword }),
+        body: JSON.stringify({ groupId, projectId, keyword }),
       });
       setGroups((prev) =>
         prev.map((g) =>
@@ -248,7 +248,7 @@ export default function GoogleSearchConsole({
       await fetch(API_ENDPOINTS.db.keywordIntents, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, overrides }),
+        body: JSON.stringify({ siteUrl, projectId, overrides }),
       });
     } catch (err) {
       console.error('[IntentOverride] Failed to save to DB:', err);
@@ -290,7 +290,7 @@ export default function GoogleSearchConsole({
       const resp = await fetch(API_ENDPOINTS.db.searchVolumes, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl: site, volumes }),
+        body: JSON.stringify({ siteUrl: site, projectId, volumes }),
       });
       if (!resp.ok) {
         const text = await resp.text().catch(() => '');
@@ -311,7 +311,7 @@ export default function GoogleSearchConsole({
 
     try {
       const volResp = await fetch(
-        `${API_ENDPOINTS.db.searchVolumes}?siteUrl=${encodeURIComponent(site)}`
+        `${API_ENDPOINTS.db.searchVolumes}?siteUrl=${encodeURIComponent(site)}${projectId ? `&projectId=${projectId}` : ''}`
       );
       if (volResp.ok) {
         const volResult = await volResp.json();
@@ -405,7 +405,7 @@ export default function GoogleSearchConsole({
         const storeResp = await fetch(API_ENDPOINTS.db.keywords, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ siteUrl, keywords }),
+          body: JSON.stringify({ siteUrl, projectId, keywords }),
         });
         if (storeResp.ok) {
           const storeResult = await storeResp.json();
@@ -471,7 +471,7 @@ export default function GoogleSearchConsole({
         const response = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.keywordAlerts, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ siteUrl }),
+          body: JSON.stringify({ siteUrl, projectId }),
         });
         if (response.ok) {
           const result = await response.json();
@@ -700,7 +700,7 @@ export default function GoogleSearchConsole({
       const response = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.keywordHistory, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword, siteUrl }),
+        body: JSON.stringify({ keyword, siteUrl, projectId }),
       });
 
       if (response.ok) {
@@ -738,7 +738,7 @@ export default function GoogleSearchConsole({
           const response = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.keywordPages, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ keyword, startDate, endDate, siteUrl }),
+            body: JSON.stringify({ keyword, startDate, endDate, siteUrl, projectId }),
           });
 
           if (response.ok) {
@@ -774,7 +774,7 @@ export default function GoogleSearchConsole({
       (async () => {
         try {
           const recResp = await fetch(
-            `${API_ENDPOINTS.db.recommendations}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(keyword)}`
+            `${API_ENDPOINTS.db.recommendations}?siteUrl=${encodeURIComponent(siteUrl)}&keyword=${encodeURIComponent(keyword)}${projectId ? `&projectId=${projectId}` : ''}`
           );
           if (recResp.ok) {
             const recData = await recResp.json();
@@ -827,6 +827,7 @@ export default function GoogleSearchConsole({
           keyword,
           pages: pages.map((p) => ({ url: p.page, clicks: p.clicks, impressions: p.impressions })),
           siteUrl,
+          projectId,
         }),
       });
 
@@ -1240,6 +1241,7 @@ export default function GoogleSearchConsole({
                     groupName={activeGroup.name}
                     keywords={activeGroup.keywords}
                     siteUrl={siteUrl}
+                    projectId={projectId}
                     keywordPages={keywordPages}
                     cachedScanResults={scanResults}
                     onScanResultsUpdate={(results) => {
@@ -2272,6 +2274,7 @@ function KeywordRow({
                   checklist={scanResult?.checklist || null}
                   searchVolume={volume?.avgMonthlySearches ?? null}
                   siteUrl={siteUrl}
+                  projectId={projectId}
                   taskToggleCounter={taskToggleCounter}
                 />
               </td>
@@ -2397,6 +2400,7 @@ function KeywordRow({
                       scanResult={scanResult}
                       keyword={keyword.keyword}
                       siteUrl={siteUrl}
+                      projectId={projectId}
                       onTaskToggle={() => setTaskToggleCounter((c) => c + 1)}
                     />
                   </div>

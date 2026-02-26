@@ -63,9 +63,10 @@ const STEPS = [
 
 interface BuildRebuildViewProps {
   siteUrl: string;
+  projectId: string;
 }
 
-export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
+export default function BuildRebuildView({ siteUrl, projectId }: BuildRebuildViewProps) {
   const [sitemapUrls, setSitemapUrls] = useState<string[]>([]);
   const [loadingSitemap, setLoadingSitemap] = useState(true);
   const [urlInput, setUrlInput] = useState('');
@@ -118,7 +119,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
   const loadSavedBuilds = useCallback(async () => {
     setLoadingSaved(true);
     try {
-      const resp = await fetch(`${API_ENDPOINTS.db.buildResults}?siteUrl=${encodeURIComponent(siteUrl)}&buildType=rebuild`);
+      const resp = await fetch(`${API_ENDPOINTS.db.buildResults}?siteUrl=${encodeURIComponent(siteUrl)}&buildType=rebuild&projectId=${projectId}`);
       const data = await resp.json();
       setSavedBuilds(data.results || []);
     } catch { /* ignore */ }
@@ -224,7 +225,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
         await fetch(API_ENDPOINTS.db.buildResults, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ siteUrl, pageUrl, buildType: 'rebuild', result: rebuildData.result }),
+          body: JSON.stringify({ siteUrl, projectId, pageUrl, buildType: 'rebuild', result: rebuildData.result }),
         });
         await loadSavedBuilds();
         logActivity(siteUrl, 'build', 'rebuild', `Rebuilt page: ${pageUrl} — ${rebuildData.result.recommendations?.length || 0} improvements`);
@@ -248,6 +249,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
+          projectId,
           keyword: `build:${pageUrl}`,
           taskId: `build-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           taskText: `${change.area}: ${change.improved}`,
@@ -287,7 +289,7 @@ export default function BuildRebuildView({ siteUrl }: BuildRebuildViewProps) {
         await fetch(API_ENDPOINTS.db.buildResults, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ siteUrl, pageUrl: build.page_url, buildType: 'rebuild', result: data.result }),
+          body: JSON.stringify({ siteUrl, projectId, pageUrl: build.page_url, buildType: 'rebuild', result: data.result }),
         });
         await loadSavedBuilds();
         setExpandedBuildIdx(0);

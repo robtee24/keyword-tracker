@@ -66,7 +66,7 @@ export default function AdvertisingView({ siteUrl, projectId }: AdvertisingViewP
   useEffect(() => {
     if (!siteUrl) return;
     setLoading(true);
-    fetch(`${API_ENDPOINTS.db.adKeywords}?siteUrl=${encodeURIComponent(siteUrl)}`)
+    fetch(`${API_ENDPOINTS.db.adKeywords}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`)
       .then((r) => {
         if (!r.ok) return null;
         return r.json();

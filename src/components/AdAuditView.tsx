@@ -26,6 +26,7 @@ interface AuditResult {
 
 interface AdAuditViewProps {
   siteUrl: string;
+  projectId: string;
   adAuditType: AdAuditType;
   title: string;
   description: string;
@@ -52,7 +53,7 @@ function recKey(auditType: string, idx: number) { return `ad::${auditType}::${id
 
 const RECS_PER_PAGE = 30;
 
-export default function AdAuditView({ siteUrl, adAuditType, title, description, isVisible }: AdAuditViewProps) {
+export default function AdAuditView({ siteUrl, projectId, adAuditType, title, description, isVisible }: AdAuditViewProps) {
   const [result, setResult] = useState<AuditResult | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [expandedRecs, setExpandedRecs] = useState<Set<string>>(new Set());
@@ -67,7 +68,7 @@ export default function AdAuditView({ siteUrl, adAuditType, title, description, 
 
   const loadResult = useCallback(async () => {
     try {
-      const r = await authenticatedFetch(`${API_ENDPOINTS.db.pageAudits}?site_url=${encodeURIComponent(siteUrl)}&audit_type=ad-${adAuditType}`);
+      const r = await authenticatedFetch(`${API_ENDPOINTS.db.pageAudits}?site_url=${encodeURIComponent(siteUrl)}&audit_type=ad-${adAuditType}&projectId=${projectId}`);
       if (r.ok) {
         const data = await r.json();
         if (data.audits?.length) {
@@ -87,7 +88,7 @@ export default function AdAuditView({ siteUrl, adAuditType, title, description, 
 
   const loadTasks = useCallback(async () => {
     try {
-      const r = await authenticatedFetch(`${API_ENDPOINTS.db.completedTasks}?site_url=${encodeURIComponent(siteUrl)}&keyword=ad-${adAuditType}`);
+      const r = await authenticatedFetch(`${API_ENDPOINTS.db.completedTasks}?site_url=${encodeURIComponent(siteUrl)}&keyword=ad-${adAuditType}&projectId=${projectId}`);
       if (r.ok) {
         const data = await r.json();
         const done = new Set<string>();
@@ -129,6 +130,7 @@ export default function AdAuditView({ siteUrl, adAuditType, title, description, 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
+          projectId,
           auditType: adAuditType,
           fileName: uploadedFile.name,
           csvData: fileContent,
@@ -165,7 +167,7 @@ export default function AdAuditView({ siteUrl, adAuditType, title, description, 
       await authenticatedFetch(API_ENDPOINTS.db.completedTasks, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ site_url: siteUrl, keyword: `ad-${adAuditType}`, task_id: key, status: newStatus }),
+        body: JSON.stringify({ site_url: siteUrl, projectId, keyword: `ad-${adAuditType}`, task_id: key, status: newStatus }),
       });
     } catch { /* skip */ }
   }, [siteUrl, adAuditType, doneRecs]);
@@ -177,7 +179,7 @@ export default function AdAuditView({ siteUrl, adAuditType, title, description, 
       await authenticatedFetch(API_ENDPOINTS.db.completedTasks, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ site_url: siteUrl, keyword: `ad-${adAuditType}`, task_id: key, task_text: taskText, status: 'rejected' }),
+        body: JSON.stringify({ site_url: siteUrl, projectId, keyword: `ad-${adAuditType}`, task_id: key, task_text: taskText, status: 'rejected' }),
       });
     } catch { /* skip */ }
   }, [siteUrl, adAuditType]);
@@ -187,7 +189,7 @@ export default function AdAuditView({ siteUrl, adAuditType, title, description, 
       await authenticatedFetch(API_ENDPOINTS.db.completedTasks, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ site_url: siteUrl, keyword: `ad-${adAuditType}`, task_id: key, task_text: taskText, status: 'pending' }),
+        body: JSON.stringify({ site_url: siteUrl, projectId, keyword: `ad-${adAuditType}`, task_id: key, task_text: taskText, status: 'pending' }),
       });
       setCheckedRecs(prev => { const n = new Set(prev); n.delete(key); return n; });
     } catch { /* skip */ }

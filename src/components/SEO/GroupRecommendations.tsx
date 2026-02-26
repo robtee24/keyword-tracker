@@ -8,6 +8,7 @@ interface GroupRecommendationsProps {
   groupName: string;
   keywords: string[];
   siteUrl: string;
+  projectId?: string;
   keywordPages: Map<string, Array<{ page: string; clicks: number; impressions: number; ctr: number }>>;
   cachedScanResults: Map<string, ScanResult>;
   onScanResultsUpdate: (results: Map<string, ScanResult>) => void;
@@ -74,6 +75,7 @@ export default function GroupRecommendations({
   groupName,
   keywords,
   siteUrl,
+  projectId,
   keywordPages,
   cachedScanResults,
   onScanResultsUpdate,
@@ -119,6 +121,7 @@ export default function GroupRecommendations({
             keyword: kw,
             pages: pages.map((p) => ({ url: p.page, clicks: p.clicks, impressions: p.impressions })),
             siteUrl,
+            projectId,
           }),
         });
 
@@ -500,6 +503,7 @@ function IndividualView({
                   scanResult={result}
                   keyword={kw}
                   siteUrl={siteUrl}
+                  projectId={projectId}
                 />
               </div>
             )}

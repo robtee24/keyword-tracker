@@ -28,6 +28,7 @@ export type TasklistScope = 'organic' | 'seo' | 'ad' | 'blog' | 'build' | 'all';
 
 interface RecommendationsViewProps {
   siteUrl: string;
+  projectId: string;
   scope: TasklistScope;
 }
 
@@ -66,7 +67,7 @@ const SCOPE_DESCRIPTIONS: Record<TasklistScope, string> = {
 
 const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
-export default function RecommendationsView({ siteUrl, scope }: RecommendationsViewProps) {
+export default function RecommendationsView({ siteUrl, projectId, scope }: RecommendationsViewProps) {
   const [activeTab, setActiveTab] = useState<TasklistTab>('current');
   const [loading, setLoading] = useState(true);
   const [keywordItems, setKeywordItems] = useState<RankedItem[]>([]);
@@ -80,10 +81,10 @@ export default function RecommendationsView({ siteUrl, scope }: RecommendationsV
     setLoading(true);
     try {
       const fetches: Promise<Response>[] = [
-        fetch(`${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}`),
+        fetch(`${API_ENDPOINTS.db.completedTasks}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`),
       ];
       if (scope === 'organic' || scope === 'all') {
-        fetches.push(fetch(`${API_ENDPOINTS.db.recommendations}?site_url=${encodeURIComponent(siteUrl)}`));
+        fetches.push(fetch(`${API_ENDPOINTS.db.recommendations}?site_url=${encodeURIComponent(siteUrl)}&projectId=${projectId}`));
       }
 
       const responses = await Promise.all(fetches);
@@ -197,40 +198,40 @@ export default function RecommendationsView({ siteUrl, scope }: RecommendationsV
     ));
     try {
       await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, keyword: task.keyword, taskId: task.taskId || task.taskText, taskText: task.taskText, category: task.category, status: newStatus }) });
+        body: JSON.stringify({ siteUrl, projectId, keyword: task.keyword, taskId: task.taskId || task.taskText, taskText: task.taskText, category: task.category, status: newStatus }) });
       const scopeKey = getScopeLabel(task.keyword).toLowerCase() as 'organic' | 'seo' | 'ad' | 'blog' | 'build';
       const validScope = ['organic', 'seo', 'ad', 'blog', 'build'].includes(scopeKey) ? scopeKey : 'organic';
       logActivity(siteUrl, validScope as 'organic' | 'seo' | 'ad' | 'blog' | 'build', `task-${newStatus}`, `Task ${newStatus}: ${task.taskText}`);
     } catch { /* */ }
-  }, [siteUrl]);
+  }, [siteUrl, projectId]);
 
   const markKeywordComplete = useCallback(async (item: RankedItem) => {
     const newTask: DbTask = { id: '', keyword: item.keyword, taskId: item.task, taskText: item.task, category: item.category, status: 'completed', completedAt: new Date().toISOString(), source: 'keyword' };
     setDbTasks((prev) => [...prev, newTask]);
     try {
       await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, keyword: item.keyword, taskId: item.task, taskText: item.task, category: item.category, status: 'completed' }) });
+        body: JSON.stringify({ siteUrl, projectId, keyword: item.keyword, taskId: item.task, taskText: item.task, category: item.category, status: 'completed' }) });
       logActivity(siteUrl, 'organic', 'task-completed', `Completed: ${item.task} (${item.keyword})`);
     } catch { /* */ }
-  }, [siteUrl]);
+  }, [siteUrl, projectId]);
 
   const rejectKeywordTask = useCallback(async (item: RankedItem) => {
     const newTask: DbTask = { id: '', keyword: item.keyword, taskId: item.task, taskText: item.task, category: item.category, status: 'rejected', completedAt: new Date().toISOString(), source: 'keyword' };
     setDbTasks((prev) => [...prev, newTask]);
     try {
       await fetch(API_ENDPOINTS.db.completedTasks, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, keyword: item.keyword, taskId: item.task, taskText: item.task, category: item.category, status: 'rejected' }) });
+        body: JSON.stringify({ siteUrl, projectId, keyword: item.keyword, taskId: item.task, taskText: item.task, category: item.category, status: 'rejected' }) });
       logActivity(siteUrl, 'organic', 'task-rejected', `Rejected: ${item.task} (${item.keyword})`);
     } catch { /* */ }
-  }, [siteUrl]);
+  }, [siteUrl, projectId]);
 
   const restoreTask = useCallback(async (task: DbTask) => {
     setDbTasks((prev) => prev.filter((t) => !(t.keyword === task.keyword && t.taskId === task.taskId)));
     try {
       await fetch(API_ENDPOINTS.db.completedTasks, { method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, keyword: task.keyword, taskId: task.taskId || task.taskText }) });
+        body: JSON.stringify({ siteUrl, projectId, keyword: task.keyword, taskId: task.taskId || task.taskText }) });
     } catch { /* */ }
-  }, [siteUrl]);
+  }, [siteUrl, projectId]);
 
   const formatSource = (task: DbTask) => {
     if (task.keyword.startsWith('audit:')) {

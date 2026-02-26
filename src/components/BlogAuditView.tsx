@@ -56,9 +56,10 @@ type AuditTab = 'summary' | 'by-post' | 'recommendations';
 
 interface BlogAuditViewProps {
   siteUrl: string;
+  projectId: string;
 }
 
-export default function BlogAuditView({ siteUrl }: BlogAuditViewProps) {
+export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps) {
   const [blogUrls, setBlogUrls] = useState<BlogUrl[]>([]);
   const [newBlogUrl, setNewBlogUrl] = useState('');
   const [detecting, setDetecting] = useState(false);
@@ -79,7 +80,7 @@ export default function BlogAuditView({ siteUrl }: BlogAuditViewProps) {
   const loadBlogUrls = useCallback(async () => {
     setLoading(true);
     try {
-      const resp = await fetch(`${API_ENDPOINTS.db.blogUrls}?siteUrl=${encodeURIComponent(siteUrl)}`);
+      const resp = await fetch(`${API_ENDPOINTS.db.blogUrls}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`);
       const data = await resp.json();
       setBlogUrls(data.urls || []);
     } catch { /* ignore */ }
@@ -88,7 +89,7 @@ export default function BlogAuditView({ siteUrl }: BlogAuditViewProps) {
 
   const loadSavedAudits = useCallback(async () => {
     try {
-      const resp = await fetch(`${API_ENDPOINTS.db.blogAudits}?siteUrl=${encodeURIComponent(siteUrl)}`);
+      const resp = await fetch(`${API_ENDPOINTS.db.blogAudits}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`);
       const data = await resp.json();
       setSavedAudits(data.audits || []);
     } catch { /* ignore */ }
@@ -109,7 +110,7 @@ export default function BlogAuditView({ siteUrl }: BlogAuditViewProps) {
         await fetch(API_ENDPOINTS.db.blogUrls, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ siteUrl, blogUrl: url }),
+          body: JSON.stringify({ siteUrl, projectId, blogUrl: url }),
         });
       }
       await loadBlogUrls();
@@ -128,7 +129,7 @@ export default function BlogAuditView({ siteUrl }: BlogAuditViewProps) {
     await fetch(API_ENDPOINTS.db.blogUrls, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ siteUrl, blogUrl: url }),
+      body: JSON.stringify({ siteUrl, projectId, blogUrl: url }),
     });
     setNewBlogUrl('');
     await loadBlogUrls();
@@ -138,7 +139,7 @@ export default function BlogAuditView({ siteUrl }: BlogAuditViewProps) {
     await fetch(API_ENDPOINTS.db.blogUrls, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ siteUrl, blogUrl }),
+      body: JSON.stringify({ siteUrl, projectId, blogUrl }),
     });
     await loadBlogUrls();
   };
@@ -155,7 +156,7 @@ export default function BlogAuditView({ siteUrl }: BlogAuditViewProps) {
       const resp = await fetch(API_ENDPOINTS.blog.audit, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, blogUrl: targetUrl, mode: auditMode }),
+        body: JSON.stringify({ siteUrl, projectId, blogUrl: targetUrl, mode: auditMode }),
       });
       const data: BlogAuditResult = await resp.json();
       setResult(data);
@@ -193,6 +194,7 @@ export default function BlogAuditView({ siteUrl }: BlogAuditViewProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
+          projectId,
           keyword: `blog:${source}`,
           taskId: `blog-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           taskText: `${rec.issue} → ${rec.recommendation}`,

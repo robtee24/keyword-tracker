@@ -29,9 +29,10 @@ const FREQUENCY_LABELS: Record<string, string> = {
 
 interface BlogAutomateViewProps {
   siteUrl: string;
+  projectId: string;
 }
 
-export default function BlogAutomateView({ siteUrl }: BlogAutomateViewProps) {
+export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateViewProps) {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -42,7 +43,7 @@ export default function BlogAutomateView({ siteUrl }: BlogAutomateViewProps) {
   const loadSchedules = useCallback(async () => {
     setLoading(true);
     try {
-      const resp = await fetch(`${API_ENDPOINTS.db.blogSchedules}?siteUrl=${encodeURIComponent(siteUrl)}`);
+      const resp = await fetch(`${API_ENDPOINTS.db.blogSchedules}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`);
       const data = await resp.json();
       setSchedules(data.schedules || []);
     } catch { /* ignore */ }
@@ -61,6 +62,7 @@ export default function BlogAutomateView({ siteUrl }: BlogAutomateViewProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
+          projectId,
           frequency: newFrequency,
           postsPerBatch: newPostsPerBatch,
           active: true,
@@ -79,7 +81,7 @@ export default function BlogAutomateView({ siteUrl }: BlogAutomateViewProps) {
       await fetch(API_ENDPOINTS.db.blogSchedules, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: schedule.id, active: !schedule.active }),
+        body: JSON.stringify({ id: schedule.id, projectId, active: !schedule.active }),
       });
       setSchedules((prev) =>
         prev.map((s) => (s.id === schedule.id ? { ...s, active: !s.active } : s))
@@ -95,7 +97,7 @@ export default function BlogAutomateView({ siteUrl }: BlogAutomateViewProps) {
       await fetch(API_ENDPOINTS.db.blogSchedules, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({ id, projectId }),
       });
       setSchedules((prev) => prev.filter((s) => s.id !== id));
       logActivity(siteUrl, 'blog', 'schedule-deleted', `Deleted blog schedule`);

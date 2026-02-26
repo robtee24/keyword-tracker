@@ -31,9 +31,10 @@ type WizardStep = 'purpose' | 'audience' | 'style' | 'details' | 'building';
 
 interface BuildNewViewProps {
   siteUrl: string;
+  projectId: string;
 }
 
-export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
+export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) {
   const [suggestions, setSuggestions] = useState<PageSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSuggestions, setHasSuggestions] = useState(false);
@@ -69,8 +70,8 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
     setLoadingSaved(true);
     try {
       const [suggestResp, wizardResp] = await Promise.all([
-        fetch(`${API_ENDPOINTS.db.buildSuggestions}?siteUrl=${encodeURIComponent(siteUrl)}`),
-        fetch(`${API_ENDPOINTS.db.buildResults}?siteUrl=${encodeURIComponent(siteUrl)}&buildType=wizard`),
+        fetch(`${API_ENDPOINTS.db.buildSuggestions}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`),
+        fetch(`${API_ENDPOINTS.db.buildResults}?siteUrl=${encodeURIComponent(siteUrl)}&buildType=wizard&projectId=${projectId}`),
       ]);
       const suggestData = await suggestResp.json();
       const wizardData = await wizardResp.json();
@@ -113,12 +114,12 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
       const saveResp = await fetch(API_ENDPOINTS.db.buildSuggestions, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, suggestions: newSuggestions }),
+        body: JSON.stringify({ siteUrl, projectId, suggestions: newSuggestions }),
       });
       const saveData = await saveResp.json();
       if (saveData.id) setDbRecordId(saveData.id);
       else {
-        const reloadResp = await fetch(`${API_ENDPOINTS.db.buildSuggestions}?siteUrl=${encodeURIComponent(siteUrl)}`);
+        const reloadResp = await fetch(`${API_ENDPOINTS.db.buildSuggestions}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`);
         const reloadData = await reloadResp.json();
         if (reloadData.id) setDbRecordId(reloadData.id);
       }
@@ -158,7 +159,7 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
           await fetch(API_ENDPOINTS.db.buildSuggestions, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: dbRecordId, suggestionIndex: idx, built: true, builtContent: data.page }),
+            body: JSON.stringify({ id: dbRecordId, projectId, suggestionIndex: idx, built: true, builtContent: data.page }),
           });
         }
 
@@ -167,6 +168,7 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             siteUrl,
+            projectId,
             pageUrl: `/${suggestion.slug}`,
             buildType: 'new',
             result: data.page,
@@ -206,6 +208,7 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             siteUrl,
+            projectId,
             pageUrl: data.page.slug ? `/${data.page.slug}` : '',
             buildType: 'wizard',
             result: data.page,
@@ -263,7 +266,7 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
             await fetch(API_ENDPOINTS.db.buildSuggestions, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: dbRecordId, suggestionIndex: modifyTarget.idx, built: true, builtContent: updatedPage }),
+              body: JSON.stringify({ id: dbRecordId, projectId, suggestionIndex: modifyTarget.idx, built: true, builtContent: updatedPage }),
             });
           }
         }
@@ -273,6 +276,7 @@ export default function BuildNewView({ siteUrl }: BuildNewViewProps) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             siteUrl,
+            projectId,
             pageUrl: currentResult.slug ? `/${currentResult.slug}` : '',
             buildType: modifyTarget?.type === 'wizard' ? 'wizard' : 'new',
             result: updatedPage,
