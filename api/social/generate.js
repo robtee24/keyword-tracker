@@ -121,7 +121,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { siteUrl, projectId, platform, postType, topic, ideaContext, mediaType } = req.body || {};
+  const { siteUrl, projectId, platform, postType, topic, ideaContext, mediaType, videoStyle } = req.body || {};
   if (!siteUrl || !platform || !postType || !topic) {
     return res.status(400).json({ error: 'siteUrl, platform, postType, and topic are required' });
   }
@@ -133,9 +133,25 @@ export default async function handler(req, res) {
 
   const videoStrategy = PLATFORM_VIDEO_STRATEGY[platform] || '';
 
+  const VIDEO_STYLE_GUIDES = {
+    ugc: 'UGC (User-Generated Content) style: Raw, authentic, phone-shot aesthetic. Handheld camera feel, natural lighting, casual framing. Looks like a real person made it — NOT a brand. First-person POV, unscripted energy, jump cuts, real environments (bedroom, office, street). This style builds trust and relatability.',
+    cinematic: 'Cinematic style: Polished, dramatic, high-production look. Wide establishing shots, shallow depth of field, color grading, smooth camera movements (dolly, gimbal, drone). Dramatic lighting, slow motion for impact moments. Epic music swells. Think movie trailer meets brand storytelling.',
+    'talking-head': 'Talking Head style: Person speaking directly to camera. Clean background or contextual setting. Eye-level framing, good lighting on face. Confidence and personality drive engagement. Cut between close-up and medium shots. Text overlays reinforce key points. Subtitles essential.',
+    tutorial: 'Tutorial / How-To style: Screen recordings, close-up demonstrations, step-by-step visuals. Numbered steps with clear text overlays. Before/after comparisons. Clean, well-lit product or screen shots. Instructional voiceover or text-only with music.',
+    'product-demo': 'Product Demo style: Hero shots of the product in action. Close-ups on key features. Smooth transitions between use cases. Clean backgrounds or lifestyle contexts. Show the transformation or result the product delivers. Aspirational but believable.',
+    'motion-graphics': 'Motion Graphics style: Animated text, icons, shapes, and data visualizations. No live footage needed. Bold typography, brand colors, smooth transitions. Kinetic text that reinforces the voiceover or message. Modern, clean, and professional.',
+    'broll-montage': 'B-Roll Montage style: Visual storytelling without a person on camera. Atmospheric footage, product shots, environment scenes, hands-in-action clips. Mood-driven editing with music. Evocative and cinematic. Text overlays carry the narrative.',
+    'before-after': 'Before/After Transformation style: Split-screen or sequential reveal. Clear "before" state (problem, messy, old) contrasted with "after" state (solved, clean, new). Dramatic reveal moment. Satisfying visual payoff. Works great with swipe or transition effects.',
+  };
+
   let extraInstructions = '';
   if (isVideo) {
+    const styleGuide = VIDEO_STYLE_GUIDES[videoStyle] || VIDEO_STYLE_GUIDES.ugc;
     extraInstructions = `\n\nThis is a VIDEO post. You are creating a viral-worthy video script.
+
+VIDEO STYLE:
+${styleGuide}
+All shot descriptions, camera directions, and visual details MUST match this style. The style should inform every creative decision.
 
 PLATFORM VIDEO STRATEGY:
 ${videoStrategy}
@@ -207,6 +223,7 @@ The image should include any key headline or message text overlaid on it.`;
         content: result.content || '',
         metadata: {
           mediaType: mediaType || 'static',
+          videoStyle: videoStyle || undefined,
           hashtags: result.hashtags,
           format: result.format,
           charCount: result.charCount,

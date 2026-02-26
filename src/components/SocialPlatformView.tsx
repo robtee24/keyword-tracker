@@ -737,6 +737,17 @@ function IdeasTab({ siteUrl, projectId, platform, config, onGenerateFromIdea }: 
 
 type MediaType = 'static' | 'video';
 
+const VIDEO_STYLES = [
+  { id: 'ugc', label: 'UGC', description: 'User-generated, raw, authentic' },
+  { id: 'cinematic', label: 'Cinematic', description: 'Polished, dramatic, high-production' },
+  { id: 'talking-head', label: 'Talking Head', description: 'Person speaking to camera' },
+  { id: 'tutorial', label: 'Tutorial', description: 'Step-by-step how-to' },
+  { id: 'product-demo', label: 'Product Demo', description: 'Showcasing features in action' },
+  { id: 'motion-graphics', label: 'Motion Graphics', description: 'Animated text & graphics' },
+  { id: 'broll-montage', label: 'B-Roll Montage', description: 'Visual storytelling, no face' },
+  { id: 'before-after', label: 'Before / After', description: 'Transformation reveal' },
+] as const;
+
 function CreateTab({ siteUrl, projectId, platform, config, isConnected, connectionLoading, prefillPostType, prefillTopic, prefillIdeaContext, onPrefillConsumed }: {
   siteUrl: string; projectId: string; platform: SocialPlatform;
   config: typeof PLATFORM_CONFIG[SocialPlatform]; isConnected: boolean; connectionLoading: boolean;
@@ -745,6 +756,7 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
   onPrefillConsumed: () => void;
 }) {
   const [mediaType, setMediaType] = useState<MediaType>('static');
+  const [videoStyle, setVideoStyle] = useState('ugc');
   const [postType, setPostType] = useState(config.staticFormats[0] || config.formats[0]);
   const [topic, setTopic] = useState('');
   const [ideaContext, setIdeaContext] = useState<{ hook: string; outline: string } | null>(null);
@@ -807,7 +819,7 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
       const resp = await authenticatedFetch(API_ENDPOINTS.social.generate, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, projectId, platform, postType, topic, ideaContext, mediaType }),
+        body: JSON.stringify({ siteUrl, projectId, platform, postType, topic, ideaContext, mediaType, videoStyle: mediaType === 'video' ? videoStyle : undefined }),
       });
       if (resp.ok) {
         const data = await resp.json();
@@ -934,7 +946,27 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
             </div>
           </div>
 
-          {/* Step 2: Format */}
+          {/* Step 2: Video Style (video only) */}
+          {mediaType === 'video' && (
+            <div>
+              <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1.5">Video Style</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {VIDEO_STYLES.map((style) => (
+                  <button key={style.id} onClick={() => setVideoStyle(style.id)}
+                    className={`p-2.5 rounded-apple-sm border text-left transition-all ${
+                      videoStyle === style.id
+                        ? 'border-purple-500 bg-purple-50/50'
+                        : 'border-apple-divider hover:border-purple-300'
+                    }`}>
+                    <p className={`text-apple-xs font-semibold ${videoStyle === style.id ? 'text-purple-600' : 'text-apple-text'}`}>{style.label}</p>
+                    <p className="text-[10px] text-apple-text-tertiary leading-tight mt-0.5">{style.description}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Format */}
           <div>
             <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1.5">Format</label>
             <div className="flex flex-wrap gap-2">
@@ -951,7 +983,7 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
             </div>
           </div>
 
-          {/* Step 3: Topic */}
+          {/* Step 4: Topic */}
           <div>
             <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1.5">Topic / Brief</label>
             <textarea value={topic} onChange={(e) => setTopic(e.target.value)}
