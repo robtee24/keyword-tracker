@@ -12,15 +12,17 @@ export default async function handler(req, res) {
   if (!supabase) return res.status(200).json({ suggestions: [] });
 
   if (req.method === 'GET') {
-    const { siteUrl } = req.query;
+    const { siteUrl, projectId } = req.query;
     if (!siteUrl) return res.status(400).json({ error: 'siteUrl required' });
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('build_suggestions')
       .select('*')
       .eq('site_url', siteUrl)
       .order('created_at', { ascending: false })
       .limit(1);
+    if (projectId) query = query.eq('project_id', projectId);
+    const { data, error } = await query;
 
     if (error) {
       console.error('[BuildSuggestions] Fetch error:', error.message);
@@ -34,11 +36,12 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { siteUrl, suggestions } = req.body || {};
+    const { siteUrl, projectId, suggestions } = req.body || {};
     if (!siteUrl) return res.status(400).json({ error: 'siteUrl required' });
 
     const { error } = await supabase.from('build_suggestions').insert({
       site_url: siteUrl,
+      project_id: projectId || null,
       suggestions: suggestions || [],
       created_at: new Date().toISOString(),
     });
@@ -51,7 +54,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'PUT') {
-    const { id, suggestionIndex, built, builtContent } = req.body || {};
+    const { id, projectId, suggestionIndex, built, builtContent } = req.body || {};
     if (!id || suggestionIndex === undefined) return res.status(400).json({ error: 'id and suggestionIndex required' });
 
     const { data: existing, error: fetchErr } = await supabase
@@ -73,10 +76,12 @@ export default async function handler(req, res) {
       };
     }
 
-    const { error } = await supabase
+    let updateQuery = supabase
       .from('build_suggestions')
       .update({ suggestions })
       .eq('id', id);
+    if (projectId) updateQuery = updateQuery.eq('project_id', projectId);
+    const { error } = await updateQuery;
 
     if (error) {
       console.error('[BuildSuggestions] Update error:', error.message);

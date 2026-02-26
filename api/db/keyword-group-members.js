@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { groupId, siteUrl, keywords } = req.body || {};
+    const { groupId, siteUrl, projectId, keywords } = req.body || {};
     if (!groupId || !siteUrl || !keywords?.length) {
       return res.status(400).json({ error: 'groupId, siteUrl, and keywords are required' });
     }
@@ -21,6 +21,7 @@ export default async function handler(req, res) {
     const rows = keywords.map((kw) => ({
       group_id: groupId,
       site_url: siteUrl,
+      project_id: projectId || null,
       keyword: kw,
     }));
 
@@ -38,16 +39,18 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'DELETE') {
-    const { groupId, keyword } = req.body || {};
+    const { groupId, projectId, keyword } = req.body || {};
     if (!groupId || !keyword) {
       return res.status(400).json({ error: 'groupId and keyword are required' });
     }
 
-    const { error } = await supabase
+    let delQuery = supabase
       .from('keyword_group_members')
       .delete()
       .eq('group_id', groupId)
       .eq('keyword', keyword);
+    if (projectId) delQuery = delQuery.eq('project_id', projectId);
+    const { error } = await delQuery;
 
     if (error) {
       console.error('DB error removing group member:', error);

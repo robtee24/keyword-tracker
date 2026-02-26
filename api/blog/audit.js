@@ -108,7 +108,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { siteUrl, blogUrl, mode = 'single' } = req.body || {};
+  const { siteUrl, blogUrl, mode = 'single', projectId } = req.body || {};
   if (!siteUrl || !blogUrl) {
     return res.status(400).json({ error: 'siteUrl and blogUrl are required' });
   }
@@ -140,7 +140,7 @@ async function auditSinglePost(req, res, siteUrl, blogUrl, apiKey) {
 
   const supabase = getSupabase();
   if (supabase) {
-    await saveBlogAudit(supabase, siteUrl, blogUrl, 'single', result);
+    await saveBlogAudit(supabase, siteUrl, blogUrl, 'single', result, projectId);
   }
 
   return res.status(200).json({
@@ -202,10 +202,10 @@ async function auditFullBlog(req, res, siteUrl, blogRootUrl, apiKey) {
   if (supabase) {
     for (const post of postResults) {
       if (post.url && !post.error) {
-        await saveBlogAudit(supabase, siteUrl, post.url, 'single', post);
+        await saveBlogAudit(supabase, siteUrl, post.url, 'single', post, projectId);
       }
     }
-    await saveBlogAudit(supabase, siteUrl, blogRootUrl, 'overview', overviewResult);
+    await saveBlogAudit(supabase, siteUrl, blogRootUrl, 'overview', overviewResult, projectId);
   }
 
   return res.status(200).json({
@@ -352,9 +352,10 @@ HTML SIZE: ${Math.round((content.htmlLength || 0) / 1024)}KB`;
   }
 }
 
-async function saveBlogAudit(supabase, siteUrl, blogUrl, auditMode, result) {
+async function saveBlogAudit(supabase, siteUrl, blogUrl, auditMode, result, projectId) {
   const row = {
     site_url: siteUrl,
+    project_id: projectId || null,
     blog_url: blogUrl,
     audit_mode: auditMode,
     score: result.score || 0,

@@ -11,14 +11,16 @@ export default async function handler(req, res) {
   if (!supabase) return res.status(200).json({ opportunities: [] });
 
   if (req.method === 'GET') {
-    const { siteUrl } = req.query;
+    const { siteUrl, projectId } = req.query;
     if (!siteUrl) return res.status(400).json({ error: 'siteUrl is required' });
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('blog_opportunities')
       .select('*')
       .eq('site_url', siteUrl)
       .order('created_at', { ascending: false });
+    if (projectId) query = query.eq('project_id', projectId);
+    const { data, error } = await query;
 
     if (error) {
       console.error('[BlogOpps] Fetch error:', error.message);
@@ -28,7 +30,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'PUT') {
-    const { id, status, generated_blog } = req.body || {};
+    const { id, projectId, status, generated_blog } = req.body || {};
     if (!id) return res.status(400).json({ error: 'id is required' });
 
     const updates = {};
@@ -36,10 +38,12 @@ export default async function handler(req, res) {
     if (generated_blog) updates.generated_blog = generated_blog;
     if (status === 'completed') updates.completed_at = new Date().toISOString();
 
-    const { error } = await supabase
+    let updateQuery = supabase
       .from('blog_opportunities')
       .update(updates)
       .eq('id', id);
+    if (projectId) updateQuery = updateQuery.eq('project_id', projectId);
+    const { error } = await updateQuery;
 
     if (error) {
       console.error('[BlogOpps] Update error:', error.message);

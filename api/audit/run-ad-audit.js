@@ -187,7 +187,7 @@ export default async function handler(req, res) {
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey) return res.status(500).json({ error: 'OpenAI API key not configured' });
 
-  const { siteUrl, auditType, fileName, csvData } = req.body || {};
+  const { siteUrl, auditType, fileName, csvData, projectId } = req.body || {};
   if (!siteUrl || !auditType || !csvData) {
     return res.status(400).json({ error: 'Missing required fields: siteUrl, auditType, csvData' });
   }
@@ -203,18 +203,21 @@ export default async function handler(req, res) {
     const supabase = getSupabase();
     if (supabase) {
       try {
-        const { error: delErr } = await supabase
+        let delQuery = supabase
           .from('page_audits')
           .delete()
           .eq('site_url', siteUrl)
           .eq('page_url', fileName || 'export.csv')
           .eq('audit_type', `ad-${auditType}`);
+        if (projectId) delQuery = delQuery.eq('project_id', projectId);
+        const { error: delErr } = await delQuery;
         if (delErr) console.error('Delete old ad audit error:', delErr);
 
         const { error: insErr } = await supabase
           .from('page_audits')
           .insert({
             site_url: siteUrl,
+            project_id: projectId || null,
             page_url: fileName || 'export.csv',
             audit_type: `ad-${auditType}`,
             score: result.score || 0,

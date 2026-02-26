@@ -13,17 +13,18 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'GET') {
-    const { siteUrl, keyword } = req.query;
+    const { siteUrl, projectId, keyword } = req.query;
     if (!siteUrl || !keyword) {
       return res.status(400).json({ error: 'siteUrl and keyword are required' });
     }
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('recommendations')
       .select('*')
       .eq('site_url', siteUrl)
-      .eq('keyword', keyword)
-      .single();
+      .eq('keyword', keyword);
+    if (projectId) query = query.eq('project_id', projectId);
+    const { data, error } = await query.single();
 
     if (error && error.code !== 'PGRST116') {
       console.error('DB error fetching recommendation:', error);
@@ -43,7 +44,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { siteUrl, keyword, scanResult } = req.body || {};
+    const { siteUrl, projectId, keyword, scanResult } = req.body || {};
     if (!siteUrl || !keyword || !scanResult) {
       return res.status(400).json({ error: 'siteUrl, keyword, and scanResult are required' });
     }
@@ -53,6 +54,7 @@ export default async function handler(req, res) {
       .upsert(
         {
           site_url: siteUrl,
+          project_id: projectId || null,
           keyword,
           scan_result: scanResult,
           scanned_at: new Date().toISOString(),

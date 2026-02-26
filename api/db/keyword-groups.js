@@ -14,16 +14,18 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'GET') {
-    const { siteUrl } = req.query;
+    const { siteUrl, projectId } = req.query;
     if (!siteUrl) {
       return res.status(400).json({ error: 'siteUrl is required' });
     }
 
-    const { data: groups, error } = await supabase
+    let query = supabase
       .from('keyword_groups')
       .select('*, keyword_group_members(keyword)')
       .eq('site_url', siteUrl)
       .order('created_at', { ascending: true });
+    if (projectId) query = query.eq('project_id', projectId);
+    const { data: groups, error } = await query;
 
     if (error) {
       console.error('DB error fetching groups:', error);
@@ -41,14 +43,14 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { siteUrl, name } = req.body || {};
+    const { siteUrl, projectId, name } = req.body || {};
     if (!siteUrl || !name) {
       return res.status(400).json({ error: 'siteUrl and name are required' });
     }
 
     const { data, error } = await supabase
       .from('keyword_groups')
-      .insert({ site_url: siteUrl, name })
+      .insert({ site_url: siteUrl, project_id: projectId || null, name })
       .select()
       .single();
 
@@ -64,15 +66,17 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'DELETE') {
-    const { id } = req.body || {};
+    const { id, projectId } = req.body || {};
     if (!id) {
       return res.status(400).json({ error: 'id is required' });
     }
 
-    const { error } = await supabase
+    let delQuery = supabase
       .from('keyword_groups')
       .delete()
       .eq('id', id);
+    if (projectId) delQuery = delQuery.eq('project_id', projectId);
+    const { error } = await delQuery;
 
     if (error) {
       console.error('DB error deleting group:', error);

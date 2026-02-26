@@ -12,14 +12,16 @@ export default async function handler(req, res) {
   if (!supabase) return res.status(200).json({ urls: [] });
 
   if (req.method === 'GET') {
-    const { siteUrl } = req.query;
+    const { siteUrl, projectId } = req.query;
     if (!siteUrl) return res.status(400).json({ error: 'siteUrl is required' });
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('blog_urls')
       .select('*')
       .eq('site_url', siteUrl)
       .order('added_at', { ascending: true });
+    if (projectId) query = query.eq('project_id', projectId);
+    const { data, error } = await query;
 
     if (error) {
       console.error('[BlogUrls] Fetch error:', error.message);
@@ -29,11 +31,12 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { siteUrl, blogUrl } = req.body || {};
+    const { siteUrl, projectId, blogUrl } = req.body || {};
     if (!siteUrl || !blogUrl) return res.status(400).json({ error: 'siteUrl and blogUrl required' });
 
     const { error } = await supabase.from('blog_urls').upsert({
       site_url: siteUrl,
+      project_id: projectId || null,
       blog_url: blogUrl,
       added_at: new Date().toISOString(),
     }, { onConflict: 'site_url,blog_url' });
@@ -46,13 +49,15 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'DELETE') {
-    const { siteUrl, blogUrl } = req.body || {};
+    const { siteUrl, projectId, blogUrl } = req.body || {};
     if (!siteUrl || !blogUrl) return res.status(400).json({ error: 'siteUrl and blogUrl required' });
 
-    const { error } = await supabase.from('blog_urls')
+    let delQuery = supabase.from('blog_urls')
       .delete()
       .eq('site_url', siteUrl)
       .eq('blog_url', blogUrl);
+    if (projectId) delQuery = delQuery.eq('project_id', projectId);
+    const { error } = await delQuery;
 
     if (error) {
       console.error('[BlogUrls] Delete error:', error.message);

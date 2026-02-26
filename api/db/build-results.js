@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   if (!supabase) return res.status(200).json({ results: [] });
 
   if (req.method === 'GET') {
-    const { siteUrl, buildType } = req.query;
+    const { siteUrl, projectId, buildType } = req.query;
     if (!siteUrl) return res.status(400).json({ error: 'siteUrl required' });
 
     let query = supabase
@@ -22,6 +22,7 @@ export default async function handler(req, res) {
       .eq('site_url', siteUrl)
       .order('created_at', { ascending: false });
 
+    if (projectId) query = query.eq('project_id', projectId);
     if (buildType) query = query.eq('build_type', buildType);
 
     const { data, error } = await query;
@@ -33,11 +34,12 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { siteUrl, pageUrl, buildType, result } = req.body || {};
+    const { siteUrl, projectId, pageUrl, buildType, result } = req.body || {};
     if (!siteUrl || !buildType) return res.status(400).json({ error: 'siteUrl and buildType required' });
 
     const row = {
       site_url: siteUrl,
+      project_id: projectId || null,
       page_url: pageUrl || '',
       build_type: buildType,
       result: result || {},

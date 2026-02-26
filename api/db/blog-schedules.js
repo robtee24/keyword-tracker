@@ -13,14 +13,16 @@ export default async function handler(req, res) {
   if (!supabase) return res.status(200).json({ schedules: [] });
 
   if (req.method === 'GET') {
-    const { siteUrl } = req.query;
+    const { siteUrl, projectId } = req.query;
     if (!siteUrl) return res.status(400).json({ error: 'siteUrl is required' });
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('blog_schedules')
       .select('*')
       .eq('site_url', siteUrl)
       .order('created_at', { ascending: false });
+    if (projectId) query = query.eq('project_id', projectId);
+    const { data, error } = await query;
 
     if (error) {
       console.error('[BlogSchedules] Fetch error:', error.message);
@@ -30,11 +32,12 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { siteUrl, frequency, postsPerBatch, active } = req.body || {};
+    const { siteUrl, projectId, frequency, postsPerBatch, active } = req.body || {};
     if (!siteUrl || !frequency) return res.status(400).json({ error: 'siteUrl and frequency required' });
 
     const { data, error } = await supabase.from('blog_schedules').insert({
       site_url: siteUrl,
+      project_id: projectId || null,
       frequency,
       posts_per_batch: postsPerBatch || 1,
       active: active !== false,
@@ -49,7 +52,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'PUT') {
-    const { id, active, frequency, postsPerBatch } = req.body || {};
+    const { id, projectId, active, frequency, postsPerBatch } = req.body || {};
     if (!id) return res.status(400).json({ error: 'id is required' });
 
     const updates = {};
@@ -57,7 +60,9 @@ export default async function handler(req, res) {
     if (frequency) updates.frequency = frequency;
     if (postsPerBatch) updates.posts_per_batch = postsPerBatch;
 
-    const { error } = await supabase.from('blog_schedules').update(updates).eq('id', id);
+    let updateQuery = supabase.from('blog_schedules').update(updates).eq('id', id);
+    if (projectId) updateQuery = updateQuery.eq('project_id', projectId);
+    const { error } = await updateQuery;
     if (error) {
       console.error('[BlogSchedules] Update error:', error.message);
       return res.status(500).json({ error: error.message });
@@ -66,10 +71,12 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'DELETE') {
-    const { id } = req.body || {};
+    const { id, projectId } = req.body || {};
     if (!id) return res.status(400).json({ error: 'id is required' });
 
-    const { error } = await supabase.from('blog_schedules').delete().eq('id', id);
+    let delQuery = supabase.from('blog_schedules').delete().eq('id', id);
+    if (projectId) delQuery = delQuery.eq('project_id', projectId);
+    const { error } = await delQuery;
     if (error) {
       console.error('[BlogSchedules] Delete error:', error.message);
       return res.status(500).json({ error: error.message });

@@ -17,7 +17,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'GET') {
-    const { siteUrl, keyword, status } = req.query;
+    const { siteUrl, projectId, keyword, status } = req.query;
     if (!siteUrl) {
       return res.status(400).json({ error: 'siteUrl is required' });
     }
@@ -28,6 +28,7 @@ export default async function handler(req, res) {
       .eq('site_url', siteUrl)
       .order('completed_at', { ascending: false });
 
+    if (projectId) query = query.eq('project_id', projectId);
     if (keyword) query = query.eq('keyword', keyword);
     if (status) query = query.eq('status', status);
 
@@ -41,13 +42,14 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { siteUrl, keyword, taskId, taskText, category, status } = req.body || {};
+    const { siteUrl, projectId, keyword, taskId, taskText, category, status } = req.body || {};
     if (!siteUrl || !keyword || !taskId || !taskText) {
       return res.status(400).json({ error: 'siteUrl, keyword, taskId, and taskText are required' });
     }
 
     const row = {
       site_url: siteUrl,
+      project_id: projectId || null,
       keyword,
       task_id: taskId,
       task_text: taskText,
@@ -84,19 +86,19 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'PATCH') {
-    const { siteUrl, keyword, taskId, status } = req.body || {};
+    const { siteUrl, projectId, keyword, taskId, status } = req.body || {};
     if (!siteUrl || !keyword || !taskId || !status) {
       return res.status(400).json({ error: 'siteUrl, keyword, taskId, and status are required' });
     }
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('completed_tasks')
       .update({ status, completed_at: new Date().toISOString() })
       .eq('site_url', siteUrl)
       .eq('keyword', keyword)
-      .eq('task_id', taskId)
-      .select()
-      .single();
+      .eq('task_id', taskId);
+    if (projectId) query = query.eq('project_id', projectId);
+    const { data, error } = await query.select().single();
 
     if (error) {
       console.error('DB error updating task status:', error);
@@ -107,17 +109,19 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'DELETE') {
-    const { siteUrl, keyword, taskId } = req.body || {};
+    const { siteUrl, projectId, keyword, taskId } = req.body || {};
     if (!siteUrl || !keyword || !taskId) {
       return res.status(400).json({ error: 'siteUrl, keyword, and taskId are required' });
     }
 
-    const { error } = await supabase
+    let query = supabase
       .from('completed_tasks')
       .delete()
       .eq('site_url', siteUrl)
       .eq('keyword', keyword)
       .eq('task_id', taskId);
+    if (projectId) query = query.eq('project_id', projectId);
+    const { error } = await query;
 
     if (error) {
       console.error('DB error removing task:', error);

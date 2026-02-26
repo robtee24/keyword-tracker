@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'GET') {
-    const { siteUrl, auditType } = req.query;
+    const { siteUrl, projectId, auditType } = req.query;
     if (!siteUrl) {
       return res.status(400).json({ error: 'siteUrl is required' });
     }
@@ -26,6 +26,7 @@ export default async function handler(req, res) {
       .eq('site_url', siteUrl)
       .order('audited_at', { ascending: false });
 
+    if (projectId) query = query.eq('project_id', projectId);
     if (auditType) {
       query = query.eq('audit_type', auditType);
     }
@@ -41,17 +42,19 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { siteUrl, auditType, action } = req.body || {};
+    const { siteUrl, projectId, auditType, action } = req.body || {};
     if (!siteUrl || !auditType) {
       return res.status(400).json({ error: 'siteUrl and auditType are required' });
     }
 
     if (action === 'clear') {
-      const { error } = await supabase
+      let clearQuery = supabase
         .from('page_audits')
         .delete()
         .eq('site_url', siteUrl)
         .eq('audit_type', auditType);
+      if (projectId) clearQuery = clearQuery.eq('project_id', projectId);
+      const { error } = await clearQuery;
 
       if (error) {
         console.error('[DB/PageAudits] Clear error:', error.message);
@@ -65,7 +68,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'DELETE') {
-    const { id, siteUrl, pageUrl, auditType, auditedAt } = req.body || {};
+    const { id, siteUrl, projectId, pageUrl, auditType, auditedAt } = req.body || {};
 
     if (id) {
       const { error } = await supabase
@@ -88,6 +91,7 @@ export default async function handler(req, res) {
         .eq('page_url', pageUrl)
         .eq('audit_type', auditType);
 
+      if (projectId) query = query.eq('project_id', projectId);
       if (auditedAt) {
         query = query.eq('audited_at', auditedAt);
       }

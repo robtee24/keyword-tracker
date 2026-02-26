@@ -17,13 +17,15 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'GET') {
-    const { siteUrl } = req.query;
+    const { siteUrl, projectId } = req.query;
     if (!siteUrl) return res.status(400).json({ error: 'siteUrl is required' });
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('keywords')
       .select('keyword, first_seen_at, last_seen_at')
       .eq('site_url', siteUrl);
+    if (projectId) query = query.eq('project_id', projectId);
+    const { data, error } = await query;
 
     if (error) {
       console.error('DB error fetching keywords:', error);
@@ -34,7 +36,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { siteUrl, keywords } = req.body || {};
+    const { siteUrl, projectId, keywords } = req.body || {};
     if (!siteUrl || !Array.isArray(keywords) || keywords.length === 0) {
       return res.status(400).json({ error: 'siteUrl and keywords array are required' });
     }
@@ -42,10 +44,12 @@ export default async function handler(req, res) {
     const now = new Date().toISOString();
 
     // 1. Fetch all previously stored keywords for this site
-    const { data: existing, error: fetchErr } = await supabase
+    let fetchQuery = supabase
       .from('keywords')
       .select('keyword, last_seen_at')
       .eq('site_url', siteUrl);
+    if (projectId) fetchQuery = fetchQuery.eq('project_id', projectId);
+    const { data: existing, error: fetchErr } = await fetchQuery;
 
     if (fetchErr) {
       console.error('DB error fetching existing keywords:', fetchErr);
@@ -79,6 +83,7 @@ export default async function handler(req, res) {
     // 4. Upsert current keywords (batch in groups of 50)
     const rows = keywords.map((kw) => ({
       site_url: siteUrl,
+      project_id: projectId || null,
       keyword: kw,
       last_seen_at: now,
       ...(existingMap.has(kw.toLowerCase()) ? {} : { first_seen_at: now }),

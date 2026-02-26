@@ -11,14 +11,16 @@ export default async function handler(req, res) {
   const supabase = getSupabase();
   if (!supabase) return res.status(200).json({ audits: [] });
 
-  const { siteUrl } = req.query;
+  const { siteUrl, projectId } = req.query;
   if (!siteUrl) return res.status(400).json({ error: 'siteUrl is required' });
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('blog_audits')
     .select('blog_url, audit_mode, score, summary, strengths, recommendations, audited_at')
     .eq('site_url', siteUrl)
     .order('audited_at', { ascending: false });
+  if (projectId) query = query.eq('project_id', projectId);
+  const { data, error } = await query;
 
   if (error) {
     console.error('[BlogAudits] Fetch error:', error.message);

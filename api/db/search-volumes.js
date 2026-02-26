@@ -17,13 +17,15 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'GET') {
-    const { siteUrl } = req.query;
+    const { siteUrl, projectId } = req.query;
     if (!siteUrl) return res.status(400).json({ error: 'siteUrl is required' });
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('search_volumes')
       .select('keyword, avg_monthly_searches, competition, competition_index, fetched_at')
       .eq('site_url', siteUrl);
+    if (projectId) query = query.eq('project_id', projectId);
+    const { data, error } = await query;
 
     if (error) {
       console.error('DB error fetching search volumes:', error.message);
@@ -49,13 +51,14 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { siteUrl, volumes } = req.body || {};
+    const { siteUrl, projectId, volumes } = req.body || {};
     if (!siteUrl || !volumes || typeof volumes !== 'object') {
       return res.status(400).json({ error: 'siteUrl and volumes object are required' });
     }
 
     const rows = Object.entries(volumes).map(([kw, vol]) => ({
       site_url: siteUrl,
+      project_id: projectId || null,
       keyword: kw.toLowerCase(),
       avg_monthly_searches: vol.avgMonthlySearches,
       competition: vol.competition,

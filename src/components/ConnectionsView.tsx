@@ -102,19 +102,24 @@ export default function ConnectionsView({ siteUrl, projectId, projectDomain, gsc
     fetchStatus();
   }, [fetchStatus]);
 
+  const [allGscSites, setAllGscSites] = useState<GscSite[]>([]);
+
   const fetchGscSites = useCallback(async () => {
     setGscLoading(true);
     try {
       const res = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.sites);
       const data = await res.json();
       const all: GscSite[] = data.sites || [];
-      const filtered = all.filter((s) => matchesRootDomain(s.siteUrl, projectDomain));
-      setGscSites(filtered);
-      if (filtered.length > 0 && !gscProperty) {
+      setAllGscSites(all);
+      const matching = all.filter((s) => matchesRootDomain(s.siteUrl, projectDomain));
+      const nonMatching = all.filter((s) => !matchesRootDomain(s.siteUrl, projectDomain));
+      setGscSites([...matching, ...nonMatching]);
+      if (!gscProperty) {
         setShowGscPicker(true);
       }
     } catch {
       setGscSites([]);
+      setAllGscSites([]);
     } finally {
       setGscLoading(false);
     }
@@ -230,18 +235,28 @@ export default function ConnectionsView({ siteUrl, projectId, projectDomain, gsc
             </div>
           ) : (
             <div className="space-y-2">
-              {gscSites.map((site) => (
-                <button
-                  key={site.siteUrl}
-                  onClick={() => {
-                    onGscPropertySelected(site.siteUrl);
-                    setShowGscPicker(false);
-                  }}
-                  className="w-full text-left px-4 py-3 rounded-apple-sm border border-apple-border hover:border-apple-blue hover:bg-blue-50 transition-all text-apple-sm text-apple-text"
-                >
-                  {site.siteUrl}
-                </button>
-              ))}
+              {gscSites.map((site) => {
+                const isMatch = matchesRootDomain(site.siteUrl, projectDomain);
+                return (
+                  <button
+                    key={site.siteUrl}
+                    onClick={() => {
+                      onGscPropertySelected(site.siteUrl);
+                      setShowGscPicker(false);
+                    }}
+                    className={`w-full text-left px-4 py-3 rounded-apple-sm border transition-all text-apple-sm text-apple-text ${
+                      isMatch
+                        ? 'border-blue-300 bg-blue-50/50 hover:border-apple-blue hover:bg-blue-50'
+                        : 'border-apple-border hover:border-apple-blue hover:bg-blue-50'
+                    }`}
+                  >
+                    <span>{site.siteUrl}</span>
+                    {isMatch && (
+                      <span className="ml-2 text-apple-xs text-blue-500 font-medium">Matches project</span>
+                    )}
+                  </button>
+                );
+              })}
               {gscSites.length === 0 && (
                 <p className="text-apple-sm text-apple-text-tertiary">
                   No properties found. Make sure you have access in Google Search Console.

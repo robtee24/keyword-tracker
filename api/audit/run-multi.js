@@ -322,7 +322,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { siteUrl, pageUrl, auditTypes } = req.body || {};
+  const { siteUrl, pageUrl, auditTypes, projectId } = req.body || {};
   if (!siteUrl || !pageUrl || !Array.isArray(auditTypes) || auditTypes.length === 0) {
     return res.status(400).json({ error: 'siteUrl, pageUrl, and auditTypes[] are required' });
   }
@@ -402,6 +402,7 @@ export default async function handler(req, res) {
       if (result.error) continue;
       const row = {
         site_url: siteUrl,
+        project_id: projectId || null,
         page_url: pageUrl,
         audit_type: result.auditType,
         score: result.score,

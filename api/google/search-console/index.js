@@ -18,7 +18,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const { startDate, endDate, siteUrl, dimension } = req.body;
+    const { startDate, endDate, siteUrl, dimension, projectId } = req.body;
 
     if (!siteUrl) {
       return res.status(400).json({ error: 'siteUrl is required' });

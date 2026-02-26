@@ -247,7 +247,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { siteUrl, pageUrl, auditType } = req.body || {};
+  const { siteUrl, pageUrl, auditType, projectId } = req.body || {};
   if (!siteUrl || !pageUrl || !auditType) {
     return res.status(400).json({ error: 'siteUrl, pageUrl, and auditType are required' });
   }
@@ -310,6 +310,7 @@ export default async function handler(req, res) {
   if (supabase) {
     const row = {
       site_url: siteUrl,
+      project_id: projectId || null,
       page_url: pageUrl,
       audit_type: auditType,
       score: auditResult.score,

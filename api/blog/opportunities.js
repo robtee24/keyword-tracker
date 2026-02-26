@@ -35,7 +35,7 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { siteUrl, objectives, existingKeywords, existingTopics } = req.body || {};
+  const { siteUrl, objectives, existingKeywords, existingTopics, projectId } = req.body || {};
   if (!siteUrl) return res.status(400).json({ error: 'siteUrl is required' });
 
   const openaiKey = process.env.OPENAI_API_KEY;
@@ -117,6 +117,7 @@ Respond with ONLY valid JSON:
     if (supabase && opportunities.length > 0) {
       const rows = opportunities.map((opp) => ({
         site_url: siteUrl,
+        project_id: projectId || null,
         title: opp.title,
         target_keyword: opp.targetKeyword,
         related_keywords: opp.relatedKeywords || [],

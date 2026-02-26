@@ -14,13 +14,14 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: 'Database not configured' });
   }
 
-  const { siteUrl, overrides } = req.body || {};
+  const { siteUrl, projectId, overrides } = req.body || {};
   if (!siteUrl || !overrides || typeof overrides !== 'object') {
     return res.status(400).json({ error: 'siteUrl and overrides object required' });
   }
 
   const rows = Object.entries(overrides).map(([keyword, intent]) => ({
     site_url: siteUrl,
+    project_id: projectId || null,
     keyword: keyword.toLowerCase(),
     intent,
     classified_at: new Date().toISOString(),
