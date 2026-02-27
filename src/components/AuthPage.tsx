@@ -22,20 +22,35 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
     setError(null);
     setMessage(null);
 
-    if (mode === 'signup') {
-      const { error: signUpError } = await supabase.auth.signUp({ email, password });
-      if (signUpError) {
-        setError(signUpError.message);
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Connection timed out. Please check your internet connection and try again.')), 15000)
+    );
+
+    try {
+      if (mode === 'signup') {
+        const { error: signUpError } = await Promise.race([
+          supabase.auth.signUp({ email, password }),
+          timeout,
+        ]);
+        if (signUpError) {
+          setError(signUpError.message);
+        } else {
+          setMessage('Check your email for a confirmation link.');
+        }
       } else {
-        setMessage('Check your email for a confirmation link.');
+        const { error: signInError } = await Promise.race([
+          supabase.auth.signInWithPassword({ email, password }),
+          timeout,
+        ]);
+        if (signInError) {
+          setError(signInError.message);
+        } else {
+          onAuthenticated();
+        }
       }
-    } else {
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-      if (signInError) {
-        setError(signInError.message);
-      } else {
-        onAuthenticated();
-      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'An unexpected error occurred. Please try again.';
+      setError(message);
     }
     setLoading(false);
   };

@@ -199,6 +199,8 @@ function App() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    let authResolved = false;
+
     const hasAuthInUrl =
       window.location.hash.includes('access_token') ||
       new URLSearchParams(window.location.search).has('code');
@@ -206,6 +208,7 @@ function App() {
     if (hasAuthInUrl) {
       supabase.auth.getSession().then(({ data: { session: s } }) => {
         if (s) {
+          authResolved = true;
           setSession(s);
           setAppState('authenticated');
           navigate('/app', { replace: true });
@@ -214,6 +217,7 @@ function App() {
     }
 
     const { data: { subscription } } = onAuthStateChange((s) => {
+      authResolved = true;
       setSession(s);
       if (s) {
         setAppState('authenticated');
@@ -225,7 +229,18 @@ function App() {
         setAppState('unauthenticated');
       }
     });
-    return () => subscription.unsubscribe();
+
+    const timeout = setTimeout(() => {
+      if (!authResolved) {
+        console.warn('Auth state check timed out — falling back to unauthenticated');
+        setAppState('unauthenticated');
+      }
+    }, 8000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
   }, []);
 
   const fetchProjects = async () => {
@@ -387,8 +402,9 @@ function App() {
 
   if (appState === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3">
         <div className="w-6 h-6 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
+        <p className="text-apple-sm text-apple-text-tertiary">Connecting...</p>
       </div>
     );
   }
