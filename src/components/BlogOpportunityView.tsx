@@ -63,6 +63,7 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
   const [generating, setGenerating] = useState(false);
   const [generatingBlog, setGeneratingBlog] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const loadOpportunities = useCallback(async () => {
     setLoading(true);
@@ -70,7 +71,9 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
       const resp = await authenticatedFetch(`${API_ENDPOINTS.db.blogOpportunities}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`);
       const data = await resp.json();
       setOpportunities((data.opportunities || []).map((o: Record<string, unknown>) => normalizeOpp(o)));
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.error('[BlogOpps] Load error:', err);
+    }
     setLoading(false);
   }, [siteUrl, projectId]);
 
@@ -80,6 +83,7 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
 
   const generateOpportunities = async () => {
     setGenerating(true);
+    setError(null);
     try {
       const objectives = localStorage.getItem('site_objectives') || localStorage.getItem(`kt_objectives_${projectId}`) || '';
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.opportunities, {
@@ -94,12 +98,17 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
         }),
       });
       const data = await resp.json();
-      if (data.opportunities) {
+      if (!resp.ok) {
+        setError(data.error || `Server error (${resp.status})`);
+      } else if (data.opportunities && data.opportunities.length > 0) {
         await loadOpportunities();
+        logActivity(siteUrl, 'blog', 'opportunities', 'Generated blog topic opportunities');
+      } else {
+        setError('No topics were generated. Please try again.');
       }
-      logActivity(siteUrl, 'blog', 'opportunities', 'Generated blog topic opportunities');
     } catch (err) {
       console.error('Failed to generate opportunities:', err);
+      setError(err instanceof Error ? err.message : 'Failed to connect to server');
     }
     setGenerating(false);
   };
@@ -199,6 +208,13 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
           )}
         </button>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-apple p-4">
+          <p className="text-apple-sm text-red-800 font-medium">Failed to generate topics</p>
+          <p className="text-apple-xs text-red-600 mt-1">{error}</p>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center gap-2 py-8 text-apple-text-secondary text-apple-sm justify-center">

@@ -98,14 +98,21 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const auth = await authenticateRequest(req);
-  if (!auth) return res.status(401).json({ error: 'Authentication required' });
+  if (!auth) {
+    console.error('[BlogOpps] Auth failed — no valid token');
+    return res.status(401).json({ error: 'Authentication required. Please sign in again.' });
+  }
 
   const { siteUrl, objectives, existingKeywords, existingTopics, projectId, seriesTheme, count } = req.body || {};
   if (!siteUrl) return res.status(400).json({ error: 'siteUrl is required' });
 
   if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
+    console.error('[BlogOpps] ANTHROPIC_API_KEY not set');
+    return res.status(500).json({ error: 'AI service is not configured. Please contact support.' });
   }
+
+  console.log(`[BlogOpps] Generating topics for ${siteUrl} (project: ${projectId})`);
+  const startTime = Date.now();
 
   // Pull real GSC keyword data from the database
   let gscKeywordData = '';
@@ -282,7 +289,9 @@ Respond with ONLY valid JSON:
 }`;
 
   try {
+    console.log(`[BlogOpps] Calling Claude... (${Date.now() - startTime}ms elapsed)`);
     let raw = await callClaude(SYSTEM_PROMPT, userMessage, 8000);
+    console.log(`[BlogOpps] Claude responded (${Date.now() - startTime}ms elapsed), parsing...`);
     raw = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
     let parsed;
@@ -291,10 +300,14 @@ Respond with ONLY valid JSON:
     } catch {
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
       if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
-      else throw new Error('Failed to parse AI response');
+      else {
+        console.error('[BlogOpps] Unparseable response:', raw.substring(0, 500));
+        throw new Error('Failed to parse AI response');
+      }
     }
 
     const opportunities = parsed.opportunities || [];
+    console.log(`[BlogOpps] Parsed ${opportunities.length} opportunities`);
 
     if (supabase && opportunities.length > 0) {
       const rows = opportunities.map((opp) => ({
@@ -314,12 +327,16 @@ Respond with ONLY valid JSON:
       }));
 
       const { error: insertErr } = await supabase.from('blog_opportunities').insert(rows);
-      if (insertErr) console.error('[BlogOpps] Insert error:', insertErr.message);
+      if (insertErr) {
+        console.error('[BlogOpps] Insert error:', insertErr.message);
+        return res.status(200).json({ opportunities, warning: 'Generated but failed to save: ' + insertErr.message });
+      }
     }
 
+    console.log(`[BlogOpps] Done (${Date.now() - startTime}ms total)`);
     return res.status(200).json({ opportunities });
   } catch (err) {
-    console.error('[BlogOpps] Generation error:', err.message);
+    console.error('[BlogOpps] Generation error:', err.message, err.stack);
     return res.status(500).json({ error: err.message });
   }
 }
