@@ -201,10 +201,9 @@ Return JSON: {"opportunities":[{"title":"...","targetKeyword":"...","relatedKeyw
 
     if (supabase && opportunities.length > 0) {
       const now = new Date().toISOString();
-      const rows = opportunities.map((opp) => ({
+      const baseRow = (opp) => ({
         site_url: siteUrl,
         project_id: projectId || null,
-        batch_id: batchId,
         title: opp.title,
         target_keyword: opp.targetKeyword,
         related_keywords: opp.relatedKeywords || [],
@@ -216,12 +215,21 @@ Return JSON: {"opportunities":[{"title":"...","targetKeyword":"...","relatedKeyw
         content_type: opp.contentType || 'guide',
         status: 'pending',
         created_at: now,
-      }));
+      });
 
-      const { data: inserted, error: insertErr } = await supabase
+      let rows = opportunities.map((opp) => ({ ...baseRow(opp), batch_id: batchId }));
+      let { data: inserted, error: insertErr } = await supabase
         .from('blog_opportunities')
         .insert(rows)
         .select();
+
+      if (insertErr && insertErr.message?.includes('batch_id')) {
+        console.warn('[BlogOpps] batch_id column missing, retrying without it');
+        rows = opportunities.map((opp) => baseRow(opp));
+        const retry = await supabase.from('blog_opportunities').insert(rows).select();
+        inserted = retry.data;
+        insertErr = retry.error;
+      }
 
       if (insertErr) {
         console.error('[BlogOpps] Insert error:', insertErr.message);

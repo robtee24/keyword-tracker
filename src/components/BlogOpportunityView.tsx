@@ -68,21 +68,48 @@ function normalizeOpp(raw: Record<string, unknown>): Opportunity {
 }
 
 function groupIntoBatches(opps: Opportunity[]): Batch[] {
-  const byBatch = new Map<string, Opportunity[]>();
+  const withBatchId: Opportunity[] = [];
+  const withoutBatchId: Opportunity[] = [];
 
   for (const opp of opps) {
-    const key = opp.batch_id || `legacy_${opp.created_at?.slice(0, 16) || 'unknown'}`;
-    if (!byBatch.has(key)) byBatch.set(key, []);
-    byBatch.get(key)!.push(opp);
+    if (opp.batch_id) withBatchId.push(opp);
+    else withoutBatchId.push(opp);
+  }
+
+  const byBatch = new Map<string, Opportunity[]>();
+
+  for (const opp of withBatchId) {
+    if (!byBatch.has(opp.batch_id!)) byBatch.set(opp.batch_id!, []);
+    byBatch.get(opp.batch_id!)!.push(opp);
+  }
+
+  if (withoutBatchId.length > 0) {
+    const sorted = [...withoutBatchId].sort(
+      (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    );
+    let currentGroup: Opportunity[] = [sorted[0]];
+    let groupIdx = 0;
+
+    for (let i = 1; i < sorted.length; i++) {
+      const prevTime = new Date(sorted[i - 1].created_at || 0).getTime();
+      const currTime = new Date(sorted[i].created_at || 0).getTime();
+      if (prevTime - currTime < 5 * 60 * 1000) {
+        currentGroup.push(sorted[i]);
+      } else {
+        byBatch.set(`legacy_${groupIdx}`, currentGroup);
+        groupIdx++;
+        currentGroup = [sorted[i]];
+      }
+    }
+    byBatch.set(`legacy_${groupIdx}`, currentGroup);
   }
 
   const batches: Batch[] = [];
   for (const [batchId, items] of byBatch) {
-    const sorted = [...items].sort((a, b) => (a.title || '').localeCompare(b.title || ''));
     batches.push({
       batchId,
       createdAt: items[0]?.created_at || '',
-      opportunities: sorted,
+      opportunities: items,
     });
   }
 
@@ -365,19 +392,22 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
                 {/* Expanded: Ideas List */}
                 {isExp && (
                   <div className="border-t border-apple-divider bg-apple-fill-secondary/20 p-4 space-y-3">
-                    {batch.opportunities.map((opp) => (
-                      <OpportunityCard
-                        key={opp.id || opp.title}
-                        opp={opp}
-                        expanded={expandedId === opp.id}
-                        onToggle={() => setExpandedId(expandedId === opp.id ? null : (opp.id || null))}
-                        onGenerate={() => generateBlogPost(opp)}
-                        generatingBlog={generatingBlog === opp.id}
-                        getVolumeColor={getVolumeColor}
-                        getDifficultyColor={getDifficultyColor}
-                        getFunnelColor={getFunnelColor}
-                      />
-                    ))}
+                    {batch.opportunities.map((opp, idx) => {
+                      const oppKey = opp.id || `${batch.batchId}-${idx}`;
+                      return (
+                        <OpportunityCard
+                          key={oppKey}
+                          opp={opp}
+                          expanded={expandedId === oppKey}
+                          onToggle={() => setExpandedId(expandedId === oppKey ? null : oppKey)}
+                          onGenerate={() => generateBlogPost(opp)}
+                          generatingBlog={generatingBlog === opp.id}
+                          getVolumeColor={getVolumeColor}
+                          getDifficultyColor={getDifficultyColor}
+                          getFunnelColor={getFunnelColor}
+                        />
+                      );
+                    })}
                   </div>
                 )}
               </div>
