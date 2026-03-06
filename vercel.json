@@ -22,6 +22,9 @@
     "api/advertising/generate-ad.js": {
       "maxDuration": 120
     },
+    "api/advertising/generate-image.js": {
+      "maxDuration": 120
+    },
     "api/audit/run-batch.js": {
       "maxDuration": 60
     },

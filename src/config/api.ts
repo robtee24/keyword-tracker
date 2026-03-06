@@ -58,6 +58,7 @@ export const API_ENDPOINTS = {
   advertising: {
     generate: `${API_BASE_URL}/api/advertising/generate`,
     generateAd: `${API_BASE_URL}/api/advertising/generate-ad`,
+    generateImage: `${API_BASE_URL}/api/advertising/generate-image`,
   },
   blog: {
     detect: `${API_BASE_URL}/api/blog/detect`,

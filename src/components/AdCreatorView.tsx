@@ -76,11 +76,12 @@ function CharCounter({ current, limit }: { current: number; limit: number }) {
   );
 }
 
-function AdPreview({ variation, platform, spec, creativeType }: {
+function AdPreview({ variation, platform, spec, creativeType, generatedImageUrl }: {
   variation: AdVariation;
   platform: AdPlatform;
   spec: PlatformSpec;
   creativeType: CreativeType;
+  generatedImageUrl?: string;
 }) {
   if (platform === 'meta') {
     return (
@@ -97,8 +98,10 @@ function AdPreview({ variation, platform, spec, creativeType }: {
             {variation.texts.primaryText || ''}
           </p>
         </div>
-        <div className={`aspect-square bg-gradient-to-br ${PLATFORM_COLORS[platform]} flex items-center justify-center`}>
-          {creativeType === 'video' ? (
+        <div className={`aspect-square ${generatedImageUrl ? '' : `bg-gradient-to-br ${PLATFORM_COLORS[platform]}`} flex items-center justify-center overflow-hidden`}>
+          {generatedImageUrl ? (
+            <img src={generatedImageUrl} alt="Ad creative" className="w-full h-full object-cover" />
+          ) : creativeType === 'video' ? (
             <div className="text-center text-white">
               <svg className="w-12 h-12 mx-auto mb-2 opacity-80" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M8 5v14l11-7z"/>
@@ -120,8 +123,12 @@ function AdPreview({ variation, platform, spec, creativeType }: {
   if (platform === 'tiktok') {
     return (
       <div className="bg-black rounded-2xl max-w-[260px] aspect-[9/16] relative overflow-hidden shadow-lg">
-        <div className={`absolute inset-0 bg-gradient-to-b ${PLATFORM_COLORS[platform]} opacity-60`} />
-        {creativeType === 'video' && (
+        {generatedImageUrl ? (
+          <img src={generatedImageUrl} alt="Ad creative" className="absolute inset-0 w-full h-full object-cover" />
+        ) : (
+          <div className={`absolute inset-0 bg-gradient-to-b ${PLATFORM_COLORS[platform]} opacity-60`} />
+        )}
+        {creativeType === 'video' && !generatedImageUrl && (
           <div className="absolute inset-0 flex items-center justify-center">
             <svg className="w-16 h-16 text-white/50" fill="currentColor" viewBox="0 0 24 24">
               <path d="M8 5v14l11-7z"/>
@@ -156,8 +163,10 @@ function AdPreview({ variation, platform, spec, creativeType }: {
             {variation.texts.introText || ''}
           </p>
         </div>
-        <div className="aspect-[1.91/1] bg-gradient-to-br from-blue-700 to-blue-400 flex items-center justify-center">
-          {creativeType === 'video' ? (
+        <div className={`aspect-[1.91/1] ${generatedImageUrl ? '' : 'bg-gradient-to-br from-blue-700 to-blue-400'} flex items-center justify-center overflow-hidden`}>
+          {generatedImageUrl ? (
+            <img src={generatedImageUrl} alt="Ad creative" className="w-full h-full object-cover" />
+          ) : creativeType === 'video' ? (
             <svg className="w-12 h-12 text-white/50" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
           ) : (
             <p className="text-white/70 text-xs text-center px-4">{variation.imageDescription?.substring(0, 60) || 'Creative'}...</p>
@@ -186,8 +195,10 @@ function AdPreview({ variation, platform, spec, creativeType }: {
             {variation.texts.tweetText || ''}
           </p>
           <div className="mt-2 rounded-xl border border-gray-200 overflow-hidden">
-            <div className="aspect-[1.91/1] bg-gradient-to-br from-gray-800 to-gray-600 flex items-center justify-center">
-              {creativeType === 'video' ? (
+            <div className={`aspect-[1.91/1] ${generatedImageUrl ? '' : 'bg-gradient-to-br from-gray-800 to-gray-600'} flex items-center justify-center overflow-hidden`}>
+              {generatedImageUrl ? (
+                <img src={generatedImageUrl} alt="Ad creative" className="w-full h-full object-cover" />
+              ) : creativeType === 'video' ? (
                 <svg className="w-10 h-10 text-white/50" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
               ) : (
                 <p className="text-white/60 text-xs">{variation.imageDescription?.substring(0, 40) || 'Image'}...</p>
@@ -216,6 +227,8 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
   const [result, setResult] = useState<GeneratedAd | null>(null);
   const [activeVariation, setActiveVariation] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
+  const [generatedImages, setGeneratedImages] = useState<Record<number, string>>({});
+  const [generatingImage, setGeneratingImage] = useState<number | null>(null);
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -256,6 +269,36 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
       clearTimeout(timeout);
       setGenerating(false);
     }
+  };
+
+  const handleGenerateImage = async (variationIndex: number) => {
+    if (!result) return;
+    const variation = result.variations[variationIndex];
+    if (!variation?.imageDescription) return;
+
+    setGeneratingImage(variationIndex);
+    try {
+      const firstImageSpec = Object.values(result.platformSpec.imageSpecs)[0] || '1080x1080';
+      const resp = await authenticatedFetch(API_ENDPOINTS.advertising.generateImage, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageDescription: variation.imageDescription,
+          textOverlay: variation.textOverlay || null,
+          platform,
+          dimensions: firstImageSpec,
+        }),
+      });
+      const data = await resp.json();
+      if (data.imageUrl) {
+        setGeneratedImages((prev) => ({ ...prev, [variationIndex]: data.imageUrl }));
+      } else {
+        setError(data.error || 'Failed to generate image');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Image generation failed');
+    }
+    setGeneratingImage(null);
   };
 
   const copyToClipboard = (text: string) => {
@@ -536,13 +579,65 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
 
                 {creativeType === 'static' && currentVariation.imageDescription && (
                   <div className="bg-white rounded-apple border border-apple-border p-4 space-y-3">
-                    <h3 className="text-apple-sm font-semibold text-apple-text">Image Creative Brief</h3>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-apple-sm font-semibold text-apple-text">Image Creative</h3>
+                      {!generatedImages[activeVariation] && (
+                        <button
+                          onClick={() => handleGenerateImage(activeVariation)}
+                          disabled={generatingImage !== null}
+                          className="px-3 py-1.5 rounded-apple-sm bg-gradient-to-r from-purple-600 to-pink-600 text-white text-apple-xs font-medium hover:from-purple-700 hover:to-pink-700 transition-all disabled:opacity-50"
+                        >
+                          {generatingImage === activeVariation ? (
+                            <span className="flex items-center gap-1.5">
+                              <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              Generating...
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1.5">
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              Generate Image
+                            </span>
+                          )}
+                        </button>
+                      )}
+                    </div>
+
+                    {generatedImages[activeVariation] && (
+                      <div className="space-y-2">
+                        <img
+                          src={generatedImages[activeVariation]}
+                          alt="Generated ad creative"
+                          className="w-full rounded-apple-sm border border-apple-divider"
+                        />
+                        <div className="flex gap-2">
+                          <a
+                            href={generatedImages[activeVariation]}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-1 px-3 py-1.5 rounded-apple-sm border border-apple-border text-apple-xs font-medium text-apple-text-secondary hover:bg-apple-fill-secondary transition-colors text-center"
+                          >
+                            Open Full Size
+                          </a>
+                          <button
+                            onClick={() => handleGenerateImage(activeVariation)}
+                            disabled={generatingImage !== null}
+                            className="px-3 py-1.5 rounded-apple-sm border border-apple-border text-apple-xs font-medium text-apple-text-secondary hover:bg-apple-fill-secondary transition-colors disabled:opacity-50"
+                          >
+                            {generatingImage === activeVariation ? 'Regenerating...' : 'Regenerate'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="bg-gray-50 rounded-apple-sm p-3">
+                      <p className="text-apple-xs font-semibold text-apple-text-secondary mb-1">Creative Brief</p>
                       <p className="text-apple-sm text-apple-text">{currentVariation.imageDescription}</p>
                     </div>
                     {currentVariation.textOverlay && (
                       <div className="bg-blue-50 rounded-apple-sm p-3">
-                        <p className="text-apple-xs font-semibold text-blue-700 mb-1">Suggested Text Overlay</p>
+                        <p className="text-apple-xs font-semibold text-blue-700 mb-1">Text Overlay</p>
                         <p className="text-apple-sm text-blue-900">{currentVariation.textOverlay}</p>
                       </div>
                     )}
@@ -559,6 +654,7 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
                       platform={platform}
                       spec={result.platformSpec}
                       creativeType={creativeType}
+                      generatedImageUrl={generatedImages[activeVariation]}
                     />
                   </div>
                 </div>
