@@ -11,7 +11,7 @@ export type View =
   | 'blog-audit'
   | 'ad-audit' | 'ad-audit-google' | 'ad-audit-meta' | 'ad-audit-linkedin' | 'ad-audit-reddit' | 'ad-audit-tiktok'
   | 'ad-audit-budget' | 'ad-audit-performance' | 'ad-audit-creative' | 'ad-audit-attribution' | 'ad-audit-structure'
-  | 'blog-opportunity' | 'blog-automate' | 'advertising'
+  | 'blog-opportunity' | 'blog-automate' | 'blog-completed' | 'advertising'
   | 'social-instagram' | 'social-linkedin' | 'social-x' | 'social-facebook' | 'social-tiktok' | 'social-pinterest'
   | 'build-rebuild' | 'build-new'
   | 'tasks' | 'activity'
@@ -29,7 +29,7 @@ interface SidebarProps {
 const SEARCH_VIEWS = new Set<View>(['overview', 'keywords', 'lost-keywords']);
 const SITE_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit']);
 const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-tiktok', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure']);
-const CONTENT_VIEWS = new Set<View>(['blog-opportunity', 'blog-automate', 'advertising']);
+const CONTENT_VIEWS = new Set<View>(['blog-opportunity', 'blog-automate', 'blog-completed', 'advertising']);
 const SOCIAL_VIEWS = new Set<View>(['social-instagram', 'social-linkedin', 'social-x', 'social-facebook', 'social-tiktok', 'social-pinterest']);
 const PAGES_VIEWS = new Set<View>(['build-rebuild', 'build-new']);
 
@@ -66,6 +66,7 @@ const adAuditSubItems: Array<{ id: View; label: string }> = [
 const contentSubItems: Array<{ id: View; label: string }> = [
   { id: 'blog-opportunity', label: 'Blog Ideas' },
   { id: 'blog-automate', label: 'Blog Writer' },
+  { id: 'blog-completed', label: 'Completed' },
   { id: 'advertising', label: 'Ad Keywords' },
 ];
 

@@ -18,6 +18,7 @@ import ActivityLogView from './components/ActivityLogView';
 import BlogAuditView from './components/BlogAuditView';
 import BlogOpportunityView from './components/BlogOpportunityView';
 import BlogAutomateView from './components/BlogAutomateView';
+import CompletedArticlesView from './components/CompletedArticlesView';
 import BuildRebuildView from './components/BuildRebuildView';
 import BuildNewView from './components/BuildNewView';
 import SocialPlatformView from './components/SocialPlatformView';
@@ -81,6 +82,7 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   'ad-audit-structure': 'Ad Audit › Account Structure',
   'blog-opportunity': 'Content › Blog Ideas',
   'blog-automate': 'Content › Blog Writer',
+  'blog-completed': 'Content › Completed',
   'advertising': 'Content › Ad Keywords',
   'social-instagram': 'Social › Instagram',
   'social-linkedin': 'Social › LinkedIn',
@@ -749,6 +751,9 @@ function App() {
           )}
           {currentView === 'blog-automate' && activeProject && (
             <BlogAutomateView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
+          )}
+          {currentView === 'blog-completed' && activeProject && (
+            <CompletedArticlesView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
           )}
 
           {/* ── Build Views ── */}
