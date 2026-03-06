@@ -104,7 +104,11 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
       if (!resp.ok) {
         setError(data.error || `Server error (${resp.status})`);
       } else if (data.opportunities && data.opportunities.length > 0) {
-        await loadOpportunities();
+        const normalized = data.opportunities.map((o: Record<string, unknown>) => normalizeOpp(o));
+        setOpportunities((prev) => [...normalized, ...prev]);
+        if (data.warning) {
+          console.warn('[BlogOpps]', data.warning);
+        }
         logActivity(siteUrl, 'blog', 'opportunities', 'Generated blog topic opportunities');
       } else {
         setError('No topics were generated. Please try again.');
