@@ -15,13 +15,17 @@ const PLATFORM_VIDEO_SPECS = {
 
 /**
  * Build a cinematic prompt from structured shots array.
+ * Focus on visual descriptions only — no text, no words, no typography.
  */
 function buildPromptFromShots(shots, platform) {
   if (!shots || !Array.isArray(shots) || shots.length === 0) return null;
-  const scenes = shots.map((s, i) =>
-    `Scene ${i + 1} (${s.time || ''}): ${s.visual || s.description || ''}`
-  ).join('. ');
-  return `Cinematic social media video for ${platform}. ${scenes}. Professional lighting, smooth transitions, modern aesthetic.`;
+  const scenes = shots
+    .map((s, i) => {
+      const visual = (s.visual || s.description || '').replace(/text overlay[^.]*\./gi, '').replace(/text on screen[^.]*\./gi, '').trim();
+      return `Scene ${i + 1} (${s.time || ''}): ${visual}`;
+    })
+    .join('. ');
+  return `Premium cinematic ${PLATFORM_VIDEO_SPECS[platform]?.description || 'social media video'}. Ultra high-quality, professional lighting, smooth camera movements, rich color grading. NO text, words, letters, or typography anywhere in the video. ${scenes}. Modern aesthetic, shallow depth of field, professional color grading like a brand campaign.`;
 }
 
 /**
@@ -40,7 +44,11 @@ export default async function handler(req, res) {
 
   const { platform, prompt, shots, duration, model } = req.body || {};
 
-  const videoPrompt = buildPromptFromShots(shots, platform) || prompt;
+  let videoPrompt = buildPromptFromShots(shots, platform);
+  if (!videoPrompt && prompt) {
+    const cleanPrompt = prompt.replace(/text overlay[^.]*\./gi, '').replace(/text on screen[^.]*\./gi, '').trim();
+    videoPrompt = `Premium cinematic video. Ultra high-quality, professional lighting, smooth camera movements. NO text, words, letters, or typography anywhere in the video. ${cleanPrompt}. Professional color grading, shallow depth of field.`;
+  }
   if (!videoPrompt) return res.status(400).json({ error: 'Either prompt or shots array is required' });
 
   const specs = PLATFORM_VIDEO_SPECS[platform] || PLATFORM_VIDEO_SPECS.instagram;

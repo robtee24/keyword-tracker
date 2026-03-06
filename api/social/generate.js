@@ -104,15 +104,24 @@ Respond with ONLY valid JSON:
   "charCount": <number of characters in content>,
   "tips": "<1-2 sentences of posting tips>",
   "bestTime": "<suggested posting time>",
-  "imagePrompt": "<a detailed DALL-E 3 image generation prompt for the post creative. Describe the ideal image including: style (photo, illustration, flat design, 3D render), composition, colors, subjects, mood, and any TEXT that should appear overlaid on the image. Be very specific — this prompt will be sent directly to DALL-E 3.>"
+  "imagePrompt": "<a detailed visual scene description for an AI image generator — MUST CONTAIN ZERO TEXT, WORDS, LETTERS, OR TYPOGRAPHY>",
+  "textOverlay": "<short 5-8 word headline or CTA to overlay on the image via CSS>"
 }
 
 CRITICAL for imagePrompt:
-- Must be a complete, standalone image generation prompt
-- Include art style, composition, color palette, and subjects
-- If the post has a key message or headline, include it as text to render ON the image
-- Keep text overlay short (max 10 words) for readability
-- Specify the visual style that matches ${'{platform}'} aesthetics`;
+- Describe ONLY the visual scene: subjects, composition, lighting, mood, colors, style
+- DO NOT include any text, words, letters, numbers, logos, or typography in the image description
+- The AI image generator produces garbled text — all text will be added separately via CSS overlay
+- Include art style (photorealistic, flat illustration, 3D render, watercolor, etc.)
+- Specify color palette, composition, and focal point
+- Match the visual style to ${'{platform}'} aesthetics
+- Think premium ad photography: Apple, Nike, Glossier quality
+
+CRITICAL for textOverlay:
+- A short, punchy headline or CTA (5-8 words max)
+- This will be rendered with pixel-perfect CSS typography on top of the clean image
+- Make it the single most impactful line from the post
+- Examples: "Your Mornings, Reinvented", "Join 50K+ Pros", "Stop Guessing, Start Growing"`;
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -182,8 +191,8 @@ In addition to the caption text, you must provide:
 For multi-part content, clearly number or label each section.`;
   } else {
     extraInstructions = `\n\nThis is a STATIC image post. In addition to the caption text, you must provide:
-1. An imagePrompt — a detailed DALL-E 3 prompt for generating the ideal creative image for this post.
-The image should include any key headline or message text overlaid on it.`;
+1. An imagePrompt — a visual scene description for the background image. CRITICAL: The image must contain ZERO text, words, or typography. Describe only the visual: subjects, lighting, composition, colors, mood. Text will be overlaid separately via CSS.
+2. A textOverlay — a short 5-8 word headline or CTA that will be rendered on top of the image with pixel-perfect CSS typography.`;
   }
 
   let userMessage = `${BASE_PROMPT(platform, postType)}${extraInstructions}\n\nTOPIC/BRIEF: ${topic}`;

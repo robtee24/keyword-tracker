@@ -22,7 +22,7 @@ export default async function handler(req, res) {
 
   const results = [];
   for (const desc of toGenerate) {
-    const prompt = `Professional, high-quality blog header image: ${desc}. Clean modern style, suitable for a professional blog article. No text or watermarks.`;
+    const prompt = `Create a premium, photorealistic blog header image. CONCEPT: ${desc}. CRITICAL: DO NOT include ANY text, words, letters, numbers, logos, watermarks, or typography of any kind. The image must be completely clean of all text and writing. STYLE: Ultra high-quality editorial photography, professional lighting, modern composition, rich colors, shallow depth of field where appropriate. Think top-tier magazine or brand campaign quality.`;
     try {
       const resp = await fetch('https://api.openai.com/v1/images/generations', {
         method: 'POST',
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
           prompt,
           n: 1,
           size: '1792x1024',
-          quality: 'standard',
+          quality: 'hd',
           style: 'natural',
           response_format: 'url',
         }),

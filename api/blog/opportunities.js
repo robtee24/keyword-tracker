@@ -197,10 +197,14 @@ Return JSON: {"opportunities":[{"title":"...","targetKeyword":"...","relatedKeyw
     const opportunities = parsed.opportunities || [];
     console.log(`[BlogOpps] Parsed ${opportunities.length} opportunities`);
 
+    const batchId = crypto.randomUUID();
+
     if (supabase && opportunities.length > 0) {
+      const now = new Date().toISOString();
       const rows = opportunities.map((opp) => ({
         site_url: siteUrl,
         project_id: projectId || null,
+        batch_id: batchId,
         title: opp.title,
         target_keyword: opp.targetKeyword,
         related_keywords: opp.relatedKeywords || [],
@@ -211,18 +215,25 @@ Return JSON: {"opportunities":[{"title":"...","targetKeyword":"...","relatedKeyw
         description: opp.description || '',
         content_type: opp.contentType || 'guide',
         status: 'pending',
-        created_at: new Date().toISOString(),
+        created_at: now,
       }));
 
-      const { error: insertErr } = await supabase.from('blog_opportunities').insert(rows);
+      const { data: inserted, error: insertErr } = await supabase
+        .from('blog_opportunities')
+        .insert(rows)
+        .select();
+
       if (insertErr) {
         console.error('[BlogOpps] Insert error:', insertErr.message);
-        return res.status(200).json({ opportunities, warning: 'Generated but failed to save: ' + insertErr.message });
+        return res.status(200).json({ opportunities, batchId, warning: 'Generated but failed to save: ' + insertErr.message });
       }
+
+      console.log(`[BlogOpps] Done (${Date.now() - startTime}ms total)`);
+      return res.status(200).json({ opportunities: inserted || opportunities, batchId });
     }
 
     console.log(`[BlogOpps] Done (${Date.now() - startTime}ms total)`);
-    return res.status(200).json({ opportunities });
+    return res.status(200).json({ opportunities, batchId });
   } catch (err) {
     console.error('[BlogOpps] Generation error:', err.message, err.stack);
     return res.status(500).json({ error: err.message });

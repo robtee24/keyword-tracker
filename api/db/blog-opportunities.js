@@ -1,8 +1,9 @@
 import { getSupabase } from '../db.js';
 
 /**
- * GET /api/db/blog-opportunities?siteUrl=...
+ * GET /api/db/blog-opportunities?siteUrl=...&projectId=...
  * PUT /api/db/blog-opportunities { id, status, generated_blog }
+ * DELETE /api/db/blog-opportunities { batchId, projectId } or { id, projectId }
  */
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -18,6 +19,7 @@ export default async function handler(req, res) {
       .from('blog_opportunities')
       .select('*')
       .eq('site_url', siteUrl)
+      .neq('status', 'deleted')
       .order('created_at', { ascending: false });
     if (projectId) query = query.eq('project_id', projectId);
     const { data, error } = await query;
@@ -50,6 +52,40 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: error.message });
     }
     return res.status(200).json({ success: true });
+  }
+
+  if (req.method === 'DELETE') {
+    const { batchId, id, projectId } = req.body || {};
+
+    if (batchId) {
+      let delQuery = supabase
+        .from('blog_opportunities')
+        .delete()
+        .eq('batch_id', batchId);
+      if (projectId) delQuery = delQuery.eq('project_id', projectId);
+      const { error } = await delQuery;
+      if (error) {
+        console.error('[BlogOpps] Batch delete error:', error.message);
+        return res.status(500).json({ error: error.message });
+      }
+      return res.status(200).json({ success: true });
+    }
+
+    if (id) {
+      let delQuery = supabase
+        .from('blog_opportunities')
+        .delete()
+        .eq('id', id);
+      if (projectId) delQuery = delQuery.eq('project_id', projectId);
+      const { error } = await delQuery;
+      if (error) {
+        console.error('[BlogOpps] Delete error:', error.message);
+        return res.status(500).json({ error: error.message });
+      }
+      return res.status(200).json({ success: true });
+    }
+
+    return res.status(400).json({ error: 'batchId or id is required' });
   }
 
   return res.status(405).json({ error: 'Method not allowed' });

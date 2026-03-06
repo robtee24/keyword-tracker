@@ -175,10 +175,20 @@ For video creative, also include a detailed script for each variation:
 - Visual direction for each shot
 - Estimated duration: 15-30 seconds
 ` : `
-For static creative, include an image description for each variation:
-- What the image should show
-- Text overlay suggestion (if any)
-- Recommended dimensions: ${JSON.stringify(spec.imageSpecs)}
+For static creative, include for each variation:
+
+IMAGE DESCRIPTION (imageDescription):
+- Describe a premium, photorealistic background image
+- CRITICAL: The image must contain ZERO text, words, letters, numbers, logos, or typography
+- Describe only the visual scene, lighting, mood, composition, and subject
+- Think Apple/Nike campaign photography quality
+- Ensure the scene leaves negative space for text overlay
+
+TEXT OVERLAY (textOverlay):
+- A short, punchy headline or CTA (max 6-8 words) that will be rendered as CSS text on top of the clean image
+- This is NOT baked into the image — it is overlaid with pixel-perfect typography by the frontend
+- Make it the single most impactful line from the ad
+- Examples: "Ship 10x Faster", "Your Team Will Thank You", "Join 50,000+ Teams"
 `}
 
 Return JSON:
@@ -199,8 +209,8 @@ Return JSON:
         "cta": "<20-30s script>",
         "visualDirection": "<shot-by-shot description>",
         "duration": "<estimated seconds>"
-      }` : `"imageDescription": "<detailed image description>",
-      "textOverlay": "<suggested text overlay or null>"`}
+      }` : `"imageDescription": "<detailed visual scene description — NO TEXT in the image>",
+      "textOverlay": "<short 6-8 word headline/CTA for CSS overlay>"`}
     }
   ],
   "platformTips": ["<2-3 platform-specific optimization tips>"]

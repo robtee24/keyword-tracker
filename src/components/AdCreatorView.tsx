@@ -98,9 +98,18 @@ function AdPreview({ variation, platform, spec, creativeType, generatedImageUrl 
             {variation.texts.primaryText || ''}
           </p>
         </div>
-        <div className={`aspect-square ${generatedImageUrl ? '' : `bg-gradient-to-br ${PLATFORM_COLORS[platform]}`} flex items-center justify-center overflow-hidden`}>
+        <div className={`aspect-square relative ${generatedImageUrl ? '' : `bg-gradient-to-br ${PLATFORM_COLORS[platform]}`} flex items-center justify-center overflow-hidden`}>
           {generatedImageUrl ? (
-            <img src={generatedImageUrl} alt="Ad creative" className="w-full h-full object-cover" />
+            <>
+              <img src={generatedImageUrl} alt="Ad creative" className="w-full h-full object-cover" />
+              {variation.textOverlay && (
+                <div className="absolute inset-0 flex items-end justify-center p-6">
+                  <div className="bg-black/50 backdrop-blur-sm rounded-lg px-4 py-3 text-center max-w-[85%]">
+                    <p className="text-white text-sm font-bold leading-tight">{variation.textOverlay}</p>
+                  </div>
+                </div>
+              )}
+            </>
           ) : creativeType === 'video' ? (
             <div className="text-center text-white">
               <svg className="w-12 h-12 mx-auto mb-2 opacity-80" fill="currentColor" viewBox="0 0 24 24">
@@ -124,7 +133,16 @@ function AdPreview({ variation, platform, spec, creativeType, generatedImageUrl 
     return (
       <div className="bg-black rounded-2xl max-w-[260px] aspect-[9/16] relative overflow-hidden shadow-lg">
         {generatedImageUrl ? (
-          <img src={generatedImageUrl} alt="Ad creative" className="absolute inset-0 w-full h-full object-cover" />
+          <>
+            <img src={generatedImageUrl} alt="Ad creative" className="absolute inset-0 w-full h-full object-cover" />
+            {variation.textOverlay && (
+              <div className="absolute inset-x-3 top-1/3 flex items-center justify-center">
+                <div className="bg-black/50 backdrop-blur-sm rounded-lg px-3 py-2 text-center">
+                  <p className="text-white text-xs font-bold leading-tight">{variation.textOverlay}</p>
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <div className={`absolute inset-0 bg-gradient-to-b ${PLATFORM_COLORS[platform]} opacity-60`} />
         )}
@@ -163,9 +181,18 @@ function AdPreview({ variation, platform, spec, creativeType, generatedImageUrl 
             {variation.texts.introText || ''}
           </p>
         </div>
-        <div className={`aspect-[1.91/1] ${generatedImageUrl ? '' : 'bg-gradient-to-br from-blue-700 to-blue-400'} flex items-center justify-center overflow-hidden`}>
+        <div className={`aspect-[1.91/1] relative ${generatedImageUrl ? '' : 'bg-gradient-to-br from-blue-700 to-blue-400'} flex items-center justify-center overflow-hidden`}>
           {generatedImageUrl ? (
-            <img src={generatedImageUrl} alt="Ad creative" className="w-full h-full object-cover" />
+            <>
+              <img src={generatedImageUrl} alt="Ad creative" className="w-full h-full object-cover" />
+              {variation.textOverlay && (
+                <div className="absolute inset-0 flex items-end justify-center p-4">
+                  <div className="bg-black/50 backdrop-blur-sm rounded-lg px-4 py-2 text-center max-w-[85%]">
+                    <p className="text-white text-xs font-bold leading-tight">{variation.textOverlay}</p>
+                  </div>
+                </div>
+              )}
+            </>
           ) : creativeType === 'video' ? (
             <svg className="w-12 h-12 text-white/50" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
           ) : (
@@ -195,9 +222,18 @@ function AdPreview({ variation, platform, spec, creativeType, generatedImageUrl 
             {variation.texts.tweetText || ''}
           </p>
           <div className="mt-2 rounded-xl border border-gray-200 overflow-hidden">
-            <div className={`aspect-[1.91/1] ${generatedImageUrl ? '' : 'bg-gradient-to-br from-gray-800 to-gray-600'} flex items-center justify-center overflow-hidden`}>
+            <div className={`aspect-[1.91/1] relative ${generatedImageUrl ? '' : 'bg-gradient-to-br from-gray-800 to-gray-600'} flex items-center justify-center overflow-hidden`}>
               {generatedImageUrl ? (
-                <img src={generatedImageUrl} alt="Ad creative" className="w-full h-full object-cover" />
+                <>
+                  <img src={generatedImageUrl} alt="Ad creative" className="w-full h-full object-cover" />
+                  {variation.textOverlay && (
+                    <div className="absolute inset-0 flex items-end justify-center p-3">
+                      <div className="bg-black/50 backdrop-blur-sm rounded-lg px-3 py-1.5 text-center max-w-[85%]">
+                        <p className="text-white text-[11px] font-bold leading-tight">{variation.textOverlay}</p>
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : creativeType === 'video' ? (
                 <svg className="w-10 h-10 text-white/50" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
               ) : (

@@ -78,6 +78,7 @@ interface GeneratedPost {
   script?: string;
   shots?: VideoShot[];
   imagePrompt?: string;
+  textOverlay?: string;
 }
 
 interface SavedPost {
@@ -1085,7 +1086,16 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
               {mediaType === 'video' ? (
                 <video src={mediaUrl} controls className="w-full max-w-lg rounded-apple-sm border border-apple-divider" />
               ) : (
-                <img src={mediaUrl} alt="Generated creative" className="w-full max-w-lg rounded-apple-sm border border-apple-divider" />
+                <div className="relative w-full max-w-lg rounded-apple-sm border border-apple-divider overflow-hidden">
+                  <img src={mediaUrl} alt="Generated creative" className="w-full" />
+                  {generated.textOverlay && (
+                    <div className="absolute inset-0 flex items-end justify-center p-6">
+                      <div className="bg-black/50 backdrop-blur-sm rounded-xl px-5 py-3 text-center max-w-[85%]">
+                        <p className="text-white text-lg font-bold leading-tight drop-shadow-lg">{generated.textOverlay}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -1141,7 +1151,7 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
 
       {/* Post Preview Modal */}
       {showPreview && generated && mediaUrl && (
-        <PostPreview platform={platform} config={config} content={generated.content} hashtags={generated.hashtags} mediaUrl={mediaUrl} mediaType={mediaType} onClose={() => setShowPreview(false)} />
+        <PostPreview platform={platform} config={config} content={generated.content} hashtags={generated.hashtags} mediaUrl={mediaUrl} mediaType={mediaType} textOverlay={generated.textOverlay} onClose={() => setShowPreview(false)} />
       )}
 
       {/* Saved Drafts */}
@@ -1204,16 +1214,27 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
    POST PREVIEW MODAL
    ═══════════════════════════════════════════════════════════════ */
 
-function PostPreview({ platform, config, content, hashtags, mediaUrl, mediaType, onClose }: {
+function PostPreview({ platform, config, content, hashtags, mediaUrl, mediaType, textOverlay, onClose }: {
   platform: SocialPlatform; config: typeof PLATFORM_CONFIG[SocialPlatform];
-  content: string; hashtags: string[]; mediaUrl: string; mediaType: MediaType; onClose: () => void;
+  content: string; hashtags: string[]; mediaUrl: string; mediaType: MediaType; textOverlay?: string; onClose: () => void;
 }) {
   const hashtagText = hashtags?.length > 0 ? '\n' + hashtags.map(h => `#${h.replace(/^#/, '')}`).join(' ') : '';
   const truncatedContent = content.length > 300 ? content.slice(0, 300) + '...' : content;
 
   const renderMedia = () => {
     if (mediaType === 'video') return <video src={mediaUrl} controls className="w-full" />;
-    return <img src={mediaUrl} alt="" className="w-full" />;
+    return (
+      <div className="relative w-full">
+        <img src={mediaUrl} alt="" className="w-full" />
+        {textOverlay && (
+          <div className="absolute inset-0 flex items-end justify-center p-5">
+            <div className="bg-black/50 backdrop-blur-sm rounded-xl px-5 py-3 text-center max-w-[85%]">
+              <p className="text-white text-base font-bold leading-tight drop-shadow-lg">{textOverlay}</p>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const mockups: Record<SocialPlatform, () => ReactNode> = {
@@ -1286,7 +1307,16 @@ function PostPreview({ platform, config, content, hashtags, mediaUrl, mediaType,
     ),
     tiktok: () => (
       <div className="bg-black rounded-xl overflow-hidden shadow-xl max-w-[340px] mx-auto relative" style={{ aspectRatio: '9/16' }}>
-        <div className="absolute inset-0">{mediaType === 'video' ? <video src={mediaUrl} className="w-full h-full object-cover" autoPlay muted loop /> : <img src={mediaUrl} alt="" className="w-full h-full object-cover" />}</div>
+        <div className="absolute inset-0">
+          {mediaType === 'video' ? <video src={mediaUrl} className="w-full h-full object-cover" autoPlay muted loop /> : <img src={mediaUrl} alt="" className="w-full h-full object-cover" />}
+          {textOverlay && mediaType !== 'video' && (
+            <div className="absolute inset-x-4 top-1/3 flex items-center justify-center">
+              <div className="bg-black/50 backdrop-blur-sm rounded-xl px-4 py-3 text-center">
+                <p className="text-white text-sm font-bold leading-tight drop-shadow-lg">{textOverlay}</p>
+              </div>
+            </div>
+          )}
+        </div>
         <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent">
           <p className="text-white text-[13px] font-semibold mb-1">@yourbrand</p>
           <p className="text-white/90 text-[12px] leading-[16px]">{truncatedContent.slice(0, 150)}</p>

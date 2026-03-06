@@ -30,22 +30,26 @@ export default async function handler(req, res) {
     x: 'Twitter/X promoted post card',
   }[platform] || 'social media ad';
 
-  const prompt = `Create a professional, high-converting ${platformContext} creative image.
+  const prompt = `Create a premium, photorealistic background image for a ${platformContext}. This is ONLY the visual backdrop — text will be added separately later.
 
 CONCEPT: ${imageDescription}
 
-${textOverlay ? `TEXT OVERLAY TO INCLUDE: "${textOverlay}" — render this text prominently and legibly as part of the design.` : 'NO text overlay — keep the image clean without any text.'}
+CRITICAL RULES:
+- DO NOT include ANY text, words, letters, numbers, logos, watermarks, or typography of any kind
+- DO NOT include any UI elements, buttons, or interface components
+- The image must be completely clean of all text and writing
 
-DESIGN REQUIREMENTS:
-- Bold, attention-grabbing visual that stops the scroll
-- Clean, modern design with strong focal point
-- High contrast and vibrant colors that pop in a social feed
-- Professional quality suitable for paid advertising
-- Clear visual hierarchy that guides the eye
-- Brand-safe, platform-policy compliant imagery
-- No watermarks, no stock photo feel
-- If showing people, use authentic, relatable scenes
-- Leave breathing room for the platform UI elements`;
+VISUAL QUALITY:
+- Ultra high-quality, photorealistic or premium illustration style
+- Bold, scroll-stopping visual with a clear focal point
+- Rich, vibrant colors with high contrast that pop in social feeds
+- Professional studio-quality lighting and composition
+- Leave negative space for text overlay (especially in the center and lower third)
+- Modern, premium aesthetic — think Apple or Nike ad photography
+- If showing people: authentic, diverse, emotionally engaging
+- If showing products: clean, well-lit, aspirational context
+- Depth of field to create visual hierarchy
+- No stock photo clichés (no handshakes, no pointing at screens)`;
 
   try {
     const resp = await fetch('https://api.openai.com/v1/images/generations', {
