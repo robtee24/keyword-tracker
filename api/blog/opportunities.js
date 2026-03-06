@@ -35,16 +35,21 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { siteUrl, objectives, existingKeywords, existingTopics, projectId } = req.body || {};
+  const { siteUrl, objectives, existingKeywords, existingTopics, projectId, seriesTheme, count } = req.body || {};
   if (!siteUrl) return res.status(400).json({ error: 'siteUrl is required' });
 
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey) return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
 
+  const topicCount = seriesTheme ? (count || 5) : '15-25';
+  const seriesContext = seriesTheme
+    ? `\nSERIES THEME: This is a blog SERIES about "${seriesTheme}". Generate ${topicCount} articles that form a cohesive series, building on each other in a logical progression. Each article should be distinct but related to the overall theme.\n`
+    : '';
+
   const prompt = `You are an expert content strategist and SEO specialist. Generate a list of blog topic opportunities for this website.
 
 WEBSITE: ${siteUrl}
-
+${seriesContext}
 BUSINESS OBJECTIVES:
 ${objectives || 'Not specified — infer from the website URL and existing keywords.'}
 
@@ -55,7 +60,7 @@ EXISTING BLOG TOPICS ALREADY COVERED:
 ${(existingTopics || []).slice(0, 50).join(', ') || 'None provided'}
 
 REQUIREMENTS:
-1. Generate 15-25 blog topic ideas that would drive organic traffic and support business goals
+1. Generate ${topicCount} blog topic ideas that would drive organic traffic and support business goals
 2. Each topic should target a specific keyword or keyword cluster
 3. Prioritize topics that fill content gaps (not already covered)
 4. Include a mix of: how-to guides, comparison posts, listicles, case studies, data-driven content

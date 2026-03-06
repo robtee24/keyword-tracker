@@ -40,6 +40,15 @@
     "api/blog/generate.js": {
       "maxDuration": 120
     },
+    "api/blog/generate-images.js": {
+      "maxDuration": 120
+    },
+    "api/blog/generate-brief.js": {
+      "maxDuration": 30
+    },
+    "api/blog/modify.js": {
+      "maxDuration": 120
+    },
     "api/build/crawl.js": {
       "maxDuration": 30
     },

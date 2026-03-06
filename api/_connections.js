@@ -1,16 +1,19 @@
 import { getSupabase } from './db.js';
+import { extractRootDomain } from './_domainMatch.js';
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 /**
  * Fetch a valid access token for a given service connection.
  * Auto-refreshes expired Google tokens.
+ * Uses domain-aware matching: tries exact match first, then normalized domain fallback.
  */
 export async function getServiceToken(userId, siteUrl, service) {
   const supabase = getSupabase();
   if (!supabase) throw new Error('Database not configured');
 
-  const { data, error } = await supabase
+  // 1. Try exact match (fast path)
+  let { data } = await supabase
     .from('service_connections')
     .select('*')
     .eq('user_id', userId)
@@ -18,7 +21,21 @@ export async function getServiceToken(userId, siteUrl, service) {
     .eq('service', service)
     .single();
 
-  if (error || !data) return null;
+  // 2. If no exact match, try normalized domain lookup
+  if (!data) {
+    const normalized = extractRootDomain(siteUrl);
+    const { data: allConns } = await supabase
+      .from('service_connections')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('service', service);
+
+    if (allConns && allConns.length > 0) {
+      data = allConns.find(c => extractRootDomain(c.site_url) === normalized) || null;
+    }
+  }
+
+  if (!data) return null;
 
   const now = new Date();
   const expiry = data.token_expiry ? new Date(data.token_expiry) : null;
@@ -97,34 +114,66 @@ export async function saveServiceConnection(userId, siteUrl, service, tokenData)
 
 /**
  * Get connection status for all services for a user/site.
+ * Uses domain-aware matching to find connections regardless of URL format.
  */
 export async function getConnectionStatuses(userId, siteUrl) {
   const supabase = getSupabase();
   if (!supabase) return [];
 
+  // Try exact match first
   const { data, error } = await supabase
     .from('service_connections')
     .select('service, account_name, account_id, connected_at')
     .eq('user_id', userId)
     .eq('site_url', siteUrl);
 
-  if (error) return [];
-  return data || [];
+  if (!error && data && data.length > 0) return data;
+
+  // Fallback: find by normalized domain
+  const normalized = extractRootDomain(siteUrl);
+  const { data: allConns } = await supabase
+    .from('service_connections')
+    .select('service, account_name, account_id, connected_at, site_url')
+    .eq('user_id', userId);
+
+  if (!allConns) return [];
+  return allConns.filter(c => extractRootDomain(c.site_url) === normalized);
 }
 
 /**
  * Remove a service connection.
+ * Uses domain-aware matching as fallback.
  */
 export async function removeServiceConnection(userId, siteUrl, service) {
   const supabase = getSupabase();
   if (!supabase) throw new Error('Database not configured');
 
-  const { error } = await supabase
+  // Try exact match first
+  const { data: exact } = await supabase
     .from('service_connections')
-    .delete()
+    .select('id')
     .eq('user_id', userId)
     .eq('site_url', siteUrl)
+    .eq('service', service)
+    .maybeSingle();
+
+  if (exact) {
+    const { error } = await supabase.from('service_connections').delete().eq('id', exact.id);
+    if (error) throw error;
+    return;
+  }
+
+  // Fallback: find by normalized domain
+  const normalized = extractRootDomain(siteUrl);
+  const { data: allConns } = await supabase
+    .from('service_connections')
+    .select('id, site_url')
+    .eq('user_id', userId)
     .eq('service', service);
 
-  if (error) throw error;
+  const match = allConns?.find(c => extractRootDomain(c.site_url) === normalized);
+  if (match) {
+    const { error } = await supabase.from('service_connections').delete().eq('id', match.id);
+    if (error) throw error;
+  }
 }
