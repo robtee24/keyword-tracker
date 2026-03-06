@@ -104,14 +104,13 @@ export default async function handler(req, res) {
     try {
       const dbPromises = [];
 
-      dbPromises.push(
-        supabase
-          .from('keywords')
-          .select('keyword')
-          .or(`site_url.eq.${siteUrl}${projectId ? `,project_id.eq.${projectId}` : ''}`)
-          .order('last_seen_at', { ascending: false })
-          .limit(100)
-      );
+      const kwQuery = supabase
+        .from('keywords')
+        .select('keyword')
+        .eq('site_url', siteUrl)
+        .order('last_seen_at', { ascending: false })
+        .limit(100);
+      dbPromises.push(kwQuery);
 
       dbPromises.push(
         supabase
