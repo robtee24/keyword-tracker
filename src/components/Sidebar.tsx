@@ -11,7 +11,8 @@ export type View =
   | 'blog-audit'
   | 'ad-audit' | 'ad-audit-google' | 'ad-audit-meta' | 'ad-audit-linkedin' | 'ad-audit-reddit' | 'ad-audit-tiktok'
   | 'ad-audit-budget' | 'ad-audit-performance' | 'ad-audit-creative' | 'ad-audit-attribution' | 'ad-audit-structure'
-  | 'blog-opportunity' | 'blog-automate' | 'blog-completed' | 'advertising'
+  | 'blog-opportunity' | 'blog-automate' | 'blog-completed'
+  | 'ads-google' | 'ads-meta' | 'ads-tiktok' | 'ads-linkedin' | 'ads-x'
   | 'social-instagram' | 'social-linkedin' | 'social-x' | 'social-facebook' | 'social-tiktok' | 'social-pinterest'
   | 'build-rebuild' | 'build-new'
   | 'tasks' | 'activity'
@@ -29,7 +30,8 @@ interface SidebarProps {
 const SEARCH_VIEWS = new Set<View>(['overview', 'keywords', 'lost-keywords']);
 const SITE_AUDIT_VIEWS = new Set<View>(['audit', 'seo-audit', 'content-audit', 'aeo-audit', 'schema-audit', 'compliance-audit', 'speed-audit']);
 const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-meta', 'ad-audit-linkedin', 'ad-audit-reddit', 'ad-audit-tiktok', 'ad-audit-budget', 'ad-audit-performance', 'ad-audit-creative', 'ad-audit-attribution', 'ad-audit-structure']);
-const CONTENT_VIEWS = new Set<View>(['blog-opportunity', 'blog-automate', 'blog-completed', 'advertising']);
+const CONTENT_VIEWS = new Set<View>(['blog-opportunity', 'blog-automate', 'blog-completed']);
+const ADS_VIEWS = new Set<View>(['ads-google', 'ads-meta', 'ads-tiktok', 'ads-linkedin', 'ads-x']);
 const SOCIAL_VIEWS = new Set<View>(['social-instagram', 'social-linkedin', 'social-x', 'social-facebook', 'social-tiktok', 'social-pinterest']);
 const PAGES_VIEWS = new Set<View>(['build-rebuild', 'build-new']);
 
@@ -67,7 +69,14 @@ const contentSubItems: Array<{ id: View; label: string }> = [
   { id: 'blog-opportunity', label: 'Blog Ideas' },
   { id: 'blog-automate', label: 'Blog Writer' },
   { id: 'blog-completed', label: 'Completed' },
-  { id: 'advertising', label: 'Ad Keywords' },
+];
+
+const adsSubItems: Array<{ id: View; label: string }> = [
+  { id: 'ads-google', label: 'Google Search' },
+  { id: 'ads-meta', label: 'Meta' },
+  { id: 'ads-tiktok', label: 'TikTok' },
+  { id: 'ads-linkedin', label: 'LinkedIn' },
+  { id: 'ads-x', label: 'X (Twitter)' },
 ];
 
 const socialSubItems: Array<{ id: View; label: string }> = [
@@ -215,6 +224,7 @@ export default function Sidebar({
   const isSiteAuditActive = SITE_AUDIT_VIEWS.has(currentView);
   const isAdAuditActive = AD_AUDIT_VIEWS.has(currentView);
   const isContentActive = CONTENT_VIEWS.has(currentView);
+  const isAdsActive = ADS_VIEWS.has(currentView);
   const isSocialActive = SOCIAL_VIEWS.has(currentView);
   const isPagesActive = PAGES_VIEWS.has(currentView);
 
@@ -222,6 +232,7 @@ export default function Sidebar({
   const [siteAuditExpanded, setSiteAuditExpanded] = useState(isSiteAuditActive);
   const [adAuditExpanded, setAdAuditExpanded] = useState(isAdAuditActive);
   const [contentExpanded, setContentExpanded] = useState(isContentActive);
+  const [adsExpanded, setAdsExpanded] = useState(isAdsActive);
   const [socialExpanded, setSocialExpanded] = useState(isSocialActive);
   const [pagesExpanded, setPagesExpanded] = useState(isPagesActive);
 
@@ -235,10 +246,6 @@ export default function Sidebar({
   for (const [type, view] of Object.entries(auditTypeMap)) {
     if (!allowedAuditTypes.includes(type)) lockedAuditSubItems.add(view);
   }
-
-  const isAdvertisingLocked = !canUseFeature('advertising');
-  const lockedContentSubItems = new Set<View>();
-  if (isAdvertisingLocked) lockedContentSubItems.add('advertising');
 
   const pageBuildLimit = planInfo?.limits?.page_builds ?? 0;
   const isPagesLocked = pageBuildLimit === 0;
@@ -433,7 +440,23 @@ export default function Sidebar({
               currentView={currentView}
               onNavigate={onNavigate}
               collapsed={collapsed}
-              lockedSubItems={lockedContentSubItems}
+            />
+
+            <NavGroup
+              label="Ads"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+                </svg>
+              }
+              parentView="ads-google"
+              subItems={adsSubItems}
+              isGroupActive={isAdsActive}
+              expanded={adsExpanded}
+              onToggleExpand={() => setAdsExpanded(!adsExpanded)}
+              currentView={currentView}
+              onNavigate={onNavigate}
+              collapsed={collapsed}
             />
 
             <NavGroup

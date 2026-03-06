@@ -84,6 +84,8 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
   const generateOpportunities = async () => {
     setGenerating(true);
     setError(null);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 100000);
     try {
       const objectives = localStorage.getItem('site_objectives') || localStorage.getItem(`kt_objectives_${projectId}`) || '';
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.opportunities, {
@@ -96,6 +98,7 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
           existingKeywords: [],
           existingTopics: opportunities.map((o) => o.title),
         }),
+        signal: controller.signal,
       });
       const data = await resp.json();
       if (!resp.ok) {
@@ -108,7 +111,13 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
       }
     } catch (err) {
       console.error('Failed to generate opportunities:', err);
-      setError(err instanceof Error ? err.message : 'Failed to connect to server');
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setError('Request timed out. The server took too long to respond. Please try again.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to connect to server. Please check your connection and try again.');
+      }
+    } finally {
+      clearTimeout(timeout);
     }
     setGenerating(false);
   };

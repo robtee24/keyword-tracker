@@ -14,6 +14,7 @@ import AuditMainView from './components/AuditMainView';
 import AdAuditMainView from './components/AdAuditMainView';
 import AdAuditView from './components/AdAuditView';
 import AdvertisingView from './components/AdvertisingView';
+import AdCreatorView from './components/AdCreatorView';
 import ActivityLogView from './components/ActivityLogView';
 import BlogAuditView from './components/BlogAuditView';
 import BlogOpportunityView from './components/BlogOpportunityView';
@@ -83,7 +84,11 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   'blog-opportunity': 'Content › Blog Ideas',
   'blog-automate': 'Content › Blog Writer',
   'blog-completed': 'Content › Completed',
-  'advertising': 'Content › Ad Keywords',
+  'ads-google': 'Ads › Google Search',
+  'ads-meta': 'Ads › Meta',
+  'ads-tiktok': 'Ads › TikTok',
+  'ads-linkedin': 'Ads › LinkedIn',
+  'ads-x': 'Ads › X (Twitter)',
   'social-instagram': 'Social › Instagram',
   'social-linkedin': 'Social › LinkedIn',
   'social-x': 'Social › X (Twitter)',
@@ -98,7 +103,16 @@ const BREADCRUMB_LABELS: Record<string, string> = {
 
 type AdAuditType = 'google' | 'meta' | 'linkedin' | 'reddit' | 'tiktok' | 'budget' | 'performance' | 'creative' | 'attribution' | 'structure';
 
+type AdPlatform = 'meta' | 'tiktok' | 'linkedin' | 'x';
+
 type SocialPlatform = 'instagram' | 'linkedin' | 'x' | 'facebook' | 'tiktok' | 'pinterest';
+
+const AD_PLATFORM_VIEW_MAP: Record<string, AdPlatform> = {
+  'ads-meta': 'meta',
+  'ads-tiktok': 'tiktok',
+  'ads-linkedin': 'linkedin',
+  'ads-x': 'x',
+};
 
 const SOCIAL_VIEW_MAP: Record<string, SocialPlatform> = {
   'social-instagram': 'instagram',
@@ -724,10 +738,19 @@ function App() {
             ) : null
           )}
 
-          {currentView === 'advertising' && activeProject && (
-            <PlanGatedView feature="advertising">
-              <AdvertisingView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
-            </PlanGatedView>
+          {/* ── Ads Views ── */}
+          {currentView === 'ads-google' && activeProject && (
+            <AdvertisingView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
+          )}
+          {activeProject && Object.entries(AD_PLATFORM_VIEW_MAP).map(([viewId, adPlatform]) =>
+            currentView === viewId ? (
+              <AdCreatorView
+                key={`${viewId}-${connectionVersion}`}
+                siteUrl={getSiteUrl(activeProject)}
+                projectId={activeProject.id}
+                platform={adPlatform}
+              />
+            ) : null
           )}
 
           {/* ── Social Views ── */}
