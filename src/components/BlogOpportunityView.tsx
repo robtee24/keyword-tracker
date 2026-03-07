@@ -406,8 +406,8 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
       {warning && (
         <div className="bg-amber-50 border border-amber-200 rounded-apple p-4 flex items-center justify-between">
           <div>
-            <p className="text-apple-sm text-amber-800 font-medium">Ideas generated but not saved</p>
-            <p className="text-apple-xs text-amber-600 mt-1">{warning}</p>
+            <p className="text-apple-sm text-amber-800 font-medium">Save Warning</p>
+            <p className="text-apple-xs text-amber-600 mt-1 whitespace-pre-wrap">{warning}</p>
           </div>
           <button onClick={() => setWarning(null)} className="text-amber-400 hover:text-amber-600 shrink-0 ml-4">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>

@@ -229,29 +229,36 @@ Return JSON: {"opportunities":[{"title":"...","targetKeyword":"...","relatedKeyw
       });
 
       let inserted = null;
-      let lastError = null;
+      const errors = [];
 
+      console.log('[BlogOpps] Attempting full insert with all columns...');
       const result1 = await supabase.from('blog_opportunities').insert(opportunities.map(fullRow)).select();
-      if (!result1.error) {
+      if (!result1.error && result1.data?.length > 0) {
         inserted = result1.data;
+        console.log(`[BlogOpps] Full insert succeeded: ${inserted.length} rows`);
       } else {
-        console.warn('[BlogOpps] Full insert failed:', result1.error.message, '— retrying with core columns');
+        const err1 = result1.error?.message || `Insert returned ${result1.data?.length || 0} rows`;
+        errors.push('Full: ' + err1);
+        console.warn('[BlogOpps] Full insert failed:', err1, '— retrying with core columns');
+
         const result2 = await supabase.from('blog_opportunities').insert(opportunities.map(coreRow)).select();
-        if (!result2.error) {
+        if (!result2.error && result2.data?.length > 0) {
           inserted = result2.data;
+          console.log(`[BlogOpps] Core insert succeeded: ${inserted.length} rows`);
         } else {
-          lastError = result2.error.message;
-          console.error('[BlogOpps] Core insert also failed:', lastError);
+          const err2 = result2.error?.message || `Insert returned ${result2.data?.length || 0} rows`;
+          errors.push('Core: ' + err2);
+          console.error('[BlogOpps] Core insert also failed:', err2);
         }
       }
 
-      if (!inserted) {
-        console.error('[BlogOpps] All insert attempts failed. Last error:', lastError);
+      if (!inserted || inserted.length === 0) {
+        console.error('[BlogOpps] All insert attempts failed:', errors.join(' | '));
         const fallback = opportunities.map((opp) => ({ ...opp, created_at: now, batch_id: batchId }));
         return res.status(200).json({
           opportunities: fallback,
           batchId,
-          warning: 'Ideas generated but failed to save to database: ' + (lastError || 'unknown error') + '. Please check that the blog_opportunities table has all required columns.',
+          warning: 'Failed to save: ' + errors.join(' | ') + '. Try running NOTIFY pgrst, \'reload schema\' in Supabase SQL editor to refresh the schema cache.',
         });
       }
 
