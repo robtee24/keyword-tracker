@@ -3,6 +3,7 @@ import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
+import { parseJsonOrThrow } from '../utils/apiResponse';
 
 interface Opportunity {
   id?: string;
@@ -143,7 +144,7 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
     setLoading(true);
     try {
       const resp = await authenticatedFetch(`${API_ENDPOINTS.db.blogOpportunities}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`);
-      const data = await resp.json();
+      const data = await parseJsonOrThrow<{ opportunities?: Record<string, unknown>[] }>(resp);
       const dbOpps = (data.opportunities || []).map((o: Record<string, unknown>) => normalizeOpp(o));
 
       const backupRaw = localStorage.getItem(localStorageKey);
@@ -194,8 +195,7 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ siteUrl, projectId, objectives, existingKeywords: [], existingTopics }),
       });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || `Server error (${resp.status})`);
+      const data = await parseJsonOrThrow<{ opportunities?: Record<string, unknown>[]; batchId?: string; warning?: string }>(resp);
       if (!data.opportunities?.length) throw new Error('No topics were generated. Please try again.');
       return data;
     });
@@ -219,7 +219,7 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
             const verifyResp = await authenticatedFetch(
               `${API_ENDPOINTS.db.blogOpportunities}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`
             );
-            const verifyData = await verifyResp.json();
+            const verifyData = await parseJsonOrThrow<{ opportunities?: unknown[] }>(verifyResp);
             const dbCount = (verifyData.opportunities || []).length;
             if (dbCount < normalized.length) {
               setWarning(`Ideas may not have saved. ${dbCount} found in database but ${normalized.length} were just generated. Ideas are backed up locally.`);
@@ -250,8 +250,7 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
           opportunityId: opp.id || undefined, source: 'idea',
         }),
       });
-      const data = await resp.json();
-      if (data.error) throw new Error(data.error);
+      const data = await parseJsonOrThrow<{ blog?: Record<string, unknown>; error?: string }>(resp);
       if (!data.blog) throw new Error('No article was returned. Please try again.');
       return { blog: data.blog, oppTitle: opp.title, oppId: opp.id, oppCreatedAt: opp.created_at };
     });

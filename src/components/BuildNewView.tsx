@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_ENDPOINTS } from '../config/api';
+import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
+import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
+import { parseJsonOrThrow } from '../utils/apiResponse';
 
 interface PageSuggestion {
   title: string;
@@ -66,23 +69,27 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
   const [isModifying, setIsModifying] = useState(false);
   const [modifyError, setModifyError] = useState('');
 
+  const { startTask, getTask, getTasksByType, clearTask } = useBackgroundTasks();
+  const buildPageTasks = getTasksByType('build-page');
+  const buildWizardTask = getTask(`build-wizard-${projectId}`);
+
   const loadSavedData = useCallback(async () => {
     setLoadingSaved(true);
     try {
       const [suggestResp, wizardResp] = await Promise.all([
-        fetch(`${API_ENDPOINTS.db.buildSuggestions}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`),
-        fetch(`${API_ENDPOINTS.db.buildResults}?siteUrl=${encodeURIComponent(siteUrl)}&buildType=wizard&projectId=${projectId}`),
+        authenticatedFetch(`${API_ENDPOINTS.db.buildSuggestions}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`),
+        authenticatedFetch(`${API_ENDPOINTS.db.buildResults}?siteUrl=${encodeURIComponent(siteUrl)}&buildType=wizard&projectId=${projectId}`),
       ]);
-      const suggestData = await suggestResp.json();
-      const wizardData = await wizardResp.json();
+      const suggestData = await parseJsonOrThrow<{ suggestions?: PageSuggestion[]; id?: string }>(suggestResp);
+      const wizardParsed = await parseJsonOrThrow<{ results?: Array<{ result: BuiltPage; created_at: string }> }>(wizardResp);
 
       if (suggestData.suggestions && suggestData.suggestions.length > 0) {
         setSuggestions(suggestData.suggestions);
         setDbRecordId(suggestData.id || null);
         setHasSuggestions(true);
       }
-      if (wizardData.results) {
-        setSavedWizardBuilds(wizardData.results);
+      if (wizardParsed.results) {
+        setSavedWizardBuilds(wizardParsed.results);
       }
     } catch { /* ignore */ }
     setLoadingSaved(false);
@@ -94,10 +101,10 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
     setLoading(true);
     try {
       const objectives = localStorage.getItem('site_objectives') || '';
-      const sitemapResp = await fetch(`${API_ENDPOINTS.audit.sitemap}?siteUrl=${encodeURIComponent(siteUrl)}`);
-      const sitemapData = await sitemapResp.json();
+      const sitemapResp = await authenticatedFetch(`${API_ENDPOINTS.audit.sitemap}?siteUrl=${encodeURIComponent(siteUrl)}`);
+      const sitemapData = await parseJsonOrThrow<{ urls?: string[] }>(sitemapResp);
 
-      const resp = await fetch(API_ENDPOINTS.build.suggestPages, {
+      const resp = await authenticatedFetch(API_ENDPOINTS.build.suggestPages, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -106,21 +113,21 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
           existingPages: sitemapData.urls || [],
         }),
       });
-      const data = await resp.json();
+      const data = await parseJsonOrThrow<{ suggestions?: PageSuggestion[] }>(resp);
       const newSuggestions = (data.suggestions || []).map((s: PageSuggestion) => ({ ...s, built: false, builtContent: null }));
       setSuggestions(newSuggestions);
       setHasSuggestions(true);
 
-      const saveResp = await fetch(API_ENDPOINTS.db.buildSuggestions, {
+      const saveResp = await authenticatedFetch(API_ENDPOINTS.db.buildSuggestions, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ siteUrl, projectId, suggestions: newSuggestions }),
       });
-      const saveData = await saveResp.json();
+      const saveData = await parseJsonOrThrow<{ id?: string }>(saveResp).catch(() => ({ id: undefined }));
       if (saveData.id) setDbRecordId(saveData.id);
       else {
-        const reloadResp = await fetch(`${API_ENDPOINTS.db.buildSuggestions}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`);
-        const reloadData = await reloadResp.json();
+        const reloadResp = await authenticatedFetch(`${API_ENDPOINTS.db.buildSuggestions}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`);
+        const reloadData = await parseJsonOrThrow<{ id?: string }>(reloadResp).catch(() => ({ id: undefined }));
         if (reloadData.id) setDbRecordId(reloadData.id);
       }
       logActivity(siteUrl, 'build', 'suggestions', `Generated ${newSuggestions.length} new page suggestions`);
@@ -130,12 +137,12 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
     setLoading(false);
   }, [siteUrl]);
 
-  const buildPage = async (idx: number) => {
+  const buildPage = (idx: number) => {
     const suggestion = suggestions[idx];
     setBuildingIdx(idx);
-    try {
+    startTask(`build-page-${idx}`, 'build-page', `Building: ${suggestion.title.slice(0, 50)}`, async () => {
       const objectives = localStorage.getItem('site_objectives') || '';
-      const resp = await fetch(API_ENDPOINTS.build.createPage, {
+      const resp = await authenticatedFetch(API_ENDPOINTS.build.createPage, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -148,87 +155,105 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
           objectives,
         }),
       });
-      const data = await resp.json();
-      if (data.page) {
-        const updated = suggestions.map((s, i) =>
-          i === idx ? { ...s, built: true, builtContent: data.page } : s
-        );
-        setSuggestions(updated);
+      const data = await parseJsonOrThrow<{ page?: BuiltPage }>(resp);
+      if (!data.page) throw new Error('No page returned from AI');
 
-        if (dbRecordId) {
-          await fetch(API_ENDPOINTS.db.buildSuggestions, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: dbRecordId, projectId, suggestionIndex: idx, built: true, builtContent: data.page }),
-          });
-        }
-
-        await fetch(API_ENDPOINTS.db.buildResults, {
-          method: 'POST',
+      if (dbRecordId) {
+        await authenticatedFetch(API_ENDPOINTS.db.buildSuggestions, {
+          method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            siteUrl,
-            projectId,
-            pageUrl: `/${suggestion.slug}`,
-            buildType: 'new',
-            result: data.page,
-          }),
-        });
-        logActivity(siteUrl, 'build', 'page-built', `Built new page: ${suggestion.title} (/${suggestion.slug})`);
+          body: JSON.stringify({ id: dbRecordId, projectId, suggestionIndex: idx, built: true, builtContent: data.page }),
+        }).catch(() => {});
       }
-    } catch (err) {
-      console.error('Build failed:', err);
-    }
-    setBuildingIdx(null);
-  };
 
-  const buildFromWizard = async () => {
-    setWizardBuilding(true);
-    setWizardStep('building');
-    try {
-      const objectives = localStorage.getItem('site_objectives') || '';
-      const resp = await fetch(API_ENDPOINTS.build.createPage, {
+      await authenticatedFetch(API_ENDPOINTS.db.buildResults, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
-          title: wizardData.title || `${wizardData.purpose} Page`,
+          projectId,
+          pageUrl: `/${suggestion.slug}`,
+          buildType: 'new',
+          result: data.page,
+        }),
+      }).catch(() => {});
+
+      logActivity(siteUrl, 'build', 'page-built', `Built new page: ${suggestion.title} (/${suggestion.slug})`);
+      return { idx, page: data.page };
+    });
+  };
+
+  useEffect(() => {
+    for (const task of buildPageTasks) {
+      if (task.status === 'completed' && task.result) {
+        const { idx, page } = task.result as { idx: number; page: BuiltPage };
+        setSuggestions((prev) => prev.map((s, i) => i === idx ? { ...s, built: true, builtContent: page } : s));
+        setBuildingIdx(null);
+        clearTask(task.id);
+      } else if (task.status === 'failed') {
+        setBuildingIdx(null);
+        clearTask(task.id);
+      }
+    }
+  }, [buildPageTasks.map(t => t.status).join()]);
+
+  const buildFromWizard = () => {
+    setWizardBuilding(true);
+    setWizardStep('building');
+    const wizTitle = wizardData.title || `${wizardData.purpose} Page`;
+    startTask(`build-wizard-${projectId}`, 'build-wizard', `Building: ${wizTitle.slice(0, 50)}`, async () => {
+      const objectives = localStorage.getItem('site_objectives') || '';
+      const resp = await authenticatedFetch(API_ENDPOINTS.build.createPage, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          siteUrl,
+          title: wizTitle,
           purpose: wizardData.purpose,
           targetKeyword: wizardData.keywords,
           objectives,
           style: `Target audience: ${wizardData.audience}. Style: ${wizardData.style}. ${wizardData.additionalNotes}`,
         }),
       });
-      const data = await resp.json();
-      if (data.page) {
-        setWizardResult(data.page);
+      const data = await parseJsonOrThrow<{ page?: BuiltPage }>(resp);
+      if (!data.page) throw new Error('No page returned from AI');
 
-        await fetch(API_ENDPOINTS.db.buildResults, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            siteUrl,
-            projectId,
-            pageUrl: data.page.slug ? `/${data.page.slug}` : '',
-            buildType: 'wizard',
-            result: data.page,
-          }),
-        });
-        await loadSavedData();
-        logActivity(siteUrl, 'build', 'wizard-built', `Created custom page: ${data.page.title || wizardData.title}`);
-      }
-    } catch (err) {
-      console.error('Wizard build failed:', err);
-    }
-    setWizardBuilding(false);
+      await authenticatedFetch(API_ENDPOINTS.db.buildResults, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          siteUrl,
+          projectId,
+          pageUrl: data.page.slug ? `/${data.page.slug}` : '',
+          buildType: 'wizard',
+          result: data.page,
+        }),
+      }).catch(() => {});
+
+      logActivity(siteUrl, 'build', 'wizard-built', `Created custom page: ${data.page.title || wizTitle}`);
+      return { page: data.page };
+    });
   };
+
+  useEffect(() => {
+    if (buildWizardTask?.status === 'completed' && buildWizardTask.result) {
+      const { page } = buildWizardTask.result as { page: BuiltPage };
+      setWizardResult(page);
+      setWizardBuilding(false);
+      loadSavedData();
+      clearTask(`build-wizard-${projectId}`);
+    } else if (buildWizardTask?.status === 'failed') {
+      setWizardBuilding(false);
+      clearTask(`build-wizard-${projectId}`);
+    }
+  }, [buildWizardTask?.status]);
 
   const handleModifyPage = async (currentResult: BuiltPage) => {
     if (!modifyInput.trim() || isModifying) return;
     setIsModifying(true);
     setModifyError('');
     try {
-      const resp = await fetch(API_ENDPOINTS.build.modifyPage, {
+      const resp = await authenticatedFetch(API_ENDPOINTS.build.modifyPage, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -240,7 +265,7 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
           currentMeta: currentResult.metaDescription,
         }),
       });
-      const data = await resp.json();
+      const data = await parseJsonOrThrow<{ result?: Record<string, string>; error?: string }>(resp);
       if (data.error) {
         setModifyError(data.error);
       } else if (data.result) {
@@ -263,15 +288,15 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
           );
           setSuggestions(updated);
           if (dbRecordId) {
-            await fetch(API_ENDPOINTS.db.buildSuggestions, {
+            await authenticatedFetch(API_ENDPOINTS.db.buildSuggestions, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ id: dbRecordId, projectId, suggestionIndex: modifyTarget.idx, built: true, builtContent: updatedPage }),
-            });
+            }).catch(() => {});
           }
         }
 
-        await fetch(API_ENDPOINTS.db.buildResults, {
+        await authenticatedFetch(API_ENDPOINTS.db.buildResults, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

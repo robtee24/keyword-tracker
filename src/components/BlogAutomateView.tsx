@@ -3,6 +3,7 @@ import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
+import { parseJsonOrThrow } from '../utils/apiResponse';
 
 interface QueueItem {
   id: string;
@@ -54,7 +55,7 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
       const resp = await authenticatedFetch(
         `${API_ENDPOINTS.db.blogOpportunities}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`
       );
-      const data = await resp.json();
+      const data = await parseJsonOrThrow<{ opportunities?: Array<Record<string, string>> }>(resp);
       const queued = (data.opportunities || [])
         .filter((o: Record<string, string>) => o.status === 'queued')
         .map((o: Record<string, string>) => ({
@@ -85,7 +86,7 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ descriptions }),
       });
-      const data = await resp.json();
+      const data = await parseJsonOrThrow<{ images?: unknown[] }>(resp);
       if (data.images) {
         await authenticatedFetch(API_ENDPOINTS.db.blogArticles, {
           method: 'PUT',
@@ -106,7 +107,7 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ siteUrl, keywords: keywords.trim() }),
       });
-      const data = await resp.json();
+      const data = await parseJsonOrThrow<{ brief?: string }>(resp);
       return data.brief || '';
     });
   };
@@ -131,11 +132,10 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ siteUrl, projectId, title, targetKeyword: kw, description: title, objectives, source: 'writer' }),
       });
-      const data = await resp.json();
-      if (data.error) throw new Error(data.error);
+      const data = await parseJsonOrThrow<{ blog?: Record<string, unknown>; error?: string }>(resp);
       if (!data.blog) throw new Error('No article was returned.');
-      if (data.blog.articleId && data.blog.suggestedImages?.length > 0) {
-        autoGenerateImages(data.blog.articleId, data.blog.suggestedImages);
+      if (data.blog.articleId && (data.blog.suggestedImages as unknown[])?.length > 0) {
+        autoGenerateImages(data.blog.articleId as string, data.blog.suggestedImages as string[]);
       }
       return data.blog;
     });
@@ -163,7 +163,7 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ siteUrl, projectId, objectives, existingKeywords: [], existingTopics: existingTitles, seriesTheme: seriesTheme.trim(), count: remainingCount }),
       });
-      const data = await resp.json();
+      const data = await parseJsonOrThrow<{ opportunities?: Record<string, string>[] }>(resp);
       if (!data.opportunities) throw new Error('No topics generated');
       return data.opportunities;
     });
@@ -212,8 +212,7 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
           source: item.fromQueue ? 'queue' : 'series',
         }),
       });
-      const data = await resp.json();
-      if (data.error) throw new Error(data.error);
+      const data = await parseJsonOrThrow<{ blog?: Record<string, unknown>; error?: string }>(resp);
       if (!data.blog) throw new Error('No article was returned.');
       if (item.fromQueue) {
         try {
@@ -224,8 +223,8 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
           });
         } catch { /* best effort */ }
       }
-      if (data.blog.articleId && data.blog.suggestedImages?.length > 0) {
-        autoGenerateImages(data.blog.articleId, data.blog.suggestedImages);
+      if (data.blog.articleId && (data.blog.suggestedImages as unknown[])?.length > 0) {
+        autoGenerateImages(data.blog.articleId as string, data.blog.suggestedImages as string[]);
       }
       return { blog: data.blog, itemId: item.id, fromQueue: item.fromQueue, title: item.title };
     });

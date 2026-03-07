@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
+import { parseJsonOrThrow } from '../utils/apiResponse';
 
 interface ArticleImage {
   description: string;
@@ -18,6 +19,8 @@ interface Article {
   site_url: string;
   opportunity_id: string | null;
   title: string;
+  subtitle: string | null;
+  author: string | null;
   slug: string;
   meta_description: string;
   content: string;
@@ -61,7 +64,7 @@ function markdownToHtml(md: string): string {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
 
-    if (line.startsWith('<h') || line.startsWith('<table') || line.startsWith('<blockquote')) {
+    if (line.startsWith('<h') || line.startsWith('<table') || line.startsWith('<blockquote') || line.startsWith('<article') || line.startsWith('<aside') || line.startsWith('<section')) {
       if (inParagraph) { result.push('</p>'); inParagraph = false; }
       if (inList) { result.push(listType === 'ul' ? '</ul>' : '</ol>'); inList = false; }
       result.push(line);
@@ -139,7 +142,7 @@ function embedImagesInContent(content: string, images: ArticleImage[]): string {
     html = html.replace(/<!--\s*IMAGE_SLOT\s*-->/g, () => {
       if (imgIdx < validImages.length) {
         const img = validImages[imgIdx++];
-        return `<figure style="margin:2em 0"><img src="${img.imageUrl}" alt="${(img.caption || img.description || '').replace(/"/g, '&quot;')}" style="width:100%;border-radius:8px" />${img.caption ? `<figcaption style="text-align:center;font-size:0.875em;color:#666;margin-top:0.5em">${img.caption}</figcaption>` : ''}</figure>`;
+        return `<figure><img src="${img.imageUrl}" alt="${(img.caption || img.description || '').replace(/"/g, '&quot;')}" />${img.caption ? `<figcaption>${img.caption}</figcaption>` : ''}</figure>`;
       }
       return '';
     });
@@ -172,7 +175,7 @@ function embedImagesInContent(content: string, images: ArticleImage[]): string {
       const actualInsertPos = nextClosingTag !== -1 ? nextClosingTag + 4 : insertPos;
 
       const img = validImages[imgIdx++];
-      const figureHtml = `\n<figure style="margin:2em 0"><img src="${img.imageUrl}" alt="${(img.caption || img.description || '').replace(/"/g, '&quot;')}" style="width:100%;border-radius:8px" />${img.caption ? `<figcaption style="text-align:center;font-size:0.875em;color:#666;margin-top:0.5em">${img.caption}</figcaption>` : ''}</figure>\n`;
+      const figureHtml = `\n<figure><img src="${img.imageUrl}" alt="${(img.caption || img.description || '').replace(/"/g, '&quot;')}" />${img.caption ? `<figcaption>${img.caption}</figcaption>` : ''}</figure>\n`;
 
       html = html.slice(0, actualInsertPos) + figureHtml + html.slice(actualInsertPos);
       offset += figureHtml.length;
@@ -180,6 +183,14 @@ function embedImagesInContent(content: string, images: ArticleImage[]): string {
   }
 
   return html;
+}
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
 }
 
 export default function CompletedArticlesView({ siteUrl, projectId }: CompletedArticlesViewProps) {
@@ -191,6 +202,14 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
   const [imageError, setImageError] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
+  const [editingArticle, setEditingArticle] = useState<string | null>(null);
+  const [editDirty, setEditDirty] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editMeta, setEditMeta] = useState<{ title: string; subtitle: string; author: string; slug: string; meta_description: string }>({
+    title: '', subtitle: '', author: '', slug: '', meta_description: '',
+  });
+  const contentEditRef = useRef<HTMLDivElement>(null);
+
   const { startTask, getTask, getTasksByType, clearTask } = useBackgroundTasks();
   const modifyTasks = getTasksByType('blog-modify');
   const imageTasks = getTasksByType('blog-images');
@@ -199,7 +218,7 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
     setLoading(true);
     try {
       const resp = await authenticatedFetch(`${API_ENDPOINTS.db.blogArticles}?projectId=${projectId}`);
-      const data = await resp.json();
+      const data = await parseJsonOrThrow<{ articles: Article[] }>(resp);
       setArticles(data.articles || []);
     } catch { /* ignore */ }
     setLoading(false);
@@ -233,8 +252,7 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ articleId: article.id, currentContent: article.content, currentTitle: article.title, modifyPrompt: prompt }),
       });
-      const data = await resp.json();
-      if (data.error) throw new Error(data.error);
+      const data = await parseJsonOrThrow<{ article?: Article; error?: string }>(resp);
       if (!data.article) throw new Error('No result returned');
       logActivity(siteUrl, 'blog', 'article-modified', `Modified article: ${article.title}`);
       return { article: data.article, articleId: article.id };
@@ -281,8 +299,7 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ descriptions: article.suggested_images }),
       });
-      const data = await resp.json();
-      if (data.error) throw new Error(data.error);
+      const data = await parseJsonOrThrow<{ images?: ArticleImage[]; errors?: string[]; error?: string }>(resp);
 
       const validImages = (data.images || []).filter((img: ArticleImage) => img.imageUrl);
       if (validImages.length === 0) throw new Error('All images failed to generate. ' + (data.errors?.join('; ') || 'Check your OpenAI API key.'));
@@ -320,9 +337,12 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
   }, [imageTasks.map(t => t.status).join()]);
 
   const copyHtml = (article: Article) => {
-    const html = getRenderedHtml(article);
-    const fullHtml = `<h1>${article.title}</h1>\n${html}`;
-    navigator.clipboard.writeText(fullHtml);
+    const bodyHtml = getRenderedHtml(article);
+    const subtitle = article.subtitle || article.meta_description || '';
+    const author = article.author || 'Editorial Team';
+    const date = formatDate(article.created_at);
+    const header = `<h1>${article.title}</h1>\n${subtitle ? `<p class="subtitle">${subtitle}</p>\n` : ''}<p class="byline">By ${author} &middot; ${date}</p>\n`;
+    navigator.clipboard.writeText(header + bodyHtml);
     setCopyFeedback(article.id);
     setTimeout(() => setCopyFeedback(null), 2000);
   };
@@ -334,6 +354,55 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
       html = embedImagesInContent(html, validImages);
     }
     return html;
+  };
+
+  const startEditing = (article: Article) => {
+    setEditingArticle(article.id);
+    setEditDirty(false);
+    setEditMeta({
+      title: article.title,
+      subtitle: article.subtitle || '',
+      author: article.author || '',
+      slug: article.slug || '',
+      meta_description: article.meta_description || '',
+    });
+  };
+
+  const cancelEditing = () => {
+    if (editDirty && !confirm('Discard unsaved changes?')) return;
+    setEditingArticle(null);
+    setEditDirty(false);
+  };
+
+  const saveEditing = async (article: Article) => {
+    setEditSaving(true);
+    try {
+      const newContent = contentEditRef.current?.innerHTML || article.content;
+      const updates: Record<string, unknown> = {
+        id: article.id,
+        content: newContent,
+        previous_content: article.content,
+        title: editMeta.title,
+        subtitle: editMeta.subtitle,
+        author: editMeta.author,
+        slug: editMeta.slug,
+        meta_description: editMeta.meta_description,
+      };
+      const resp = await authenticatedFetch(API_ENDPOINTS.db.blogArticles, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      const data = await parseJsonOrThrow<{ article: Article }>(resp);
+      setArticles((prev) => prev.map((a) => (a.id === article.id ? data.article : a)));
+      setEditingArticle(null);
+      setEditDirty(false);
+      logActivity(siteUrl, 'blog', 'article-edited', `Edited article: ${editMeta.title}`);
+    } catch (err) {
+      console.error('Failed to save edits:', err);
+      alert('Failed to save changes. Please try again.');
+    }
+    setEditSaving(false);
   };
 
   const sourceLabel = (s: string) => s === 'idea' ? 'From Idea' : s === 'series' ? 'Series' : s === 'queue' ? 'From Queue' : 'Manual';
@@ -376,6 +445,7 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
             const hasImages = article.images && article.images.length > 0 && article.images.some((img) => img.imageUrl);
             const isExpanded = expandedArticle === article.id;
             const isModifying = modifyingArticle === article.id;
+            const isEditing = editingArticle === article.id;
             const hasSuggestedImages = article.suggested_images && article.suggested_images.length > 0;
             const isCopied = copyFeedback === article.id;
 
@@ -412,21 +482,75 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
 
                 {isExpanded && (
                   <div className="border-t border-apple-divider p-4 space-y-4">
-                    {/* Metadata */}
-                    <div className="flex flex-wrap gap-4 text-apple-xs text-apple-text-secondary">
-                      {article.slug && (
-                        <div>
-                          <span className="font-semibold">Slug: </span>
-                          <span>/{article.slug}</span>
+                    {/* Metadata row */}
+                    {!isEditing && (
+                      <div className="flex flex-wrap gap-4 text-apple-xs text-apple-text-secondary">
+                        {article.slug && (
+                          <div>
+                            <span className="font-semibold">Slug: </span>
+                            <span>/{article.slug}</span>
+                          </div>
+                        )}
+                        {article.meta_description && (
+                          <div>
+                            <span className="font-semibold">Meta: </span>
+                            <span className="italic">{article.meta_description}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Editable metadata fields */}
+                    {isEditing && (
+                      <div className="bg-blue-50/40 rounded-apple-sm border border-blue-100 p-4 space-y-3">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="sm:col-span-2">
+                            <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1">Title</label>
+                            <input
+                              value={editMeta.title}
+                              onChange={(e) => { setEditMeta({ ...editMeta, title: e.target.value }); setEditDirty(true); }}
+                              className="input text-apple-sm w-full font-semibold"
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1">Subtitle</label>
+                            <input
+                              value={editMeta.subtitle}
+                              onChange={(e) => { setEditMeta({ ...editMeta, subtitle: e.target.value }); setEditDirty(true); }}
+                              placeholder="Supporting line under the title"
+                              className="input text-apple-sm w-full"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1">Author</label>
+                            <input
+                              value={editMeta.author}
+                              onChange={(e) => { setEditMeta({ ...editMeta, author: e.target.value }); setEditDirty(true); }}
+                              placeholder="Editorial Team"
+                              className="input text-apple-sm w-full"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1">Slug</label>
+                            <input
+                              value={editMeta.slug}
+                              onChange={(e) => { setEditMeta({ ...editMeta, slug: e.target.value }); setEditDirty(true); }}
+                              className="input text-apple-sm w-full font-mono"
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1">Meta Description</label>
+                            <textarea
+                              value={editMeta.meta_description}
+                              onChange={(e) => { setEditMeta({ ...editMeta, meta_description: e.target.value }); setEditDirty(true); }}
+                              className="input text-apple-sm w-full min-h-[56px] resize-y"
+                              maxLength={160}
+                            />
+                            <span className="text-[10px] text-apple-text-tertiary">{editMeta.meta_description.length}/160</span>
+                          </div>
                         </div>
-                      )}
-                      {article.meta_description && (
-                        <div>
-                          <span className="font-semibold">Meta: </span>
-                          <span className="italic">{article.meta_description}</span>
-                        </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
 
                     {/* Generate images prompt */}
                     {!hasImages && hasSuggestedImages && (
@@ -458,77 +582,153 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
                       </div>
                     )}
 
-                    {/* Article content — rendered as HTML */}
+                    {/* Article header: title, subtitle, byline */}
+                    <div className="bg-white rounded-apple-sm border border-apple-divider px-8 pt-8 pb-6">
+                      <h2 className="text-2xl font-bold text-apple-text leading-tight tracking-tight">
+                        {article.title}
+                      </h2>
+                      {(article.subtitle || article.meta_description) && (
+                        <p className="text-base text-apple-text-secondary mt-2 leading-relaxed">
+                          {article.subtitle || article.meta_description}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2 mt-4 text-apple-xs text-apple-text-tertiary">
+                        <span className="font-medium text-apple-text-secondary">
+                          By {article.author || 'Editorial Team'}
+                        </span>
+                        <span>&middot;</span>
+                        <time dateTime={article.created_at}>
+                          {formatDate(article.created_at)}
+                        </time>
+                        <span>&middot;</span>
+                        <span>{article.word_count.toLocaleString()} words</span>
+                      </div>
+                      <div className="mt-4 h-px bg-apple-divider" />
+                    </div>
+
+                    {/* Article content — rendered as HTML with prose typography */}
                     <div
-                      className="prose prose-sm max-w-none bg-apple-fill-secondary rounded-apple-sm p-6
-                        prose-headings:text-apple-text prose-h2:text-lg prose-h2:font-semibold prose-h2:mt-6 prose-h2:mb-3
-                        prose-h3:text-base prose-h3:font-semibold prose-h3:mt-4 prose-h3:mb-2
-                        prose-p:text-apple-text prose-p:leading-relaxed prose-p:mb-3
-                        prose-li:text-apple-text prose-strong:text-apple-text
+                      ref={isEditing ? contentEditRef : undefined}
+                      contentEditable={isEditing}
+                      suppressContentEditableWarning
+                      onInput={() => { if (isEditing) setEditDirty(true); }}
+                      className={`prose prose-base max-w-none rounded-apple-sm px-8 py-6
+                        prose-headings:text-apple-text
+                        prose-h2:text-xl prose-h2:font-bold prose-h2:mt-10 prose-h2:mb-4 prose-h2:tracking-tight
+                        prose-h3:text-lg prose-h3:font-semibold prose-h3:mt-6 prose-h3:mb-3
+                        prose-p:text-apple-text prose-p:leading-relaxed prose-p:mb-4 prose-p:text-[15px]
+                        prose-li:text-apple-text prose-li:text-[15px] prose-li:leading-relaxed
+                        prose-strong:text-apple-text prose-strong:font-semibold
                         prose-a:text-apple-blue prose-a:no-underline hover:prose-a:underline
-                        prose-table:border-collapse prose-th:bg-gray-100 prose-th:p-2 prose-th:text-left prose-th:border prose-th:border-gray-200
-                        prose-td:p-2 prose-td:border prose-td:border-gray-200
-                        prose-blockquote:border-l-4 prose-blockquote:border-apple-blue prose-blockquote:pl-4 prose-blockquote:italic
-                        prose-img:rounded-lg prose-img:w-full
-                        prose-figcaption:text-center prose-figcaption:text-apple-text-tertiary prose-figcaption:text-sm"
-                      dangerouslySetInnerHTML={{ __html: getRenderedHtml(article) }}
+                        prose-table:border-collapse prose-table:w-full prose-table:text-[14px]
+                        prose-thead:bg-gray-50 prose-thead:border-b-2 prose-thead:border-gray-200
+                        prose-th:px-4 prose-th:py-3 prose-th:text-left prose-th:font-semibold prose-th:text-apple-text-secondary
+                        prose-td:px-4 prose-td:py-3 prose-td:border-b prose-td:border-gray-100
+                        prose-blockquote:border-l-4 prose-blockquote:border-apple-blue prose-blockquote:bg-blue-50/30 prose-blockquote:rounded-r-lg prose-blockquote:pl-5 prose-blockquote:pr-4 prose-blockquote:py-3 prose-blockquote:italic prose-blockquote:not-italic prose-blockquote:text-apple-text-secondary
+                        prose-img:rounded-xl prose-img:w-full prose-img:shadow-sm
+                        prose-figcaption:text-center prose-figcaption:text-apple-text-tertiary prose-figcaption:text-sm prose-figcaption:mt-2
+                        prose-hr:border-apple-divider
+                        ${isEditing
+                          ? 'bg-white border-2 border-apple-blue/30 focus:outline-none focus:border-apple-blue/60 min-h-[300px] cursor-text'
+                          : 'bg-apple-fill-secondary'
+                        }
+                        [&_aside]:bg-blue-50 [&_aside]:border [&_aside]:border-blue-100 [&_aside]:rounded-xl [&_aside]:p-5 [&_aside]:my-6 [&_aside]:text-[14px]
+                        [&_.faq-section]:bg-gray-50 [&_.faq-section]:rounded-xl [&_.faq-section]:p-6 [&_.faq-section]:my-8 [&_.faq-section]:border [&_.faq-section]:border-gray-100
+                        [&_figure]:my-8
+                      `}
+                      dangerouslySetInnerHTML={isEditing ? undefined : { __html: getRenderedHtml(article) }}
                     />
+
+                    {/* Unsaved changes indicator */}
+                    {isEditing && editDirty && (
+                      <div className="flex items-center gap-2 text-apple-xs text-amber-600 font-medium">
+                        <div className="w-2 h-2 rounded-full bg-amber-500" />
+                        Unsaved changes
+                      </div>
+                    )}
 
                     {/* Actions */}
                     <div className="flex items-center gap-2 pt-1 flex-wrap">
-                      <button
-                        onClick={() => {
-                          setModifyingArticle(isModifying ? null : article.id);
-                          setModifyPrompt('');
-                        }}
-                        className={`px-3 py-1.5 rounded-apple-sm text-apple-xs font-medium transition-colors ${
-                          isModifying
-                            ? 'bg-gray-200 text-gray-700'
-                            : 'border border-apple-blue text-apple-blue hover:bg-apple-blue/5'
-                        }`}
-                      >
-                        {isModifying ? 'Cancel' : 'Modify'}
-                      </button>
-                      {article.previous_content && (
-                        <button
-                          onClick={() => revertArticle(article)}
-                          className="px-3 py-1.5 rounded-apple-sm border border-amber-500 text-amber-600 text-apple-xs font-medium hover:bg-amber-50 transition-colors"
-                        >
-                          Revert
-                        </button>
+                      {isEditing ? (
+                        <>
+                          <button
+                            onClick={() => saveEditing(article)}
+                            disabled={editSaving || !editDirty}
+                            className="px-4 py-1.5 rounded-apple-sm bg-green-600 text-white text-apple-xs font-medium hover:bg-green-700 transition-colors disabled:opacity-50"
+                          >
+                            {editSaving ? (
+                              <span className="flex items-center gap-1.5">
+                                <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                Saving...
+                              </span>
+                            ) : 'Save Changes'}
+                          </button>
+                          <button
+                            onClick={cancelEditing}
+                            className="px-3 py-1.5 rounded-apple-sm border border-apple-border text-apple-text-secondary text-apple-xs font-medium hover:bg-apple-fill-secondary transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => startEditing(article)}
+                            disabled={!!modifyingArticle}
+                            className="px-3 py-1.5 rounded-apple-sm border border-indigo-400 text-indigo-600 text-apple-xs font-medium hover:bg-indigo-50 transition-colors disabled:opacity-50"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => {
+                              setModifyingArticle(isModifying ? null : article.id);
+                              setModifyPrompt('');
+                            }}
+                            className={`px-3 py-1.5 rounded-apple-sm text-apple-xs font-medium transition-colors ${
+                              isModifying
+                                ? 'bg-gray-200 text-gray-700'
+                                : 'border border-apple-blue text-apple-blue hover:bg-apple-blue/5'
+                            }`}
+                          >
+                            {isModifying ? 'Cancel' : 'Modify with AI'}
+                          </button>
+                          {article.previous_content && (
+                            <button
+                              onClick={() => revertArticle(article)}
+                              className="px-3 py-1.5 rounded-apple-sm border border-amber-500 text-amber-600 text-apple-xs font-medium hover:bg-amber-50 transition-colors"
+                            >
+                              Revert
+                            </button>
+                          )}
+                          <button
+                            onClick={() => copyHtml(article)}
+                            className="px-3 py-1.5 rounded-apple-sm bg-green-600 text-white text-apple-xs font-medium hover:bg-green-700 transition-colors"
+                          >
+                            {isCopied ? 'Copied!' : 'Copy HTML'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(article.content);
+                              setCopyFeedback(article.id + '-raw');
+                              setTimeout(() => setCopyFeedback(null), 2000);
+                            }}
+                            className="px-3 py-1.5 rounded-apple-sm border border-apple-border text-apple-text-secondary text-apple-xs font-medium hover:bg-apple-fill-secondary transition-colors"
+                          >
+                            {copyFeedback === article.id + '-raw' ? 'Copied!' : 'Copy Raw'}
+                          </button>
+                          <div className="flex-1" />
+                          <button
+                            onClick={() => deleteArticle(article.id)}
+                            className="px-3 py-1.5 rounded-apple-sm text-apple-red text-apple-xs font-medium hover:bg-red-50 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        </>
                       )}
-                      <button
-                        onClick={() => copyHtml(article)}
-                        className="px-3 py-1.5 rounded-apple-sm bg-green-600 text-white text-apple-xs font-medium hover:bg-green-700 transition-colors"
-                      >
-                        {isCopied ? 'Copied!' : 'Copy HTML'}
-                      </button>
-                      <button
-                        onClick={() => {
-                          const el = document.createElement('textarea');
-                          el.value = article.content;
-                          document.body.appendChild(el);
-                          el.select();
-                          document.execCommand('copy');
-                          document.body.removeChild(el);
-                          setCopyFeedback(article.id + '-raw');
-                          setTimeout(() => setCopyFeedback(null), 2000);
-                        }}
-                        className="px-3 py-1.5 rounded-apple-sm border border-apple-border text-apple-text-secondary text-apple-xs font-medium hover:bg-apple-fill-secondary transition-colors"
-                      >
-                        {copyFeedback === article.id + '-raw' ? 'Copied!' : 'Copy Raw'}
-                      </button>
-                      <div className="flex-1" />
-                      <button
-                        onClick={() => deleteArticle(article.id)}
-                        className="px-3 py-1.5 rounded-apple-sm text-apple-red text-apple-xs font-medium hover:bg-red-50 transition-colors"
-                      >
-                        Delete
-                      </button>
                     </div>
 
                     {/* Modify prompt */}
-                    {isModifying && (
+                    {isModifying && !isEditing && (
                       <div className="bg-blue-50/50 rounded-apple-sm border border-blue-100 p-4 space-y-3">
                         <label className="block text-apple-xs font-semibold text-blue-800">
                           Describe what you want changed

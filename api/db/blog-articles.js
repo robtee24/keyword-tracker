@@ -30,13 +30,15 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'PUT') {
-    const { id, content, previous_content, title, meta_description, images, status, word_count } = req.body || {};
+    const { id, content, previous_content, title, subtitle, author, meta_description, images, status, word_count } = req.body || {};
     if (!id) return res.status(400).json({ error: 'id is required' });
 
     const updates = { updated_at: new Date().toISOString() };
     if (content !== undefined) updates.content = content;
     if (previous_content !== undefined) updates.previous_content = previous_content;
     if (title !== undefined) updates.title = title;
+    if (subtitle !== undefined) updates.subtitle = subtitle;
+    if (author !== undefined) updates.author = author;
     if (meta_description !== undefined) updates.meta_description = meta_description;
     if (images !== undefined) updates.images = images;
     if (status !== undefined) updates.status = status;

@@ -231,6 +231,8 @@ REQUIREMENTS:
 Respond with ONLY valid JSON:
 {
   "title": "<SEO-optimized title with target keyword — specific, benefit-oriented>",
+  "subtitle": "<supporting subtitle under 120 chars — adds context, expands on the title's promise, entices the reader>",
+  "author": "<author name — infer from the site (founder, team name) or use 'Editorial Team'>",
   "metaDescription": "<compelling meta description under 155 chars — keyword + benefit + action>",
   "slug": "<url-friendly-slug-with-keyword>",
   "content": "<full blog post in clean, semantic HTML — see HTML FORMAT RULES below>",
@@ -240,14 +242,17 @@ Respond with ONLY valid JSON:
 }
 
 HTML FORMAT RULES for the "content" field:
+- Wrap all content in a single <article> tag for semantic structure
 - Use semantic HTML tags: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <table>, <thead>, <tbody>, <tr>, <th>, <td>, <blockquote>, <strong>, <em>, <a>
-- Do NOT include <h1> — the title is rendered separately
+- Do NOT include <h1> — the title is rendered separately above the content
 - Do NOT include <html>, <head>, <body>, or <style> wrapper tags
 - Do NOT use markdown syntax — output pure HTML only
 - Every paragraph must be wrapped in <p> tags
 - Lists must use proper <ul>/<ol> with <li> tags
 - Tables must use <table> with <thead>/<tbody>/<tr>/<th>/<td>
 - Use <strong> for bold, <em> for italic
+- Use <aside> for key takeaway boxes, callouts, or mid-article CTAs
+- Wrap the FAQ section with <section class="faq-section"> for future schema support
 - Include <!-- IMAGE_SLOT --> comments where images should be inserted (after key H2 sections)
 - The output must be ready to paste directly into any CMS (WordPress, Ghost, Webflow, etc.)`;
 
@@ -283,6 +288,8 @@ HTML FORMAT RULES for the "content" field:
           site_url: siteUrl,
           opportunity_id: opportunityId || null,
           title: blog.title || title,
+          subtitle: blog.subtitle || '',
+          author: blog.author || 'Editorial Team',
           slug: blog.slug || '',
           meta_description: blog.metaDescription || '',
           content: blog.content || '',

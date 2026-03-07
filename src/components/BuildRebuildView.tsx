@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { API_ENDPOINTS } from '../config/api';
+import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
+import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
+import { parseJsonOrThrow } from '../utils/apiResponse';
 
 interface RebuildChange {
   area: string;
@@ -91,6 +94,10 @@ export default function BuildRebuildView({ siteUrl, projectId }: BuildRebuildVie
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const { startTask, getTask, clearTask } = useBackgroundTasks();
+  const rebuildTaskId = `build-rebuild-${projectId}`;
+  const rebuildTask = getTask(rebuildTaskId);
+
   const isBuilding = buildStep !== 'idle' && buildStep !== 'done' && buildStep !== 'error';
 
   useEffect(() => {
@@ -108,8 +115,8 @@ export default function BuildRebuildView({ siteUrl, projectId }: BuildRebuildVie
     (async () => {
       setLoadingSitemap(true);
       try {
-        const resp = await fetch(`${API_ENDPOINTS.audit.sitemap}?siteUrl=${encodeURIComponent(siteUrl)}`);
-        const data = await resp.json();
+        const resp = await authenticatedFetch(`${API_ENDPOINTS.audit.sitemap}?siteUrl=${encodeURIComponent(siteUrl)}`);
+        const data = await parseJsonOrThrow<{ urls?: string[] }>(resp);
         setSitemapUrls(data.urls || []);
       } catch { /* ignore */ }
       setLoadingSitemap(false);
@@ -119,8 +126,8 @@ export default function BuildRebuildView({ siteUrl, projectId }: BuildRebuildVie
   const loadSavedBuilds = useCallback(async () => {
     setLoadingSaved(true);
     try {
-      const resp = await fetch(`${API_ENDPOINTS.db.buildResults}?siteUrl=${encodeURIComponent(siteUrl)}&buildType=rebuild&projectId=${projectId}`);
-      const data = await resp.json();
+      const resp = await authenticatedFetch(`${API_ENDPOINTS.db.buildResults}?siteUrl=${encodeURIComponent(siteUrl)}&buildType=rebuild&projectId=${projectId}`);
+      const data = await parseJsonOrThrow<{ results?: SavedBuild[] }>(resp);
       setSavedBuilds(data.results || []);
     } catch { /* ignore */ }
     setLoadingSaved(false);
@@ -159,92 +166,90 @@ export default function BuildRebuildView({ siteUrl, projectId }: BuildRebuildVie
     });
   };
 
-  const handleBuild = async () => {
+  const handleBuild = () => {
     if (!isValidUrl || isBuilding) return;
     const pageUrl = urlInput.trim();
+    const improvements = IMPROVEMENT_OPTIONS.filter(o => selectedImprovements.has(o.id)).map(o => o.label);
 
     setCrawlStats(null);
     setBuildError('');
     setBuildStep('crawling');
 
-    try {
-      const crawlResp = await fetch(API_ENDPOINTS.build.crawl, {
+    startTask(rebuildTaskId, 'build-rebuild', `Rebuilding: ${pageUrl.replace(/^https?:\/\/[^/]+/, '').slice(0, 40)}`, async () => {
+      const crawlResp = await authenticatedFetch(API_ENDPOINTS.build.crawl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pageUrl, siteUrl }),
       });
-      const crawlData = await crawlResp.json();
+      const crawlData = await parseJsonOrThrow<{ crawl?: Record<string, unknown>; homePageStyles?: string; error?: string }>(crawlResp);
 
-      if (crawlData.error) {
-        setBuildError(crawlData.error);
-        setBuildStep('error');
-        return;
-      }
+      if (crawlData.error) throw new Error(crawlData.error);
 
-      const crawl = crawlData.crawl;
-      setCrawlStats({
-        wordCount: crawl.wordCount || 0,
-        headings: crawl.headings?.length || 0,
-        images: crawl.images?.length || 0,
-        imagesMissingAlt: crawl.images?.filter((i: { alt: string }) => !i.alt).length || 0,
-        internalLinks: crawl.internalLinks?.length || 0,
-        externalLinks: crawl.externalLinks?.length || 0,
-        navLinks: crawl.navLinks?.length || 0,
-        forms: crawl.forms?.length || 0,
-        schemas: crawl.existingSchema?.length || 0,
-        htmlSizeKb: Math.round((crawl.htmlSize || 0) / 1024),
-        fetchTimeMs: crawl.fetchTimeMs || 0,
-        title: crawl.title || '',
-        metaDescription: crawl.metaDescription || '',
-      });
-
+      const crawl = crawlData.crawl as Record<string, unknown>;
+      const stats: CrawlStats = {
+        wordCount: (crawl.wordCount as number) || 0,
+        headings: (crawl.headings as unknown[])?.length || 0,
+        images: (crawl.images as unknown[])?.length || 0,
+        imagesMissingAlt: (crawl.images as Array<{ alt: string }>)?.filter(i => !i.alt).length || 0,
+        internalLinks: (crawl.internalLinks as unknown[])?.length || 0,
+        externalLinks: (crawl.externalLinks as unknown[])?.length || 0,
+        navLinks: (crawl.navLinks as unknown[])?.length || 0,
+        forms: (crawl.forms as unknown[])?.length || 0,
+        schemas: (crawl.existingSchema as unknown[])?.length || 0,
+        htmlSizeKb: Math.round(((crawl.htmlSize as number) || 0) / 1024),
+        fetchTimeMs: (crawl.fetchTimeMs as number) || 0,
+        title: (crawl.title as string) || '',
+        metaDescription: (crawl.metaDescription as string) || '',
+      };
+      setCrawlStats(stats);
       setBuildStep('generating');
+
       const objectives = localStorage.getItem('site_objectives') || '';
-      const rebuildResp = await fetch(API_ENDPOINTS.build.rebuild, {
+      const rebuildResp = await authenticatedFetch(API_ENDPOINTS.build.rebuild, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
           pageUrl,
-          improvements: IMPROVEMENT_OPTIONS.filter(o => selectedImprovements.has(o.id)).map(o => o.label),
+          improvements,
           objectives,
           crawlData: crawl,
           homePageStyles: crawlData.homePageStyles,
         }),
       });
-      const rebuildData = await rebuildResp.json();
+      const rebuildData = await parseJsonOrThrow<{ result?: RebuildResult; error?: string }>(rebuildResp);
 
-      if (rebuildData.error) {
-        setBuildError(rebuildData.error);
-        setBuildStep('error');
-        return;
-      }
+      if (rebuildData.error) throw new Error(rebuildData.error);
+      if (!rebuildData.result) throw new Error('No result returned from AI');
 
-      if (rebuildData.result) {
-        setBuildStep('saving');
-        await fetch(API_ENDPOINTS.db.buildResults, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ siteUrl, projectId, pageUrl, buildType: 'rebuild', result: rebuildData.result }),
-        });
-        await loadSavedBuilds();
-        logActivity(siteUrl, 'build', 'rebuild', `Rebuilt page: ${pageUrl} — ${rebuildData.result.recommendations?.length || 0} improvements`);
-        setBuildStep('done');
-        setExpandedBuildIdx(0);
-      } else {
-        setBuildError('No result returned from AI');
-        setBuildStep('error');
-      }
-    } catch (err) {
-      console.error('Build failed:', err);
-      setBuildError(err instanceof Error ? err.message : 'Build failed');
-      setBuildStep('error');
-    }
+      setBuildStep('saving');
+      await authenticatedFetch(API_ENDPOINTS.db.buildResults, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl, projectId, pageUrl, buildType: 'rebuild', result: rebuildData.result }),
+      }).catch(() => {});
+
+      logActivity(siteUrl, 'build', 'rebuild', `Rebuilt page: ${pageUrl} — ${rebuildData.result.recommendations?.length || 0} improvements`);
+      return { result: rebuildData.result, pageUrl };
+    });
   };
+
+  useEffect(() => {
+    if (rebuildTask?.status === 'completed') {
+      setBuildStep('done');
+      loadSavedBuilds();
+      setExpandedBuildIdx(0);
+      clearTask(rebuildTaskId);
+    } else if (rebuildTask?.status === 'failed') {
+      setBuildError(rebuildTask.error || 'Build failed');
+      setBuildStep('error');
+      clearTask(rebuildTaskId);
+    }
+  }, [rebuildTask?.status]);
 
   const addToTasklist = async (change: RebuildChange, pageUrl: string) => {
     try {
-      await fetch(API_ENDPOINTS.db.completedTasks, {
+      await authenticatedFetch(API_ENDPOINTS.db.completedTasks, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -268,7 +273,7 @@ export default function BuildRebuildView({ siteUrl, projectId }: BuildRebuildVie
     setIsModifying(true);
     setModifyError('');
     try {
-      const resp = await fetch(API_ENDPOINTS.build.modifyPage, {
+      const resp = await authenticatedFetch(API_ENDPOINTS.build.modifyPage, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -280,17 +285,17 @@ export default function BuildRebuildView({ siteUrl, projectId }: BuildRebuildVie
           currentMeta: build.result.metaDescription,
         }),
       });
-      const data = await resp.json();
+      const data = await parseJsonOrThrow<{ result?: Record<string, string>; error?: string }>(resp);
       if (data.error) {
         setModifyError(data.error);
       } else if (data.result) {
         setModifyInput('');
         setCardModify(null);
-        await fetch(API_ENDPOINTS.db.buildResults, {
+        await authenticatedFetch(API_ENDPOINTS.db.buildResults, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ siteUrl, projectId, pageUrl: build.page_url, buildType: 'rebuild', result: data.result }),
-        });
+        }).catch(() => {});
         await loadSavedBuilds();
         setExpandedBuildIdx(0);
         logActivity(siteUrl, 'build', 'modify', `Modified page: ${build.page_url}`);
