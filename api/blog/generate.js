@@ -155,7 +155,13 @@ PAGE CRO / CONVERSION STRUCTURE (from page-cro skill)
 - Scanability: someone skimming should get the main message from headings + bold text alone
 - Every section should build toward the conversion action
 - Use "how it works" sections to reduce perceived complexity (3-4 steps)
-- End with risk reversal or next-step clarity`;
+- End with risk reversal or next-step clarity
+
+═══════════════════════════════════════════════════
+HARD RULES — MUST FOLLOW
+═══════════════════════════════════════════════════
+- NEVER mention a competitor in a positive or neutral-positive light. Do not praise, recommend, or casually reference competitor products/brands unless the article is explicitly a comparison piece (e.g., "X vs Y", "alternatives to Z"). Even in comparisons, always position the site's own offering as the superior or preferred choice.
+- ALWAYS include real internal links in the HTML content. When the site's pages are provided, link to relevant pages using natural anchor text within the body copy. Place internal links where they genuinely add value for the reader (e.g., linking a mention of "pricing" to the pricing page, or a related concept to a relevant blog post). Aim for 3-8 internal links per article, distributed throughout — not clustered in one section.`;
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -171,10 +177,26 @@ export default async function handler(req, res) {
 
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
 
+  let sitePages = [];
+  try {
+    const base = siteUrl.endsWith('/') ? siteUrl : siteUrl + '/';
+    for (const path of ['sitemap.xml', 'sitemap_index.xml', 'wp-sitemap.xml']) {
+      const sitemapResp = await fetch(`${base}${path}`, {
+        headers: { 'User-Agent': 'SEAUTO-AuditBot/1.0' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!sitemapResp.ok) continue;
+      const xml = await sitemapResp.text();
+      const locs = [...xml.matchAll(/<loc>\s*(.*?)\s*<\/loc>/gi)].map(m => m[1]);
+      if (locs.length > 0) { sitePages = locs.slice(0, 100); break; }
+    }
+  } catch { /* non-critical — article will still generate without internal links */ }
+
   const userMessage = `Write a complete, publish-ready blog post that is optimized for BOTH traditional search engines AND AI search engines, while being genuinely compelling to human readers.
 
 WEBSITE: ${siteUrl}
 BUSINESS OBJECTIVES: ${objectives || 'Infer from the website — analyze what the business does and who their customers are'}
+${sitePages.length > 0 ? `\nEXISTING SITE PAGES (use these for internal links in the HTML content — link naturally where relevant):\n${sitePages.join('\n')}\n` : '\nNo sitemap found — suggest internal link targets in the internalLinkSuggestions array instead.\n'}
 
 BLOG POST DETAILS:
 Title: ${title}
@@ -196,10 +218,16 @@ REQUIREMENTS:
    - Target keyword in: title, first paragraph, 2+ H2 headings, conclusion, slug
    - Related keywords distributed naturally throughout (no stuffing)
    - Meta description under 155 chars with keyword + compelling benefit
-   - Suggest internal links the site should create
+   - INTERNAL LINKS: embed 3-8 internal <a href="..."> links directly in the HTML content, linking to relevant pages from the EXISTING SITE PAGES list above. Use descriptive, natural anchor text (not "click here"). Distribute links throughout the article body, not just at the end. Additionally, list any pages that should link BACK to this article in the internalLinkSuggestions array.
    - Optimize at least 2 sections for featured snippet capture (concise 40-60 word answers)
 
-3. AI SEARCH OPTIMIZATION:
+3. COMPETITOR MENTIONS (HARD RULE):
+   - Do NOT mention any competitor product or brand in a positive or neutral way
+   - If a competitor must be referenced for context, frame the site's offering as the better solution
+   - The only exception is explicit comparison articles — and even then, clearly favor the site's product
+   - Generic industry terms are fine (e.g., "CRM software") — just don't name-drop specific rival brands positively
+
+4. AI SEARCH OPTIMIZATION:
    - Lead each section with a direct, self-contained answer that works as a standalone citation
    - Include a clear definition in the first paragraph (for "What is" queries)
    - Add 3-5 specific statistics with attributed sources and dates
@@ -207,7 +235,7 @@ REQUIREMENTS:
    - Structure content so AI can extract individual passages without needing context
    - Add an FAQ section at the end with 4-6 natural-language questions and concise answers
 
-4. COPYWRITING & PSYCHOLOGY:
+5. COPYWRITING & PSYCHOLOGY:
    - Hook readers in the first sentence with a specific problem, surprising stat, or counterintuitive insight
    - Use rhetorical questions to engage ("Ever wondered why...?")
    - Frame benefits using loss aversion where appropriate ("Without X, you risk...")
@@ -216,14 +244,14 @@ REQUIREMENTS:
    - Use the contrast effect: show before/after or problem/solution vividly
    - Every paragraph earns its place — zero filler content
 
-5. CONVERSION ELEMENTS:
+6. CONVERSION ELEMENTS:
    - Clear value proposition by paragraph 2 — what will the reader gain?
    - Mid-article CTA or key takeaway box
    - Actionable takeaways in every section — not just theory, but "here's what to do"
    - End with a compelling conclusion that summarizes key insights and provides a clear next step
    - Address at least one common objection or misconception
 
-6. IMAGES:
+7. IMAGES:
    - Suggest 3-5 images with detailed descriptions for AI generation
    - Each description should specify: subject, composition, style, colors, mood
    - Images should support the content (diagrams, infographics, illustrations), not just be decorative
@@ -238,7 +266,7 @@ Respond with ONLY valid JSON:
   "content": "<full blog post in clean, semantic HTML — see HTML FORMAT RULES below>",
   "wordCount": <number>,
   "suggestedImages": [{"description": "<detailed image description for AI generation — subject, composition, style, colors, mood — NO text/words in the image>", "caption": "<short caption to display below the image in the article>", "placement": "<after which H2 section heading this image should appear>"}],
-  "internalLinkSuggestions": ["<pages on the site this post should link to, with anchor text suggestions>"]
+  "internalLinkSuggestions": ["<other pages on the site that should link TO this article, with suggested anchor text — these are backlink opportunities, since the article itself already contains inline links>"]
 }
 
 HTML FORMAT RULES for the "content" field:

@@ -46,6 +46,7 @@ import { BackgroundTaskProvider } from './contexts/BackgroundTaskContext';
 import BackgroundTaskIndicator from './components/BackgroundTaskIndicator';
 import UpgradePrompt from './components/UpgradePrompt';
 import SettingsView from './components/SettingsView';
+import BrandView from './components/BrandView';
 import GscPropertyDropdown from './components/GscPropertyDropdown';
 import GscRequiredModal from './components/GscRequiredModal';
 import type { DateRange } from './types';
@@ -101,6 +102,7 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   'build-new': 'Pages › Create Page',
   'tasks': 'Tasks',
   'activity': 'Activity Log',
+  'brand': 'Brand',
 };
 
 type AdAuditType = 'google' | 'meta' | 'linkedin' | 'reddit' | 'tiktok' | 'budget' | 'performance' | 'creative' | 'attribution' | 'structure';
@@ -630,6 +632,13 @@ function App() {
               gscProperty={activeProject.gsc_property}
               onGscPropertySelected={(prop) => handleUpdateProject(activeProject.id, { gsc_property: prop })}
               onConnectionChange={handleConnectionChange}
+            />
+          )}
+
+          {currentView === 'brand' && activeProject && (
+            <BrandView
+              siteUrl={getSiteUrl(activeProject)}
+              projectId={activeProject.id}
             />
           )}
 

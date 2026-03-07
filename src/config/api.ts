@@ -76,6 +76,10 @@ export const API_ENDPOINTS = {
     generateVideo: `${API_BASE_URL}/api/social/generate-video`,
     generateImage: `${API_BASE_URL}/api/social/generate-image`,
   },
+  brand: {
+    crawl: `${API_BASE_URL}/api/brand/crawl`,
+    guidelines: `${API_BASE_URL}/api/brand/guidelines`,
+  },
   build: {
     crawl: `${API_BASE_URL}/api/build/crawl`,
     rebuild: `${API_BASE_URL}/api/build/rebuild`,
@@ -107,5 +111,6 @@ export const API_ENDPOINTS = {
     socialAudits: `${API_BASE_URL}/api/db/social-audits`,
     socialIdeas: `${API_BASE_URL}/api/db/social-ideas`,
     socialPosts: `${API_BASE_URL}/api/db/social-posts`,
+    brand: `${API_BASE_URL}/api/db/brand`,
   },
 };
