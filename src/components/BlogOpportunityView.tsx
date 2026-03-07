@@ -130,17 +130,47 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
 
   const batches = useMemo(() => groupIntoBatches(opportunities), [opportunities]);
 
+  const localStorageKey = `blog_opps_backup_${projectId}`;
+
   const loadOpportunities = useCallback(async () => {
     setLoading(true);
     try {
       const resp = await authenticatedFetch(`${API_ENDPOINTS.db.blogOpportunities}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`);
       const data = await resp.json();
-      setOpportunities((data.opportunities || []).map((o: Record<string, unknown>) => normalizeOpp(o)));
+      const dbOpps = (data.opportunities || []).map((o: Record<string, unknown>) => normalizeOpp(o));
+
+      const backupRaw = localStorage.getItem(localStorageKey);
+      if (backupRaw) {
+        try {
+          const backup: Opportunity[] = JSON.parse(backupRaw);
+          const dbTitles = new Set(dbOpps.map((o: Opportunity) => o.title));
+          const unsaved = backup.filter((o: Opportunity) => !dbTitles.has(o.title));
+          if (unsaved.length > 0) {
+            setOpportunities([...dbOpps, ...unsaved]);
+            setWarning(`${unsaved.length} idea(s) were not saved to the database and are loaded from local backup. Generate again after fixing the database to persist them.`);
+          } else {
+            localStorage.removeItem(localStorageKey);
+            setOpportunities(dbOpps);
+          }
+        } catch {
+          localStorage.removeItem(localStorageKey);
+          setOpportunities(dbOpps);
+        }
+      } else {
+        setOpportunities(dbOpps);
+      }
     } catch (err) {
       console.error('[BlogOpps] Load error:', err);
+      const backupRaw = localStorage.getItem(localStorageKey);
+      if (backupRaw) {
+        try {
+          setOpportunities(JSON.parse(backupRaw));
+          setWarning('Loaded ideas from local backup (database unavailable).');
+        } catch { /* ignore */ }
+      }
     }
     setLoading(false);
-  }, [siteUrl, projectId]);
+  }, [siteUrl, projectId, localStorageKey]);
 
   useEffect(() => {
     loadOpportunities();
@@ -171,12 +201,32 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
         setError(data.error || `Server error (${resp.status})`);
       } else if (data.opportunities && data.opportunities.length > 0) {
         const normalized = data.opportunities.map((o: Record<string, unknown>) => normalizeOpp(o));
-        setOpportunities((prev) => [...normalized, ...prev]);
+        setOpportunities((prev) => {
+          const merged = [...normalized, ...prev];
+          localStorage.setItem(localStorageKey, JSON.stringify(merged));
+          return merged;
+        });
         if (data.batchId) {
           setExpandedBatch(data.batchId);
         }
         if (data.warning) {
           setWarning(data.warning);
+        } else {
+          setTimeout(async () => {
+            try {
+              const verifyResp = await authenticatedFetch(
+                `${API_ENDPOINTS.db.blogOpportunities}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`
+              );
+              const verifyData = await verifyResp.json();
+              const dbCount = (verifyData.opportunities || []).length;
+              const expectedMinimum = normalized.length;
+              if (dbCount < expectedMinimum) {
+                setWarning(`Ideas may not have saved. ${dbCount} found in database but ${expectedMinimum} were just generated. Ideas are backed up locally.`);
+              } else {
+                localStorage.removeItem(localStorageKey);
+              }
+            } catch { /* verification failed, keep backup */ }
+          }, 2000);
         }
         logActivity(siteUrl, 'blog', 'opportunities', 'Generated blog topic opportunities');
       } else {
