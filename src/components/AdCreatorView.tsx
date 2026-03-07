@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
+import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 
 type AdPlatform = 'meta' | 'tiktok' | 'linkedin' | 'x';
 type CreativeType = 'static' | 'video';
@@ -258,83 +259,72 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
   const [landingPageUrl, setLandingPageUrl] = useState(siteUrl);
   const [additionalContext, setAdditionalContext] = useState('');
   const [creativeType, setCreativeType] = useState<CreativeType>('static');
-  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GeneratedAd | null>(null);
   const [activeVariation, setActiveVariation] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<Record<number, string>>({});
-  const [generatingImage, setGeneratingImage] = useState<number | null>(null);
 
-  const handleGenerate = async () => {
-    setGenerating(true);
+  const { startTask, getTask, getTasksByType, clearTask } = useBackgroundTasks();
+  const adTaskId = `ad-generate-${platform}-${projectId}`;
+  const adTask = getTask(adTaskId);
+  const generating = adTask?.status === 'running';
+  const adImageTasks = getTasksByType(`ad-image-${platform}`);
+
+  useEffect(() => {
+    if (adTask?.status === 'completed' && adTask.result) {
+      setResult(adTask.result as GeneratedAd);
+      setActiveVariation(0);
+      clearTask(adTaskId);
+    } else if (adTask?.status === 'failed') {
+      setError(adTask.error || 'Failed to generate ads');
+      clearTask(adTaskId);
+    }
+  }, [adTask?.status]);
+
+  useEffect(() => {
+    for (const task of adImageTasks) {
+      if (task.status === 'completed' && task.result) {
+        const { variationIndex, imageUrl } = task.result as { variationIndex: number; imageUrl: string };
+        setGeneratedImages((prev) => ({ ...prev, [variationIndex]: imageUrl }));
+        clearTask(task.id);
+      } else if (task.status === 'failed') {
+        setError(task.error || 'Image generation failed');
+        clearTask(task.id);
+      }
+    }
+  }, [adImageTasks.map(t => t.status).join()]);
+
+  const handleGenerate = () => {
     setError(null);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 100000);
-    try {
+    startTask(adTaskId, 'ad-generate', `${platform} ad copy`, async () => {
       const objectives = localStorage.getItem(`kt_objectives_${projectId}`) || '';
       const resp = await authenticatedFetch(API_ENDPOINTS.advertising.generateAd, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          platform,
-          siteUrl,
-          objective: objective || objectives,
-          targetAudience,
-          valueProposition,
-          creativeType,
-          landingPageUrl,
-          additionalContext,
-        }),
-        signal: controller.signal,
+        body: JSON.stringify({ platform, siteUrl, objective: objective || objectives, targetAudience, valueProposition, creativeType, landingPageUrl, additionalContext }),
       });
       const data = await resp.json();
-      if (!resp.ok) {
-        setError(data.error || `Server error (${resp.status})`);
-      } else {
-        setResult(data);
-        setActiveVariation(0);
-      }
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        setError('Request timed out. Please try again.');
-      } else {
-        setError(err instanceof Error ? err.message : 'Failed to generate ads');
-      }
-    } finally {
-      clearTimeout(timeout);
-      setGenerating(false);
-    }
+      if (!resp.ok) throw new Error(data.error || `Server error (${resp.status})`);
+      return data;
+    });
   };
 
-  const handleGenerateImage = async (variationIndex: number) => {
+  const handleGenerateImage = (variationIndex: number) => {
     if (!result) return;
     const variation = result.variations[variationIndex];
     if (!variation?.imageDescription) return;
-
-    setGeneratingImage(variationIndex);
-    try {
-      const firstImageSpec = Object.values(result.platformSpec.imageSpecs)[0] || '1080x1080';
+    const firstImageSpec = Object.values(result.platformSpec.imageSpecs)[0] || '1080x1080';
+    startTask(`ad-image-${platform}-${variationIndex}`, `ad-image-${platform}`, `${platform} ad image #${variationIndex + 1}`, async () => {
       const resp = await authenticatedFetch(API_ENDPOINTS.advertising.generateImage, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageDescription: variation.imageDescription,
-          textOverlay: variation.textOverlay || null,
-          platform,
-          dimensions: firstImageSpec,
-        }),
+        body: JSON.stringify({ imageDescription: variation.imageDescription, textOverlay: variation.textOverlay || null, platform, dimensions: firstImageSpec }),
       });
       const data = await resp.json();
-      if (data.imageUrl) {
-        setGeneratedImages((prev) => ({ ...prev, [variationIndex]: data.imageUrl }));
-      } else {
-        setError(data.error || 'Failed to generate image');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Image generation failed');
-    }
-    setGeneratingImage(null);
+      if (!data.imageUrl) throw new Error(data.error || 'Failed to generate image');
+      return { variationIndex, imageUrl: data.imageUrl };
+    });
   };
 
   const copyToClipboard = (text: string) => {
@@ -620,10 +610,10 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
                       {!generatedImages[activeVariation] && (
                         <button
                           onClick={() => handleGenerateImage(activeVariation)}
-                          disabled={generatingImage !== null}
+                          disabled={getTask(`ad-image-${platform}-${activeVariation}`)?.status === 'running'}
                           className="px-3 py-1.5 rounded-apple-sm bg-gradient-to-r from-purple-600 to-pink-600 text-white text-apple-xs font-medium hover:from-purple-700 hover:to-pink-700 transition-all disabled:opacity-50"
                         >
-                          {generatingImage === activeVariation ? (
+                          {getTask(`ad-image-${platform}-${activeVariation}`)?.status === 'running' ? (
                             <span className="flex items-center gap-1.5">
                               <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
                               Generating...
@@ -658,10 +648,10 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
                           </a>
                           <button
                             onClick={() => handleGenerateImage(activeVariation)}
-                            disabled={generatingImage !== null}
+                            disabled={getTask(`ad-image-${platform}-${activeVariation}`)?.status === 'running'}
                             className="px-3 py-1.5 rounded-apple-sm border border-apple-border text-apple-xs font-medium text-apple-text-secondary hover:bg-apple-fill-secondary transition-colors disabled:opacity-50"
                           >
-                            {generatingImage === activeVariation ? 'Regenerating...' : 'Regenerate'}
+                            {getTask(`ad-image-${platform}-${activeVariation}`)?.status === 'running' ? 'Regenerating...' : 'Regenerate'}
                           </button>
                         </div>
                       </div>

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
+import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 
 type AdAuditType = 'google' | 'meta' | 'linkedin' | 'reddit' | 'tiktok' | 'budget' | 'performance' | 'creative' | 'attribution' | 'structure';
 
@@ -56,6 +57,9 @@ const RECS_PER_PAGE = 30;
 export default function AdAuditView({ siteUrl, projectId, adAuditType, title, description, isVisible }: AdAuditViewProps) {
   const [result, setResult] = useState<AuditResult | null>(null);
   const [isRunning, setIsRunning] = useState(false);
+  const { startTask, clearTask } = useBackgroundTasks();
+  const adAuditIndicatorId = `ad-audit-${adAuditType}-${projectId}`;
+  const adAuditResolveRef = useRef<(() => void) | null>(null);
   const [expandedRecs, setExpandedRecs] = useState<Set<string>>(new Set());
   const [checkedRecs, setCheckedRecs] = useState<Set<string>>(new Set());
   const [doneRecs, setDoneRecs] = useState<Set<string>>(new Set());
@@ -123,6 +127,7 @@ export default function AdAuditView({ siteUrl, projectId, adAuditType, title, de
   const runAudit = async () => {
     if (!uploadedFile) return;
     setIsRunning(true);
+    startTask(adAuditIndicatorId, 'ad-audit', `${title}`, () => new Promise<void>((resolve) => { adAuditResolveRef.current = resolve; }));
     try {
       const fileContent = await uploadedFile.text();
       const res = await authenticatedFetch(API_ENDPOINTS.audit.runAdAudit, {
@@ -152,6 +157,7 @@ export default function AdAuditView({ siteUrl, projectId, adAuditType, title, de
       console.error('Ad audit failed:', err);
     }
     setIsRunning(false);
+    if (adAuditResolveRef.current) { adAuditResolveRef.current(); adAuditResolveRef.current = null; }
   };
 
   const toggleRec = useCallback(async (key: string) => {

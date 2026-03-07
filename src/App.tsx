@@ -42,6 +42,8 @@ import { signOut, onAuthStateChange, authenticatedFetch } from './services/authS
 import { supabase } from './services/supabaseClient';
 import { API_ENDPOINTS } from './config/api';
 import { PlanProvider, usePlan } from './contexts/PlanContext';
+import { BackgroundTaskProvider } from './contexts/BackgroundTaskContext';
+import BackgroundTaskIndicator from './components/BackgroundTaskIndicator';
 import UpgradePrompt from './components/UpgradePrompt';
 import SettingsView from './components/SettingsView';
 import GscPropertyDropdown from './components/GscPropertyDropdown';
@@ -451,6 +453,7 @@ function App() {
 
   return (
     <PlanProvider isAuthenticated={appState === 'authenticated'}>
+    <BackgroundTaskProvider>
     <div className="flex h-screen bg-apple-bg overflow-hidden">
       <Sidebar
         currentView={currentView}
@@ -800,7 +803,9 @@ function App() {
           )}
         </main>
       </div>
+      <BackgroundTaskIndicator />
     </div>
+    </BackgroundTaskProvider>
     </PlanProvider>
   );
 }

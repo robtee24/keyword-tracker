@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
+import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 
 interface Opportunity {
   id?: string;
@@ -120,13 +121,19 @@ function groupIntoBatches(opps: Opportunity[]): Batch[] {
 export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportunityViewProps) {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
-  const [generatingBlog, setGeneratingBlog] = useState<string | null>(null);
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [blogError, setBlogError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+
+  const { startTask, getTask, getTasksByType, clearTask } = useBackgroundTasks();
+
+  const topicTaskId = `blog-topics-${projectId}`;
+  const topicTask = getTask(topicTaskId);
+  const generating = topicTask?.status === 'running';
+
+  const articleTasks = getTasksByType('blog-article');
 
   const batches = useMemo(() => groupIntoBatches(opportunities), [opportunities]);
 
@@ -176,123 +183,99 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
     loadOpportunities();
   }, [loadOpportunities]);
 
-  const generateOpportunities = async () => {
-    setGenerating(true);
+  const generateOpportunities = () => {
     setError(null);
     setWarning(null);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 100000);
-    try {
+    const existingTopics = opportunities.map((o) => o.title);
+    startTask(topicTaskId, 'blog-topics', 'Generating blog topics', async () => {
       const objectives = localStorage.getItem('site_objectives') || localStorage.getItem(`kt_objectives_${projectId}`) || '';
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.opportunities, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          siteUrl,
-          projectId,
-          objectives,
-          existingKeywords: [],
-          existingTopics: opportunities.map((o) => o.title),
-        }),
-        signal: controller.signal,
+        body: JSON.stringify({ siteUrl, projectId, objectives, existingKeywords: [], existingTopics }),
       });
       const data = await resp.json();
-      if (!resp.ok) {
-        setError(data.error || `Server error (${resp.status})`);
-      } else if (data.opportunities && data.opportunities.length > 0) {
-        const normalized = data.opportunities.map((o: Record<string, unknown>) => normalizeOpp(o));
-        setOpportunities((prev) => {
-          const merged = [...normalized, ...prev];
-          localStorage.setItem(localStorageKey, JSON.stringify(merged));
-          return merged;
-        });
-        if (data.batchId) {
-          setExpandedBatch(data.batchId);
-        }
-        if (data.warning) {
-          setWarning(data.warning);
-        } else {
-          setTimeout(async () => {
-            try {
-              const verifyResp = await authenticatedFetch(
-                `${API_ENDPOINTS.db.blogOpportunities}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`
-              );
-              const verifyData = await verifyResp.json();
-              const dbCount = (verifyData.opportunities || []).length;
-              const expectedMinimum = normalized.length;
-              if (dbCount < expectedMinimum) {
-                setWarning(`Ideas may not have saved. ${dbCount} found in database but ${expectedMinimum} were just generated. Ideas are backed up locally.`);
-              } else {
-                localStorage.removeItem(localStorageKey);
-              }
-            } catch { /* verification failed, keep backup */ }
-          }, 2000);
-        }
-        logActivity(siteUrl, 'blog', 'opportunities', 'Generated blog topic opportunities');
-      } else {
-        setError('No topics were generated. Please try again.');
-      }
-    } catch (err) {
-      console.error('Failed to generate opportunities:', err);
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        setError('Request timed out. The server took too long to respond. Please try again.');
-      } else {
-        setError(err instanceof Error ? err.message : 'Failed to connect to server. Please check your connection and try again.');
-      }
-    } finally {
-      clearTimeout(timeout);
-    }
-    setGenerating(false);
+      if (!resp.ok) throw new Error(data.error || `Server error (${resp.status})`);
+      if (!data.opportunities?.length) throw new Error('No topics were generated. Please try again.');
+      return data;
+    });
   };
 
-  const generateBlogPost = async (opp: Opportunity, oppKey: string) => {
-    setGeneratingBlog(oppKey);
+  useEffect(() => {
+    if (topicTask?.status === 'completed' && topicTask.result) {
+      const data = topicTask.result as { opportunities: Record<string, unknown>[]; batchId?: string; warning?: string };
+      const normalized = data.opportunities.map((o) => normalizeOpp(o));
+      setOpportunities((prev) => {
+        const merged = [...normalized, ...prev];
+        localStorage.setItem(localStorageKey, JSON.stringify(merged));
+        return merged;
+      });
+      if (data.batchId) setExpandedBatch(data.batchId);
+      if (data.warning) {
+        setWarning(data.warning);
+      } else {
+        setTimeout(async () => {
+          try {
+            const verifyResp = await authenticatedFetch(
+              `${API_ENDPOINTS.db.blogOpportunities}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`
+            );
+            const verifyData = await verifyResp.json();
+            const dbCount = (verifyData.opportunities || []).length;
+            if (dbCount < normalized.length) {
+              setWarning(`Ideas may not have saved. ${dbCount} found in database but ${normalized.length} were just generated. Ideas are backed up locally.`);
+            } else {
+              localStorage.removeItem(localStorageKey);
+            }
+          } catch { /* keep backup */ }
+        }, 2000);
+      }
+      logActivity(siteUrl, 'blog', 'opportunities', 'Generated blog topic opportunities');
+      clearTask(topicTaskId);
+    } else if (topicTask?.status === 'failed') {
+      setError(topicTask.error || 'Failed to generate topics.');
+      clearTask(topicTaskId);
+    }
+  }, [topicTask?.status]);
+
+  const generateBlogPost = (opp: Opportunity, oppKey: string) => {
     setBlogError(null);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120000);
-    try {
+    startTask(`blog-article-${oppKey}`, 'blog-article', `Writing: ${opp.title}`, async () => {
       const objectives = localStorage.getItem('site_objectives') || localStorage.getItem(`kt_objectives_${projectId}`) || '';
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.generate, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          siteUrl,
-          projectId,
-          title: opp.title,
-          targetKeyword: opp.targetKeyword,
-          relatedKeywords: opp.relatedKeywords,
-          description: opp.description,
-          objectives,
-          opportunityId: opp.id || undefined,
-          source: 'idea',
+          siteUrl, projectId, title: opp.title, targetKeyword: opp.targetKeyword,
+          relatedKeywords: opp.relatedKeywords, description: opp.description, objectives,
+          opportunityId: opp.id || undefined, source: 'idea',
         }),
-        signal: controller.signal,
       });
       const data = await resp.json();
-      if (data.error) {
-        setBlogError(data.error);
-      } else if (data.blog) {
-        const matchFn = (o: Opportunity) =>
-          opp.id ? o.id === opp.id : o.title === opp.title && o.created_at === opp.created_at;
-        setOpportunities((prev) =>
-          prev.map((o) => matchFn(o) ? { ...o, status: 'completed', generated_blog: data.blog } : o)
-        );
-        logActivity(siteUrl, 'blog', 'post-generated', `Generated blog post: ${opp.title}`);
-      } else {
-        setBlogError('No article was returned. Please try again.');
-      }
-    } catch (err) {
-      console.error('Failed to generate blog:', err);
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        setBlogError('Article generation timed out. Please try again.');
-      } else {
-        setBlogError(err instanceof Error ? err.message : 'Failed to generate article.');
-      }
-    } finally {
-      clearTimeout(timeout);
-    }
-    setGeneratingBlog(null);
+      if (data.error) throw new Error(data.error);
+      if (!data.blog) throw new Error('No article was returned. Please try again.');
+      return { blog: data.blog, oppTitle: opp.title, oppId: opp.id, oppCreatedAt: opp.created_at };
+    });
   };
+
+  useEffect(() => {
+    for (const task of articleTasks) {
+      if (task.status === 'completed' && task.result) {
+        const { blog, oppTitle, oppId, oppCreatedAt } = task.result as {
+          blog: GeneratedBlog; oppTitle: string; oppId?: string; oppCreatedAt?: string;
+        };
+        const matchFn = (o: Opportunity) =>
+          oppId ? o.id === oppId : o.title === oppTitle && o.created_at === oppCreatedAt;
+        setOpportunities((prev) =>
+          prev.map((o) => matchFn(o) ? { ...o, status: 'completed', generated_blog: blog } : o)
+        );
+        logActivity(siteUrl, 'blog', 'post-generated', `Generated blog post: ${oppTitle}`);
+        clearTask(task.id);
+      } else if (task.status === 'failed') {
+        setBlogError(task.error || 'Failed to generate article.');
+        clearTask(task.id);
+      }
+    }
+  }, [articleTasks.map(t => t.status).join()]);
 
   const addToQueue = async (opp: Opportunity, oppKey: string) => {
     if (opp.id) {
@@ -508,7 +491,7 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
                           onGenerate={() => generateBlogPost(opp, oppKey)}
                           onAddToQueue={() => addToQueue(opp, oppKey)}
                           onDelete={() => deleteIndividual(opp)}
-                          generatingBlog={generatingBlog === oppKey}
+                          generatingBlog={getTask(`blog-article-${oppKey}`)?.status === 'running'}
                           getVolumeColor={getVolumeColor}
                           getDifficultyColor={getDifficultyColor}
                           getFunnelColor={getFunnelColor}

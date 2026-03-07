@@ -4,32 +4,55 @@ import { enforcePlanLimit, incrementUsage } from '../_plans.js';
 
 export const config = { maxDuration: 120 };
 
-async function callClaude(systemPrompt, userMessage, maxTokens = 16000) {
+async function callClaude(systemPrompt, userMessage, maxTokens = 16000, retries = 2) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured');
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    }),
-  });
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      if (attempt > 0) console.log(`[BlogGenerate] Retry attempt ${attempt}/${retries}`);
 
-  if (!response.ok) {
-    const detail = await response.text().catch(() => 'unknown');
-    throw new Error(`Claude API error (${response.status}): ${detail}`);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 100000);
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: maxTokens,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userMessage }],
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timer);
+
+      if (!response.ok) {
+        const detail = await response.text().catch(() => 'unknown');
+        throw new Error(`Claude API error (${response.status}): ${detail}`);
+      }
+
+      const data = await response.json();
+      return data.content?.[0]?.text || '';
+    } catch (err) {
+      lastError = err;
+      const msg = err.name === 'AbortError' ? 'Claude API timed out after 100s' : err.message;
+      console.error(`[BlogGenerate] Attempt ${attempt + 1} failed: ${msg}`);
+      if (attempt < retries && (err.name === 'AbortError' || /fetch failed|ECONNRESET|ETIMEDOUT/i.test(err.message))) {
+        await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+        continue;
+      }
+      throw new Error(msg);
+    }
   }
-
-  const data = await response.json();
-  return data.content?.[0]?.text || '';
+  throw lastError;
 }
 
 const SYSTEM_PROMPT = `You are an elite content writer who combines six areas of expertise into every article: content strategy, conversion copywriting, SEO, AI search optimization, marketing psychology, and page CRO. Every article you write is designed to rank, get cited by AI, and drive reader action.
@@ -283,6 +306,9 @@ HTML FORMAT RULES for the "content" field:
     return res.status(200).json({ blog });
   } catch (err) {
     console.error('[BlogGenerate] Error:', err.message);
-    return res.status(500).json({ error: err.message });
+    const friendly = /fetch failed|ECONNRESET|ETIMEDOUT/i.test(err.message)
+      ? 'Connection to AI service failed after retries. Please try again in a moment.'
+      : err.message;
+    return res.status(500).json({ error: friendly });
   }
 }

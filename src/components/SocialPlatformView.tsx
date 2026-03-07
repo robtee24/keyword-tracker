@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { authenticatedFetch } from '../services/authService';
 import { API_ENDPOINTS } from '../config/api';
 import { logActivity } from '../utils/activityLog';
+import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 
 type SocialPlatform = 'instagram' | 'linkedin' | 'x' | 'facebook' | 'tiktok' | 'pinterest';
 type SocialTab = 'audit' | 'ideas' | 'create';
@@ -226,12 +227,16 @@ function AuditTab({ siteUrl, projectId, platform, config, isConnected }: {
   config: typeof PLATFORM_CONFIG[SocialPlatform]; isConnected: boolean;
 }) {
   const [profileUrl, setProfileUrl] = useState('');
-  const [running, setRunning] = useState(false);
   const [result, setResult] = useState<AuditResult | null>(null);
   const [savedAudits, setSavedAudits] = useState<SavedAudit[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedAudit, setExpandedAudit] = useState<string | null>(null);
   const [expandedRecs, setExpandedRecs] = useState<Set<string>>(new Set());
+
+  const { startTask, getTask, clearTask } = useBackgroundTasks();
+  const taskId = `social-audit-${platform}-${projectId}`;
+  const task = getTask(taskId);
+  const running = task?.status === 'running';
 
   const loadSavedAudits = useCallback(async () => {
     try {
@@ -248,24 +253,31 @@ function AuditTab({ siteUrl, projectId, platform, config, isConnected }: {
 
   useEffect(() => { loadSavedAudits(); }, [loadSavedAudits]);
 
-  const runAudit = async () => {
+  useEffect(() => {
+    if (task?.status === 'completed' && task.result) {
+      setResult(task.result as AuditResult);
+      loadSavedAudits();
+      clearTask(taskId);
+    } else if (task?.status === 'failed') {
+      clearTask(taskId);
+    }
+  }, [task?.status]);
+
+  const runAudit = () => {
     if (!profileUrl.trim()) return;
-    setRunning(true);
     setResult(null);
-    try {
+    const url = profileUrl.trim();
+    startTask(taskId, 'social-audit', `${config.name} audit`, async () => {
       const resp = await authenticatedFetch(API_ENDPOINTS.social.audit, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, projectId, platform, profileUrl: profileUrl.trim() }),
+        body: JSON.stringify({ siteUrl, projectId, platform, profileUrl: url }),
       });
-      if (resp.ok) {
-        const data = await resp.json();
-        setResult(data);
-        await loadSavedAudits();
-        logActivity(siteUrl, 'social', 'audit', `${config.name} audit: ${profileUrl}, score: ${data.score}/100`);
-      }
-    } catch { /* */ }
-    setRunning(false);
+      if (!resp.ok) throw new Error('Audit failed');
+      const data = await resp.json();
+      logActivity(siteUrl, 'social', 'audit', `${config.name} audit: ${url}, score: ${data.score}/100`);
+      return data;
+    });
   };
 
   const deleteAudit = async (id: string) => {
@@ -534,12 +546,16 @@ function IdeasTab({ siteUrl, projectId, platform, config, onGenerateFromIdea }: 
   const [audience, setAudience] = useState('');
   const [voice, setVoice] = useState('');
   const [topics, setTopics] = useState('');
-  const [running, setRunning] = useState(false);
   const [ideas, setIdeas] = useState<PostIdea[]>([]);
   const [savedBatches, setSavedBatches] = useState<IdeaBatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
   const [expandedIdea, setExpandedIdea] = useState<string | null>(null);
+
+  const { startTask, getTask, clearTask } = useBackgroundTasks();
+  const taskId = `social-ideas-${platform}-${projectId}`;
+  const task = getTask(taskId);
+  const running = task?.status === 'running';
 
   useEffect(() => {
     if (!niche && suggestions.niches.length > 0) setNiche(suggestions.niches[0]);
@@ -562,26 +578,30 @@ function IdeasTab({ siteUrl, projectId, platform, config, onGenerateFromIdea }: 
 
   useEffect(() => { loadSavedBatches(); }, [loadSavedBatches]);
 
-  const generateIdeas = async () => {
-    setRunning(true);
+  useEffect(() => {
+    if (task?.status === 'completed' && task.result) {
+      setIdeas(task.result as PostIdea[]);
+      loadSavedBatches();
+      clearTask(taskId);
+    } else if (task?.status === 'failed') {
+      clearTask(taskId);
+    }
+  }, [task?.status]);
+
+  const generateIdeas = () => {
     setIdeas([]);
-    try {
+    const ctx = { niche, audience, voice, topics };
+    startTask(taskId, 'social-ideas', `${config.name} post ideas`, async () => {
       const resp = await authenticatedFetch(API_ENDPOINTS.social.ideas, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          siteUrl, projectId, platform,
-          context: { niche, audience, voice, topics },
-        }),
+        body: JSON.stringify({ siteUrl, projectId, platform, context: ctx }),
       });
-      if (resp.ok) {
-        const data = await resp.json();
-        setIdeas(data.ideas || []);
-        await loadSavedBatches();
-        logActivity(siteUrl, 'social', 'ideas', `Generated ${(data.ideas || []).length} ${config.name} post ideas`);
-      }
-    } catch { /* */ }
-    setRunning(false);
+      if (!resp.ok) throw new Error('Idea generation failed');
+      const data = await resp.json();
+      logActivity(siteUrl, 'social', 'ideas', `Generated ${(data.ideas || []).length} ${config.name} post ideas`);
+      return data.ideas || [];
+    });
   };
 
   const deleteBatch = async (id: string) => {
@@ -761,13 +781,11 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
   const [postType, setPostType] = useState(config.staticFormats[0] || config.formats[0]);
   const [topic, setTopic] = useState('');
   const [ideaContext, setIdeaContext] = useState<{ hook: string; outline: string } | null>(null);
-  const [running, setRunning] = useState(false);
   const [generated, setGenerated] = useState<GeneratedPost | null>(null);
   const [copied, setCopied] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishTooltip, setPublishTooltip] = useState(false);
 
-  const [generatingMedia, setGeneratingMedia] = useState(false);
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
@@ -775,6 +793,14 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
   const [savedPosts, setSavedPosts] = useState<SavedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedPost, setExpandedPost] = useState<string | null>(null);
+
+  const { startTask, getTask, clearTask } = useBackgroundTasks();
+  const postTaskId = `social-post-${platform}-${projectId}`;
+  const mediaTaskId = `social-media-${platform}-${projectId}`;
+  const postTask = getTask(postTaskId);
+  const mediaTask = getTask(mediaTaskId);
+  const running = postTask?.status === 'running';
+  const generatingMedia = mediaTask?.status === 'running';
 
   const availableFormats = mediaType === 'video' ? config.videoFormats : config.staticFormats;
 
@@ -810,70 +836,87 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
 
   useEffect(() => { loadSavedPosts(); }, [loadSavedPosts]);
 
-  const generatePost = async () => {
+  useEffect(() => {
+    if (postTask?.status === 'completed' && postTask.result) {
+      const data = postTask.result as { post: GeneratedPost; doVideo: boolean; doImage: boolean; shots?: unknown[]; imagePrompt?: string };
+      setGenerated(data.post);
+      setIdeaContext(null);
+      loadSavedPosts();
+      if (data.doVideo && data.shots) autoGenerateVideo(data.shots);
+      else if (data.doImage && data.imagePrompt) autoGenerateImage(data.imagePrompt);
+      clearTask(postTaskId);
+    } else if (postTask?.status === 'failed') {
+      clearTask(postTaskId);
+    }
+  }, [postTask?.status]);
+
+  useEffect(() => {
+    if (mediaTask?.status === 'completed' && mediaTask.result) {
+      const data = mediaTask.result as { url: string };
+      setMediaUrl(data.url);
+      clearTask(mediaTaskId);
+    } else if (mediaTask?.status === 'failed') {
+      setMediaError(mediaTask.error || 'Media generation failed.');
+      clearTask(mediaTaskId);
+    }
+  }, [mediaTask?.status]);
+
+  const generatePost = () => {
     if (!topic.trim()) return;
-    setRunning(true);
     setGenerated(null);
     setMediaUrl(null);
     setMediaError(null);
-    try {
+    const currentMediaType = mediaType;
+    const currentVideoStyle = videoStyle;
+    startTask(postTaskId, 'social-post', `${config.name} ${postType}`, async () => {
       const resp = await authenticatedFetch(API_ENDPOINTS.social.generate, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, projectId, platform, postType, topic, ideaContext, mediaType, videoStyle: mediaType === 'video' ? videoStyle : undefined }),
+        body: JSON.stringify({ siteUrl, projectId, platform, postType, topic, ideaContext, mediaType: currentMediaType, videoStyle: currentMediaType === 'video' ? currentVideoStyle : undefined }),
       });
-      if (resp.ok) {
-        const data = await resp.json();
-        setGenerated(data);
-        setIdeaContext(null);
-        await loadSavedPosts();
-        logActivity(siteUrl, 'social', 'generate', `Generated ${config.name} ${postType}: "${topic.slice(0, 50)}"`);
-
-        // Auto-generate media
-        if (mediaType === 'video' && data.shots?.length > 0) {
-          autoGenerateVideo(data.shots);
-        } else if (mediaType === 'static' && data.imagePrompt) {
-          autoGenerateImage(data.imagePrompt);
-        }
-      }
-    } catch { /* */ }
-    setRunning(false);
+      if (!resp.ok) throw new Error('Post generation failed');
+      const data = await resp.json();
+      logActivity(siteUrl, 'social', 'generate', `Generated ${config.name} ${postType}: "${topic.slice(0, 50)}"`);
+      return {
+        post: data,
+        doVideo: currentMediaType === 'video' && data.shots?.length > 0,
+        doImage: currentMediaType === 'static' && !!data.imagePrompt,
+        shots: data.shots,
+        imagePrompt: data.imagePrompt,
+      };
+    });
   };
 
-  const autoGenerateVideo = async (shots: any[]) => {
-    setGeneratingMedia(true);
+  const autoGenerateVideo = (shots: unknown[]) => {
     setMediaError(null);
-    try {
+    startTask(mediaTaskId, 'social-media', `${config.name} video`, async () => {
       const resp = await authenticatedFetch(API_ENDPOINTS.social.generateVideo, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ platform, shots }),
       });
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.error) setMediaError(data.error);
-        else { setMediaUrl(data.videoUrl); logActivity(siteUrl, 'social', 'video', `Generated ${config.name} video`); }
-      }
-    } catch { setMediaError('Video generation failed.'); }
-    setGeneratingMedia(false);
+      if (!resp.ok) throw new Error('Video generation failed');
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
+      logActivity(siteUrl, 'social', 'video', `Generated ${config.name} video`);
+      return { url: data.videoUrl };
+    });
   };
 
-  const autoGenerateImage = async (imagePrompt: string) => {
-    setGeneratingMedia(true);
+  const autoGenerateImage = (imagePrompt: string) => {
     setMediaError(null);
-    try {
+    startTask(mediaTaskId, 'social-media', `${config.name} image`, async () => {
       const resp = await authenticatedFetch(API_ENDPOINTS.social.generateImage, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: imagePrompt, platform }),
       });
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.error) setMediaError(data.error);
-        else { setMediaUrl(data.imageUrl); logActivity(siteUrl, 'social', 'image', `Generated ${config.name} image`); }
-      }
-    } catch { setMediaError('Image generation failed.'); }
-    setGeneratingMedia(false);
+      if (!resp.ok) throw new Error('Image generation failed');
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
+      logActivity(siteUrl, 'social', 'image', `Generated ${config.name} image`);
+      return { url: data.imageUrl };
+    });
   };
 
   const downloadMedia = () => {

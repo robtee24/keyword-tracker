@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { logActivity } from '../utils/activityLog';
+import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 
 interface BlogUrl {
   id?: string;
@@ -68,8 +69,12 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
   const [selectedBlog, setSelectedBlog] = useState('');
   const [auditMode, setAuditMode] = useState<'single' | 'full'>('full');
   const [singleUrl, setSingleUrl] = useState('');
-  const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState('');
+
+  const { startTask, getTask, clearTask } = useBackgroundTasks();
+  const blogAuditTaskId = `blog-audit-${projectId}`;
+  const blogAuditTask = getTask(blogAuditTaskId);
+  const running = blogAuditTask?.status === 'running';
 
   const [result, setResult] = useState<BlogAuditResult | null>(null);
   const [savedAudits, setSavedAudits] = useState<SavedAudit[]>([]);
@@ -144,31 +149,38 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
     await loadBlogUrls();
   };
 
-  const runAudit = async () => {
+  useEffect(() => {
+    if (blogAuditTask?.status === 'completed' && blogAuditTask.result) {
+      const data = blogAuditTask.result as BlogAuditResult;
+      setResult(data);
+      setActiveTab('summary');
+      loadSavedAudits();
+      setProgress('');
+      clearTask(blogAuditTaskId);
+    } else if (blogAuditTask?.status === 'failed') {
+      setProgress('');
+      clearTask(blogAuditTaskId);
+    }
+  }, [blogAuditTask?.status]);
+
+  const runAudit = () => {
     const targetUrl = auditMode === 'single' ? singleUrl.trim() : selectedBlog;
     if (!targetUrl) return;
-
-    setRunning(true);
+    const mode = auditMode;
     setResult(null);
-    setProgress(auditMode === 'full' ? 'Discovering blog posts and running audits...' : 'Auditing blog post...');
+    setProgress(mode === 'full' ? 'Discovering blog posts and running audits...' : 'Auditing blog post...');
 
-    try {
+    startTask(blogAuditTaskId, 'blog-audit', `Blog audit: ${targetUrl.slice(0, 50)}`, async () => {
       const resp = await fetch(API_ENDPOINTS.blog.audit, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, projectId, blogUrl: targetUrl, mode: auditMode }),
+        body: JSON.stringify({ siteUrl, projectId, blogUrl: targetUrl, mode }),
       });
       const data: BlogAuditResult = await resp.json();
-      setResult(data);
-      setActiveTab('summary');
-      await loadSavedAudits();
       const postCount = data.posts?.length || 0;
-      logActivity(siteUrl, 'blog', 'audit', `Blog audit completed: ${auditMode === 'full' ? `Full audit (${postCount} posts)` : `Single post: ${targetUrl}`} — Score: ${data.overview?.score || data.score || data.posts?.[0]?.score || 'N/A'}`);
-    } catch (err) {
-      console.error('Audit failed:', err);
-    }
-    setRunning(false);
-    setProgress('');
+      logActivity(siteUrl, 'blog', 'audit', `Blog audit completed: ${mode === 'full' ? `Full audit (${postCount} posts)` : `Single post: ${targetUrl}`} — Score: ${data.overview?.score || data.score || data.posts?.[0]?.score || 'N/A'}`);
+      return data;
+    });
   };
 
   const togglePost = (url: string) => {

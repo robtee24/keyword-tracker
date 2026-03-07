@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
+import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 
 interface ArticleImage {
   description: string;
@@ -187,10 +188,12 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
   const [expandedArticle, setExpandedArticle] = useState<string | null>(null);
   const [modifyingArticle, setModifyingArticle] = useState<string | null>(null);
   const [modifyPrompt, setModifyPrompt] = useState('');
-  const [applyingModify, setApplyingModify] = useState(false);
-  const [generatingImages, setGeneratingImages] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
+  const { startTask, getTask, getTasksByType, clearTask } = useBackgroundTasks();
+  const modifyTasks = getTasksByType('blog-modify');
+  const imageTasks = getTasksByType('blog-images');
 
   const loadArticles = useCallback(async () => {
     setLoading(true);
@@ -221,32 +224,36 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
     }
   };
 
-  const modifyArticle = async (article: Article) => {
+  const modifyArticle = (article: Article) => {
     if (!modifyPrompt.trim()) return;
-    setApplyingModify(true);
-    try {
+    const prompt = modifyPrompt.trim();
+    startTask(`blog-modify-${article.id}`, 'blog-modify', `Modifying: ${article.title.slice(0, 50)}`, async () => {
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.modify, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          articleId: article.id,
-          currentContent: article.content,
-          currentTitle: article.title,
-          modifyPrompt: modifyPrompt.trim(),
-        }),
+        body: JSON.stringify({ articleId: article.id, currentContent: article.content, currentTitle: article.title, modifyPrompt: prompt }),
       });
       const data = await resp.json();
-      if (data.article) {
-        setArticles((prev) => prev.map((a) => (a.id === article.id ? data.article : a)));
-        setModifyingArticle(null);
-        setModifyPrompt('');
-        logActivity(siteUrl, 'blog', 'article-modified', `Modified article: ${article.title}`);
-      }
-    } catch (err) {
-      console.error('Failed to modify article:', err);
-    }
-    setApplyingModify(false);
+      if (data.error) throw new Error(data.error);
+      if (!data.article) throw new Error('No result returned');
+      logActivity(siteUrl, 'blog', 'article-modified', `Modified article: ${article.title}`);
+      return { article: data.article, articleId: article.id };
+    });
+    setModifyingArticle(null);
+    setModifyPrompt('');
   };
+
+  useEffect(() => {
+    for (const task of modifyTasks) {
+      if (task.status === 'completed' && task.result) {
+        const { article: updated } = task.result as { article: Article; articleId: string };
+        setArticles((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+        clearTask(task.id);
+      } else if (task.status === 'failed') {
+        clearTask(task.id);
+      }
+    }
+  }, [modifyTasks.map(t => t.status).join()]);
 
   const revertArticle = async (article: Article) => {
     if (!article.previous_content) return;
@@ -266,65 +273,51 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
     }
   };
 
-  const generateImages = async (article: Article) => {
-    setGeneratingImages(article.id);
+  const generateImages = (article: Article) => {
     setImageError(null);
-    try {
+    startTask(`blog-images-${article.id}`, 'blog-images', `Images: ${article.title.slice(0, 50)}`, async () => {
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.generateImages, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ descriptions: article.suggested_images }),
       });
       const data = await resp.json();
+      if (data.error) throw new Error(data.error);
 
-      if (data.error) {
-        setImageError(data.error);
-        setGeneratingImages(null);
-        return;
-      }
+      const validImages = (data.images || []).filter((img: ArticleImage) => img.imageUrl);
+      if (validImages.length === 0) throw new Error('All images failed to generate. ' + (data.errors?.join('; ') || 'Check your OpenAI API key.'));
 
-      if (data.images) {
-        const validImages = data.images.filter((img: ArticleImage) => img.imageUrl);
-        if (validImages.length === 0) {
-          setImageError('All images failed to generate. ' + (data.errors?.join('; ') || 'Check your OpenAI API key.'));
-          setGeneratingImages(null);
-          return;
-        }
+      const updatedContent = embedImagesInContent(markdownToHtml(article.content), validImages);
 
-        const updatedContent = embedImagesInContent(
-          markdownToHtml(article.content),
-          validImages
-        );
+      await authenticatedFetch(API_ENDPOINTS.db.blogArticles, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: article.id, images: data.images, content: updatedContent, previous_content: article.content }),
+      });
 
-        await authenticatedFetch(API_ENDPOINTS.db.blogArticles, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: article.id,
-            images: data.images,
-            content: updatedContent,
-            previous_content: article.content,
-          }),
-        });
-
-        setArticles((prev) =>
-          prev.map((a) =>
-            a.id === article.id
-              ? { ...a, images: data.images, content: updatedContent, previous_content: article.content }
-              : a
-          )
-        );
-
-        if (data.errors?.length) {
-          setImageError(`${validImages.length} images generated, ${data.errors.length} failed.`);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to generate images:', err);
-      setImageError(err instanceof Error ? err.message : 'Failed to generate images');
-    }
-    setGeneratingImages(null);
+      return { articleId: article.id, images: data.images, updatedContent, previousContent: article.content, partialErrors: data.errors };
+    });
   };
+
+  useEffect(() => {
+    for (const task of imageTasks) {
+      if (task.status === 'completed' && task.result) {
+        const { articleId, images, updatedContent, previousContent, partialErrors } = task.result as {
+          articleId: string; images: ArticleImage[]; updatedContent: string; previousContent: string; partialErrors?: string[];
+        };
+        setArticles((prev) =>
+          prev.map((a) => a.id === articleId ? { ...a, images, content: updatedContent, previous_content: previousContent } : a)
+        );
+        if (partialErrors?.length) {
+          setImageError(`Some images generated, ${partialErrors.length} failed.`);
+        }
+        clearTask(task.id);
+      } else if (task.status === 'failed') {
+        setImageError(task.error || 'Image generation failed.');
+        clearTask(task.id);
+      }
+    }
+  }, [imageTasks.map(t => t.status).join()]);
 
   const copyHtml = (article: Article) => {
     const html = getRenderedHtml(article);
@@ -444,10 +437,10 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
                           </span>
                           <button
                             onClick={() => generateImages(article)}
-                            disabled={generatingImages === article.id}
+                            disabled={getTask(`blog-images-${article.id}`)?.status === 'running'}
                             className="px-3 py-1 rounded-apple-sm bg-amber-600 text-white text-apple-xs font-medium hover:bg-amber-700 transition-colors disabled:opacity-50"
                           >
-                            {generatingImages === article.id ? (
+                            {getTask(`blog-images-${article.id}`)?.status === 'running' ? (
                               <span className="flex items-center gap-1.5">
                                 <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
                                 Generating...
@@ -548,10 +541,10 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
                         />
                         <button
                           onClick={() => modifyArticle(article)}
-                          disabled={applyingModify || !modifyPrompt.trim()}
+                          disabled={getTask(`blog-modify-${article.id}`)?.status === 'running' || !modifyPrompt.trim()}
                           className="px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
                         >
-                          {applyingModify ? (
+                          {getTask(`blog-modify-${article.id}`)?.status === 'running' ? (
                             <span className="flex items-center gap-1.5">
                               <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
                               Applying Changes...

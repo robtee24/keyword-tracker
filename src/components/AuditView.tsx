@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { logActivity } from '../utils/activityLog';
 import { InfoTooltip } from './Tooltip';
+import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 
 type AuditType = 'seo' | 'content' | 'aeo' | 'schema' | 'compliance' | 'speed';
 type AuditMode = 'page' | 'pages' | 'site';
@@ -96,6 +97,10 @@ export default function AuditView({ siteUrl, projectId, auditType, title, descri
   const [currentBatch, setCurrentBatch] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef(false);
+
+  const { startTask, clearTask } = useBackgroundTasks();
+  const auditIndicatorId = `audit-${auditType}-${projectId}`;
+  const auditResolveRef = useRef<(() => void) | null>(null);
   const completedUrlsRef = useRef<Set<string>>(new Set());
 
   const [resultsTab, setResultsTab] = useState<ResultsTab>('summary');
@@ -206,6 +211,10 @@ export default function AuditView({ siteUrl, projectId, auditType, title, descri
     setError(null);
     setTargetUrls(urls);
     if (clearPrevious) { setResults([]); completedUrlsRef.current = new Set(); }
+
+    startTask(auditIndicatorId, 'audit', `${title}: ${urls.length} pages`, () => new Promise<void>((resolve) => {
+      auditResolveRef.current = resolve;
+    }));
     const remaining = urls.filter((u) => !completedUrlsRef.current.has(u));
 
     for (let i = 0; i < remaining.length; i += BATCH_SIZE) {
@@ -269,6 +278,7 @@ export default function AuditView({ siteUrl, projectId, auditType, title, descri
     }
     setIsRunning(false);
     setCurrentBatch([]);
+    if (auditResolveRef.current) { auditResolveRef.current(); auditResolveRef.current = null; }
     logActivity(siteUrl, 'seo', `audit-${auditType}`, `${auditType.toUpperCase()} audit completed: ${urls.length} page${urls.length > 1 ? 's' : ''} audited`);
   }, [siteUrl, auditType]);
 
@@ -303,7 +313,11 @@ export default function AuditView({ siteUrl, projectId, auditType, title, descri
     if (auditUrls.length > 0) runAuditOnUrls(auditUrls, false);
   };
   const handleResume = () => runAuditOnUrls(targetUrls, false);
-  const stopAudit = () => { abortRef.current = true; };
+  const stopAudit = () => {
+    abortRef.current = true;
+    if (auditResolveRef.current) { auditResolveRef.current(); auditResolveRef.current = null; }
+    clearTask(auditIndicatorId);
+  };
 
   const toggleRecDone = useCallback(async (key: string, taskText: string) => {
     const isDone = completedRecs.has(key);

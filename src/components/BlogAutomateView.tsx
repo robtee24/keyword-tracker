@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
+import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 
 interface QueueItem {
   id: string;
@@ -24,18 +25,28 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
   const [articleDescription, setArticleDescription] = useState('');
   const [keywords, setKeywords] = useState('');
   const [generatedPrompt, setGeneratedPrompt] = useState('');
-  const [generatingPrompt, setGeneratingPrompt] = useState(false);
-  const [generatingArticle, setGeneratingArticle] = useState(false);
   const [lastGeneratedTitle, setLastGeneratedTitle] = useState<string | null>(null);
 
   const [seriesTheme, setSeriesTheme] = useState('');
   const [seriesCount, setSeriesCount] = useState(5);
   const [seriesTopics, setSeriesTopics] = useState<QueueItem[]>([]);
-  const [generatingTopics, setGeneratingTopics] = useState(false);
-  const [generatingSeriesArticle, setGeneratingSeriesArticle] = useState<string | null>(null);
 
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const [loadingQueue, setLoadingQueue] = useState(false);
+
+  const { startTask, getTask, getTasksByType, clearTask } = useBackgroundTasks();
+
+  const briefTaskId = `blog-brief-${projectId}`;
+  const singleTaskId = `blog-single-${projectId}`;
+  const seriesTopicTaskId = `blog-series-topics-${projectId}`;
+  const briefTask = getTask(briefTaskId);
+  const singleTask = getTask(singleTaskId);
+  const seriesTopicTask = getTask(seriesTopicTaskId);
+  const seriesArticleTasks = getTasksByType('blog-series-article');
+
+  const generatingPrompt = briefTask?.status === 'running';
+  const generatingArticle = singleTask?.status === 'running';
+  const generatingTopics = seriesTopicTask?.status === 'running';
 
   const loadQueue = useCallback(async () => {
     setLoadingQueue(true);
@@ -87,93 +98,91 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
     }
   }, []);
 
-  const generatePromptFromKeywords = async () => {
+  const generatePromptFromKeywords = () => {
     if (!keywords.trim()) return;
-    setGeneratingPrompt(true);
-    try {
+    startTask(briefTaskId, 'blog-brief', 'Generating article brief', async () => {
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.generateBrief, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ siteUrl, keywords: keywords.trim() }),
       });
       const data = await resp.json();
-      setGeneratedPrompt(data.brief || '');
-    } catch (err) {
-      console.error('Failed to generate prompt:', err);
-    }
-    setGeneratingPrompt(false);
+      return data.brief || '';
+    });
   };
 
-  const generateSingleArticle = async () => {
+  useEffect(() => {
+    if (briefTask?.status === 'completed') {
+      setGeneratedPrompt(briefTask.result as string);
+      clearTask(briefTaskId);
+    } else if (briefTask?.status === 'failed') {
+      clearTask(briefTaskId);
+    }
+  }, [briefTask?.status]);
+
+  const generateSingleArticle = () => {
     const title = inputMethod === 'describe' ? articleDescription.trim() : generatedPrompt.trim();
     if (!title) return;
-    setGeneratingArticle(true);
-    try {
+    const kw = inputMethod === 'keywords' ? keywords.trim() : '';
+    startTask(singleTaskId, 'blog-single', `Writing: ${title.slice(0, 60)}`, async () => {
       const objectives = localStorage.getItem('site_objectives') || localStorage.getItem(`kt_objectives_${projectId}`) || '';
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.generate, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          siteUrl,
-          projectId,
-          title,
-          targetKeyword: inputMethod === 'keywords' ? keywords.trim() : '',
-          description: title,
-          objectives,
-          source: 'writer',
-        }),
+        body: JSON.stringify({ siteUrl, projectId, title, targetKeyword: kw, description: title, objectives, source: 'writer' }),
       });
       const data = await resp.json();
-      if (data.blog) {
-        setLastGeneratedTitle(data.blog.title || title);
-        if (data.blog.articleId && data.blog.suggestedImages?.length > 0) {
-          autoGenerateImages(data.blog.articleId, data.blog.suggestedImages);
-        }
-        logActivity(siteUrl, 'blog', 'article-written', `Wrote blog article: ${data.blog.title}`);
+      if (data.error) throw new Error(data.error);
+      if (!data.blog) throw new Error('No article was returned.');
+      if (data.blog.articleId && data.blog.suggestedImages?.length > 0) {
+        autoGenerateImages(data.blog.articleId, data.blog.suggestedImages);
       }
-    } catch (err) {
-      console.error('Failed to generate article:', err);
-    }
-    setGeneratingArticle(false);
+      return data.blog;
+    });
   };
 
-  const generateSeriesTopics = async () => {
+  useEffect(() => {
+    if (singleTask?.status === 'completed' && singleTask.result) {
+      const blog = singleTask.result as { title: string };
+      setLastGeneratedTitle(blog.title);
+      logActivity(siteUrl, 'blog', 'article-written', `Wrote blog article: ${blog.title}`);
+      clearTask(singleTaskId);
+    } else if (singleTask?.status === 'failed') {
+      clearTask(singleTaskId);
+    }
+  }, [singleTask?.status]);
+
+  const generateSeriesTopics = () => {
     if (!seriesTheme.trim()) return;
-    setGeneratingTopics(true);
-    try {
+    const existingTitles = queueItems.map(q => q.title);
+    const remainingCount = Math.max(1, seriesCount - queueItems.length);
+    startTask(seriesTopicTaskId, 'blog-series-topics', 'Planning series topics', async () => {
       const objectives = localStorage.getItem('site_objectives') || localStorage.getItem(`kt_objectives_${projectId}`) || '';
-      const remainingCount = Math.max(1, seriesCount - queueItems.length);
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.opportunities, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          siteUrl,
-          projectId,
-          objectives,
-          existingKeywords: [],
-          existingTopics: queueItems.map(q => q.title),
-          seriesTheme: seriesTheme.trim(),
-          count: remainingCount,
-        }),
+        body: JSON.stringify({ siteUrl, projectId, objectives, existingKeywords: [], existingTopics: existingTitles, seriesTheme: seriesTheme.trim(), count: remainingCount }),
       });
       const data = await resp.json();
-      if (data.opportunities) {
-        setSeriesTopics(
-          data.opportunities.map((o: Record<string, string>, i: number) => ({
-            id: o.id || `topic-${i}`,
-            title: o.title,
-            description: o.description || '',
-            targetKeyword: o.target_keyword || o.targetKeyword || '',
-            generated: false,
-            fromQueue: false,
-          }))
-        );
-      }
-    } catch (err) {
-      console.error('Failed to generate series topics:', err);
-    }
-    setGeneratingTopics(false);
+      if (!data.opportunities) throw new Error('No topics generated');
+      return data.opportunities;
+    });
   };
+
+  useEffect(() => {
+    if (seriesTopicTask?.status === 'completed' && seriesTopicTask.result) {
+      const opps = seriesTopicTask.result as Record<string, string>[];
+      setSeriesTopics(
+        opps.map((o, i) => ({
+          id: o.id || `topic-${i}`, title: o.title, description: o.description || '',
+          targetKeyword: o.target_keyword || o.targetKeyword || '', generated: false, fromQueue: false,
+        }))
+      );
+      clearTask(seriesTopicTaskId);
+    } else if (seriesTopicTask?.status === 'failed') {
+      clearTask(seriesTopicTaskId);
+    }
+  }, [seriesTopicTask?.status]);
 
   const removeItem = async (item: QueueItem) => {
     if (item.fromQueue && item.id) {
@@ -190,48 +199,54 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
     }
   };
 
-  const generateItemArticle = async (item: QueueItem) => {
-    setGeneratingSeriesArticle(item.id);
-    try {
+  const generateItemArticle = (item: QueueItem) => {
+    startTask(`blog-series-article-${item.id}`, 'blog-series-article', `Writing: ${item.title.slice(0, 60)}`, async () => {
       const objectives = localStorage.getItem('site_objectives') || localStorage.getItem(`kt_objectives_${projectId}`) || '';
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.generate, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          siteUrl,
-          projectId,
-          title: item.title,
-          targetKeyword: item.targetKeyword,
-          description: item.description,
-          objectives,
+          siteUrl, projectId, title: item.title, targetKeyword: item.targetKeyword,
+          description: item.description, objectives,
           opportunityId: item.fromQueue ? item.id : undefined,
           source: item.fromQueue ? 'queue' : 'series',
         }),
       });
       const data = await resp.json();
-      if (data.blog) {
-        if (item.fromQueue) {
-          setQueueItems((prev) => prev.map((q) => q.id === item.id ? { ...q, generated: true } : q));
-          try {
-            await authenticatedFetch(API_ENDPOINTS.db.blogOpportunities, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: item.id, projectId, status: 'completed' }),
-            });
-          } catch { /* best effort */ }
-        } else {
-          setSeriesTopics((prev) => prev.map((t) => t.id === item.id ? { ...t, generated: true } : t));
-        }
-        if (data.blog.articleId && data.blog.suggestedImages?.length > 0) {
-          autoGenerateImages(data.blog.articleId, data.blog.suggestedImages);
-        }
-        logActivity(siteUrl, 'blog', 'series-article', `Generated article: ${item.title}`);
+      if (data.error) throw new Error(data.error);
+      if (!data.blog) throw new Error('No article was returned.');
+      if (item.fromQueue) {
+        try {
+          await authenticatedFetch(API_ENDPOINTS.db.blogOpportunities, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: item.id, projectId, status: 'completed' }),
+          });
+        } catch { /* best effort */ }
       }
-    } catch (err) {
-      console.error('Failed to generate article:', err);
-    }
-    setGeneratingSeriesArticle(null);
+      if (data.blog.articleId && data.blog.suggestedImages?.length > 0) {
+        autoGenerateImages(data.blog.articleId, data.blog.suggestedImages);
+      }
+      return { blog: data.blog, itemId: item.id, fromQueue: item.fromQueue, title: item.title };
+    });
   };
+
+  useEffect(() => {
+    for (const task of seriesArticleTasks) {
+      if (task.status === 'completed' && task.result) {
+        const { itemId, fromQueue, title } = task.result as { itemId: string; fromQueue: boolean; title: string };
+        if (fromQueue) {
+          setQueueItems((prev) => prev.map((q) => q.id === itemId ? { ...q, generated: true } : q));
+        } else {
+          setSeriesTopics((prev) => prev.map((t) => t.id === itemId ? { ...t, generated: true } : t));
+        }
+        logActivity(siteUrl, 'blog', 'series-article', `Generated article: ${title}`);
+        clearTask(task.id);
+      } else if (task.status === 'failed') {
+        clearTask(task.id);
+      }
+    }
+  }, [seriesArticleTasks.map(t => t.status).join()]);
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -427,10 +442,10 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
                       <div className="flex items-center gap-2 shrink-0">
                         <button
                           onClick={() => generateItemArticle(item)}
-                          disabled={generatingSeriesArticle === item.id}
+                          disabled={getTask(`blog-series-article-${item.id}`)?.status === 'running'}
                           className="px-3 py-1 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
                         >
-                          {generatingSeriesArticle === item.id ? (
+                          {getTask(`blog-series-article-${item.id}`)?.status === 'running' ? (
                             <span className="flex items-center gap-1.5">
                               <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
                               Writing...
@@ -550,10 +565,10 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
                       <div className="flex items-center gap-2 shrink-0">
                         <button
                           onClick={() => generateItemArticle(topic)}
-                          disabled={generatingSeriesArticle === topic.id}
+                          disabled={getTask(`blog-series-article-${topic.id}`)?.status === 'running'}
                           className="px-3 py-1 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
                         >
-                          {generatingSeriesArticle === topic.id ? (
+                          {getTask(`blog-series-article-${topic.id}`)?.status === 'running' ? (
                             <span className="flex items-center gap-1.5">
                               <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
                               Writing...
