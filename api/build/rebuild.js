@@ -1,5 +1,6 @@
 import { authenticateRequest } from '../_config.js';
 import { enforcePlanLimit, incrementUsage } from '../_plans.js';
+import { getBrandContext } from '../_brand.js';
 
 export const config = { maxDuration: 120 };
 
@@ -199,7 +200,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { siteUrl, pageUrl, improvements, objectives, crawlData, homePageStyles: preloadedStyles } = req.body || {};
+  const { siteUrl, projectId, pageUrl, improvements, objectives, crawlData, homePageStyles: preloadedStyles } = req.body || {};
   if (!siteUrl || !pageUrl) return res.status(400).json({ error: 'siteUrl and pageUrl required' });
 
   const auth = await authenticateRequest(req);
@@ -208,6 +209,11 @@ export default async function handler(req, res) {
   }
 
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
+
+  let brandContext = '';
+  try {
+    brandContext = await getBrandContext(projectId);
+  } catch { /* non-critical */ }
 
   let pageContent;
   let homeStylesText = '';
@@ -239,7 +245,7 @@ export default async function handler(req, res) {
 
 ${MARKETING_SKILLS}
 
-CRITICAL DESIGN RULES:
+${brandContext ? brandContext + '\n\n' : ''}CRITICAL DESIGN RULES:
 - Use modern CSS: flexbox, grid, gradients, shadows, rounded corners, smooth transitions
 - Include a cohesive color palette with primary, secondary, and accent colors
 - Use proper typography: font-size hierarchy, line-height, letter-spacing, font-weight variation

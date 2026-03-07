@@ -147,6 +147,7 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
+          projectId,
           title: suggestion.title,
           slug: suggestion.slug,
           purpose: suggestion.purpose,
@@ -208,6 +209,7 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
+          projectId,
           title: wizTitle,
           purpose: wizardData.purpose,
           targetKeyword: wizardData.keywords,
@@ -258,6 +260,7 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
+          projectId,
           pageUrl: currentResult.slug ? `/${currentResult.slug}` : '',
           currentHtml: currentResult.htmlContent,
           modifications: modifyInput.trim(),

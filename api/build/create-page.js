@@ -1,5 +1,6 @@
 import { authenticateRequest } from '../_config.js';
 import { enforcePlanLimit, incrementUsage } from '../_plans.js';
+import { getBrandContext } from '../_brand.js';
 
 export const config = { maxDuration: 120 };
 
@@ -199,7 +200,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { siteUrl, title, slug, purpose, targetKeyword, outline, objectives, style } = req.body || {};
+  const { siteUrl, projectId, title, slug, purpose, targetKeyword, outline, objectives, style } = req.body || {};
   if (!siteUrl || !title) return res.status(400).json({ error: 'siteUrl and title required' });
 
   const auth = await authenticateRequest(req);
@@ -214,11 +215,16 @@ export default async function handler(req, res) {
     homePageStyles = await extractHomePageStyles(new URL(siteUrl).origin + '/');
   } catch { /* non-critical */ }
 
+  let brandContext = '';
+  try {
+    brandContext = await getBrandContext(projectId);
+  } catch { /* non-critical */ }
+
   const systemPrompt = `You are a world-class web developer, UI/UX designer, copywriter, SEO specialist, and conversion optimizer. You build pages that are visually stunning — with modern design, clean typography, proper spacing, polished CSS, and professional aesthetics.
 
 ${MARKETING_SKILLS}
 
-CRITICAL DESIGN RULES:
+${brandContext ? brandContext + '\n\n' : ''}CRITICAL DESIGN RULES:
 - Include a complete <style> tag at the top of htmlContent with all CSS
 - Use CSS custom properties (variables) for a cohesive theme (colors, spacing, fonts)
 - Use modern CSS: flexbox, grid, gradients, box-shadows, border-radius, transitions

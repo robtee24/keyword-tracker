@@ -1,10 +1,12 @@
+import { getBrandContext } from '../_brand.js';
+
 export const config = { maxDuration: 120 };
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { siteUrl, pageUrl, currentHtml, modifications, currentTitle, currentMeta } = req.body || {};
+  const { siteUrl, projectId, pageUrl, currentHtml, modifications, currentTitle, currentMeta } = req.body || {};
 
   if (!currentHtml || !modifications) {
     return res.status(400).json({ error: 'currentHtml and modifications are required' });
@@ -15,9 +17,14 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
   }
 
+  let brandContext = '';
+  try {
+    brandContext = await getBrandContext(projectId);
+  } catch { /* non-critical */ }
+
   const systemPrompt = `You are an expert web developer and designer. You will receive the current HTML of a web page and the user's requested modifications. Apply the modifications while preserving the overall structure, style, and quality of the page.
 
-RULES:
+${brandContext ? brandContext + '\n\n' : ''}RULES:
 - Apply ONLY the changes the user requests — do not rewrite or restructure unrelated sections.
 - Preserve all existing CSS, classes, styles, colors, fonts, and layout unless the user specifically asks to change them.
 - Maintain responsive design patterns.

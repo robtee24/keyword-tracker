@@ -210,6 +210,7 @@ export default function BuildRebuildView({ siteUrl, projectId }: BuildRebuildVie
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
+          projectId,
           pageUrl,
           improvements,
           objectives,
@@ -278,6 +279,7 @@ export default function BuildRebuildView({ siteUrl, projectId }: BuildRebuildVie
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
+          projectId,
           pageUrl: build.page_url,
           currentHtml: build.result.htmlContent,
           modifications: modifyInput.trim(),
