@@ -210,11 +210,23 @@ Respond with ONLY valid JSON:
   "title": "<SEO-optimized title with target keyword — specific, benefit-oriented>",
   "metaDescription": "<compelling meta description under 155 chars — keyword + benefit + action>",
   "slug": "<url-friendly-slug-with-keyword>",
-  "content": "<full blog post in markdown format with H2/H3 structure, lists, tables, FAQ section>",
+  "content": "<full blog post in clean, semantic HTML — see HTML FORMAT RULES below>",
   "wordCount": <number>,
-  "suggestedImages": ["<detailed image description specifying subject, composition, style, colors, mood>"],
+  "suggestedImages": [{"description": "<detailed image description for AI generation — subject, composition, style, colors, mood — NO text/words in the image>", "caption": "<short caption to display below the image in the article>", "placement": "<after which H2 section heading this image should appear>"}],
   "internalLinkSuggestions": ["<pages on the site this post should link to, with anchor text suggestions>"]
-}`;
+}
+
+HTML FORMAT RULES for the "content" field:
+- Use semantic HTML tags: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <table>, <thead>, <tbody>, <tr>, <th>, <td>, <blockquote>, <strong>, <em>, <a>
+- Do NOT include <h1> — the title is rendered separately
+- Do NOT include <html>, <head>, <body>, or <style> wrapper tags
+- Do NOT use markdown syntax — output pure HTML only
+- Every paragraph must be wrapped in <p> tags
+- Lists must use proper <ul>/<ol> with <li> tags
+- Tables must use <table> with <thead>/<tbody>/<tr>/<th>/<td>
+- Use <strong> for bold, <em> for italic
+- Include <!-- IMAGE_SLOT --> comments where images should be inserted (after key H2 sections)
+- The output must be ready to paste directly into any CMS (WordPress, Ghost, Webflow, etc.)`;
 
   try {
     let raw = await callClaude(SYSTEM_PROMPT, userMessage, 16000);

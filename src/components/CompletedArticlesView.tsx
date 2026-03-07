@@ -3,6 +3,14 @@ import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
 
+interface ArticleImage {
+  description: string;
+  caption?: string;
+  imageUrl: string | null;
+  error?: string;
+  placement?: string;
+}
+
 interface Article {
   id: string;
   project_id: string;
@@ -13,10 +21,10 @@ interface Article {
   meta_description: string;
   content: string;
   previous_content: string | null;
-  images: Array<{ description: string; imageUrl: string | null }>;
+  images: ArticleImage[];
   word_count: number;
   internal_link_suggestions: string[];
-  suggested_images: string[];
+  suggested_images: Array<string | { description: string; caption?: string; placement?: string }>;
   status: string;
   source: string;
   created_at: string;
@@ -28,6 +36,151 @@ interface CompletedArticlesViewProps {
   projectId: string;
 }
 
+function markdownToHtml(md: string): string {
+  if (!md) return '';
+  if (md.trim().startsWith('<')) return md;
+
+  let html = md;
+
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+
+  const lines = html.split('\n');
+  const result: string[] = [];
+  let inList = false;
+  let listType = '';
+  let inParagraph = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    if (line.startsWith('<h') || line.startsWith('<table') || line.startsWith('<blockquote')) {
+      if (inParagraph) { result.push('</p>'); inParagraph = false; }
+      if (inList) { result.push(listType === 'ul' ? '</ul>' : '</ol>'); inList = false; }
+      result.push(line);
+      continue;
+    }
+
+    const ulMatch = line.match(/^[-*+]\s+(.+)/);
+    const olMatch = line.match(/^\d+\.\s+(.+)/);
+
+    if (ulMatch) {
+      if (inParagraph) { result.push('</p>'); inParagraph = false; }
+      if (!inList || listType !== 'ul') {
+        if (inList) result.push(listType === 'ul' ? '</ul>' : '</ol>');
+        result.push('<ul>');
+        inList = true;
+        listType = 'ul';
+      }
+      result.push(`<li>${ulMatch[1]}</li>`);
+      continue;
+    }
+
+    if (olMatch) {
+      if (inParagraph) { result.push('</p>'); inParagraph = false; }
+      if (!inList || listType !== 'ol') {
+        if (inList) result.push(listType === 'ul' ? '</ul>' : '</ol>');
+        result.push('<ol>');
+        inList = true;
+        listType = 'ol';
+      }
+      result.push(`<li>${olMatch[1]}</li>`);
+      continue;
+    }
+
+    if (inList && !ulMatch && !olMatch) {
+      result.push(listType === 'ul' ? '</ul>' : '</ol>');
+      inList = false;
+    }
+
+    if (line === '') {
+      if (inParagraph) { result.push('</p>'); inParagraph = false; }
+      continue;
+    }
+
+    if (line.startsWith('<')) {
+      if (inParagraph) { result.push('</p>'); inParagraph = false; }
+      result.push(line);
+    } else {
+      if (!inParagraph) {
+        result.push('<p>');
+        inParagraph = true;
+      } else {
+        result.push(' ');
+      }
+      result.push(line);
+    }
+  }
+
+  if (inParagraph) result.push('</p>');
+  if (inList) result.push(listType === 'ul' ? '</ul>' : '</ol>');
+
+  return result.join('\n');
+}
+
+function embedImagesInContent(content: string, images: ArticleImage[]): string {
+  if (!images || images.length === 0) return content;
+
+  const validImages = images.filter(img => img.imageUrl);
+  if (validImages.length === 0) return content;
+
+  let html = content;
+
+  const slots = html.match(/<!--\s*IMAGE_SLOT\s*-->/g);
+  if (slots) {
+    let imgIdx = 0;
+    html = html.replace(/<!--\s*IMAGE_SLOT\s*-->/g, () => {
+      if (imgIdx < validImages.length) {
+        const img = validImages[imgIdx++];
+        return `<figure style="margin:2em 0"><img src="${img.imageUrl}" alt="${(img.caption || img.description || '').replace(/"/g, '&quot;')}" style="width:100%;border-radius:8px" />${img.caption ? `<figcaption style="text-align:center;font-size:0.875em;color:#666;margin-top:0.5em">${img.caption}</figcaption>` : ''}</figure>`;
+      }
+      return '';
+    });
+    return html;
+  }
+
+  const h2Matches = [...html.matchAll(/<\/h2>/gi)];
+  if (h2Matches.length > 0) {
+    let imgIdx = 0;
+    const insertAfterIndices: number[] = [];
+
+    if (h2Matches.length <= validImages.length) {
+      for (let i = 0; i < Math.min(h2Matches.length, validImages.length); i++) {
+        insertAfterIndices.push(i);
+      }
+    } else {
+      const step = Math.floor(h2Matches.length / validImages.length);
+      for (let i = 0; i < validImages.length; i++) {
+        insertAfterIndices.push(Math.min(i * step, h2Matches.length - 1));
+      }
+    }
+
+    let offset = 0;
+    for (const sectionIdx of insertAfterIndices) {
+      if (imgIdx >= validImages.length) break;
+      const match = h2Matches[sectionIdx];
+      const insertPos = match.index! + match[0].length + offset;
+
+      const nextClosingTag = html.indexOf('</p>', insertPos);
+      const actualInsertPos = nextClosingTag !== -1 ? nextClosingTag + 4 : insertPos;
+
+      const img = validImages[imgIdx++];
+      const figureHtml = `\n<figure style="margin:2em 0"><img src="${img.imageUrl}" alt="${(img.caption || img.description || '').replace(/"/g, '&quot;')}" style="width:100%;border-radius:8px" />${img.caption ? `<figcaption style="text-align:center;font-size:0.875em;color:#666;margin-top:0.5em">${img.caption}</figcaption>` : ''}</figure>\n`;
+
+      html = html.slice(0, actualInsertPos) + figureHtml + html.slice(actualInsertPos);
+      offset += figureHtml.length;
+    }
+  }
+
+  return html;
+}
+
 export default function CompletedArticlesView({ siteUrl, projectId }: CompletedArticlesViewProps) {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +189,8 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
   const [modifyPrompt, setModifyPrompt] = useState('');
   const [applyingModify, setApplyingModify] = useState(false);
   const [generatingImages, setGeneratingImages] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
   const loadArticles = useCallback(async () => {
     setLoading(true);
@@ -52,6 +207,7 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
   }, [loadArticles]);
 
   const deleteArticle = async (id: string) => {
+    if (!confirm('Delete this article permanently?')) return;
     try {
       await authenticatedFetch(API_ENDPOINTS.db.blogArticles, {
         method: 'DELETE',
@@ -110,39 +266,105 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
     }
   };
 
-  const generateImages = async (articleId: string, descriptions: string[]) => {
-    setGeneratingImages(articleId);
+  const generateImages = async (article: Article) => {
+    setGeneratingImages(article.id);
+    setImageError(null);
     try {
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.generateImages, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ descriptions }),
+        body: JSON.stringify({ descriptions: article.suggested_images }),
       });
       const data = await resp.json();
+
+      if (data.error) {
+        setImageError(data.error);
+        setGeneratingImages(null);
+        return;
+      }
+
       if (data.images) {
+        const validImages = data.images.filter((img: ArticleImage) => img.imageUrl);
+        if (validImages.length === 0) {
+          setImageError('All images failed to generate. ' + (data.errors?.join('; ') || 'Check your OpenAI API key.'));
+          setGeneratingImages(null);
+          return;
+        }
+
+        const updatedContent = embedImagesInContent(
+          markdownToHtml(article.content),
+          validImages
+        );
+
         await authenticatedFetch(API_ENDPOINTS.db.blogArticles, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: articleId, images: data.images }),
+          body: JSON.stringify({
+            id: article.id,
+            images: data.images,
+            content: updatedContent,
+            previous_content: article.content,
+          }),
         });
-        await loadArticles();
+
+        setArticles((prev) =>
+          prev.map((a) =>
+            a.id === article.id
+              ? { ...a, images: data.images, content: updatedContent, previous_content: article.content }
+              : a
+          )
+        );
+
+        if (data.errors?.length) {
+          setImageError(`${validImages.length} images generated, ${data.errors.length} failed.`);
+        }
       }
     } catch (err) {
       console.error('Failed to generate images:', err);
+      setImageError(err instanceof Error ? err.message : 'Failed to generate images');
     }
     setGeneratingImages(null);
   };
 
-  const sourceLabel = (s: string) => s === 'idea' ? 'From Idea' : s === 'series' ? 'Series' : 'Manual';
+  const copyHtml = (article: Article) => {
+    const html = getRenderedHtml(article);
+    const fullHtml = `<h1>${article.title}</h1>\n${html}`;
+    navigator.clipboard.writeText(fullHtml);
+    setCopyFeedback(article.id);
+    setTimeout(() => setCopyFeedback(null), 2000);
+  };
+
+  const getRenderedHtml = (article: Article) => {
+    let html = markdownToHtml(article.content);
+    const validImages = (article.images || []).filter(img => img.imageUrl);
+    if (validImages.length > 0 && !article.content.includes('<figure')) {
+      html = embedImagesInContent(html, validImages);
+    }
+    return html;
+  };
+
+  const sourceLabel = (s: string) => s === 'idea' ? 'From Idea' : s === 'series' ? 'Series' : s === 'queue' ? 'From Queue' : 'Manual';
 
   return (
     <div className="space-y-6 max-w-5xl">
       <div>
         <h1 className="text-2xl font-semibold text-apple-text">Completed Articles</h1>
         <p className="text-apple-sm text-apple-text-secondary mt-1">
-          All generated blog articles are saved here permanently. Modify, copy, or delete articles as needed.
+          All generated blog articles are saved here permanently. Copy HTML to paste directly into your CMS.
         </p>
       </div>
+
+      {imageError && (
+        <div className="bg-red-50 border border-red-200 rounded-apple p-4 flex items-center justify-between">
+          <div>
+            <p className="text-apple-sm text-red-800 font-medium">Image generation issue</p>
+            <p className="text-apple-xs text-red-600 mt-1">{imageError}</p>
+          </div>
+          <button onClick={() => setImageError(null)} className="text-red-400 hover:text-red-600 shrink-0 ml-4">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center gap-2 py-8 text-apple-text-secondary text-apple-sm justify-center">
@@ -161,6 +383,8 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
             const hasImages = article.images && article.images.length > 0 && article.images.some((img) => img.imageUrl);
             const isExpanded = expandedArticle === article.id;
             const isModifying = modifyingArticle === article.id;
+            const hasSuggestedImages = article.suggested_images && article.suggested_images.length > 0;
+            const isCopied = copyFeedback === article.id;
 
             return (
               <div key={article.id} className="bg-white rounded-apple border border-apple-border">
@@ -197,31 +421,29 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
                   <div className="border-t border-apple-divider p-4 space-y-4">
                     {/* Metadata */}
                     <div className="flex flex-wrap gap-4 text-apple-xs text-apple-text-secondary">
-                      {article.slug && <span>/{article.slug}</span>}
-                      {article.meta_description && <span className="italic">{article.meta_description}</span>}
+                      {article.slug && (
+                        <div>
+                          <span className="font-semibold">Slug: </span>
+                          <span>/{article.slug}</span>
+                        </div>
+                      )}
+                      {article.meta_description && (
+                        <div>
+                          <span className="font-semibold">Meta: </span>
+                          <span className="italic">{article.meta_description}</span>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Images */}
-                    {hasImages && (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {article.images.filter((img) => img.imageUrl).map((img, i) => (
-                          <div key={i} className="rounded-apple-sm overflow-hidden border border-apple-border">
-                            <img src={img.imageUrl!} alt={img.description} className="w-full h-32 object-cover" />
-                            <p className="text-[10px] text-apple-text-tertiary p-1.5 line-clamp-2">{img.description}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
                     {/* Generate images prompt */}
-                    {!hasImages && article.suggested_images && article.suggested_images.length > 0 && (
+                    {!hasImages && hasSuggestedImages && (
                       <div className="bg-amber-50/50 rounded-apple-sm border border-amber-100 p-3">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-apple-xs font-medium text-amber-800">
-                            {article.suggested_images.length} images suggested
+                            {article.suggested_images.length} images suggested — generate to embed them in the article
                           </span>
                           <button
-                            onClick={() => generateImages(article.id, article.suggested_images)}
+                            onClick={() => generateImages(article)}
                             disabled={generatingImages === article.id}
                             className="px-3 py-1 rounded-apple-sm bg-amber-600 text-white text-apple-xs font-medium hover:bg-amber-700 transition-colors disabled:opacity-50"
                           >
@@ -231,25 +453,36 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
                                 Generating...
                               </span>
                             ) : (
-                              'Generate Images'
+                              'Generate & Embed Images'
                             )}
                           </button>
                         </div>
                         <ul className="text-[10px] text-amber-700 space-y-0.5">
                           {article.suggested_images.map((desc, i) => (
-                            <li key={i}>• {desc}</li>
+                            <li key={i}>• {typeof desc === 'string' ? desc : desc.description}</li>
                           ))}
                         </ul>
                       </div>
                     )}
 
-                    {/* Article content */}
-                    <div className="prose prose-sm max-w-none text-apple-sm text-apple-text whitespace-pre-wrap bg-apple-fill-secondary rounded-apple-sm p-4">
-                      {article.content}
-                    </div>
+                    {/* Article content — rendered as HTML */}
+                    <div
+                      className="prose prose-sm max-w-none bg-apple-fill-secondary rounded-apple-sm p-6
+                        prose-headings:text-apple-text prose-h2:text-lg prose-h2:font-semibold prose-h2:mt-6 prose-h2:mb-3
+                        prose-h3:text-base prose-h3:font-semibold prose-h3:mt-4 prose-h3:mb-2
+                        prose-p:text-apple-text prose-p:leading-relaxed prose-p:mb-3
+                        prose-li:text-apple-text prose-strong:text-apple-text
+                        prose-a:text-apple-blue prose-a:no-underline hover:prose-a:underline
+                        prose-table:border-collapse prose-th:bg-gray-100 prose-th:p-2 prose-th:text-left prose-th:border prose-th:border-gray-200
+                        prose-td:p-2 prose-td:border prose-td:border-gray-200
+                        prose-blockquote:border-l-4 prose-blockquote:border-apple-blue prose-blockquote:pl-4 prose-blockquote:italic
+                        prose-img:rounded-lg prose-img:w-full
+                        prose-figcaption:text-center prose-figcaption:text-apple-text-tertiary prose-figcaption:text-sm"
+                      dangerouslySetInnerHTML={{ __html: getRenderedHtml(article) }}
+                    />
 
                     {/* Actions */}
-                    <div className="flex items-center gap-2 pt-1">
+                    <div className="flex items-center gap-2 pt-1 flex-wrap">
                       <button
                         onClick={() => {
                           setModifyingArticle(isModifying ? null : article.id);
@@ -272,10 +505,25 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
                         </button>
                       )}
                       <button
-                        onClick={() => navigator.clipboard.writeText(article.content)}
+                        onClick={() => copyHtml(article)}
+                        className="px-3 py-1.5 rounded-apple-sm bg-green-600 text-white text-apple-xs font-medium hover:bg-green-700 transition-colors"
+                      >
+                        {isCopied ? 'Copied!' : 'Copy HTML'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          const el = document.createElement('textarea');
+                          el.value = article.content;
+                          document.body.appendChild(el);
+                          el.select();
+                          document.execCommand('copy');
+                          document.body.removeChild(el);
+                          setCopyFeedback(article.id + '-raw');
+                          setTimeout(() => setCopyFeedback(null), 2000);
+                        }}
                         className="px-3 py-1.5 rounded-apple-sm border border-apple-border text-apple-text-secondary text-apple-xs font-medium hover:bg-apple-fill-secondary transition-colors"
                       >
-                        Copy
+                        {copyFeedback === article.id + '-raw' ? 'Copied!' : 'Copy Raw'}
                       </button>
                       <div className="flex-1" />
                       <button
