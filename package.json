@@ -15,7 +15,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.13.0",
-    "recharts": "^2.15.0"
+    "recharts": "^2.15.0",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

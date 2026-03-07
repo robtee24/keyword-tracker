@@ -1,6 +1,55 @@
 import { authenticateRequest } from '../_config.js';
+import sharp from 'sharp';
 
 export const config = { maxDuration: 120 };
+
+function buildTextOverlaySvg(text, width, height) {
+  if (!text) return null;
+
+  const maxCharsPerLine = 35;
+  const words = text.split(' ');
+  const lines = [];
+  let currentLine = '';
+
+  for (const word of words) {
+    if ((currentLine + ' ' + word).trim().length > maxCharsPerLine) {
+      if (currentLine) lines.push(currentLine.trim());
+      currentLine = word;
+    } else {
+      currentLine = currentLine ? currentLine + ' ' + word : word;
+    }
+  }
+  if (currentLine) lines.push(currentLine.trim());
+
+  const fontSize = Math.min(48, Math.max(28, Math.floor(width / 25)));
+  const lineHeight = fontSize * 1.35;
+  const blockHeight = lines.length * lineHeight + 40;
+  const yStart = height - blockHeight - 40;
+
+  const textElements = lines.map((line, i) => {
+    const y = yStart + 30 + (i + 1) * lineHeight;
+    const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return `<text x="${width / 2}" y="${y}" text-anchor="middle" fill="white" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="${fontSize}" font-weight="700" letter-spacing="0.5">${escaped}</text>`;
+  }).join('\n');
+
+  return Buffer.from(`<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="rgba(0,0,0,0)" />
+        <stop offset="30%" stop-color="rgba(0,0,0,0)" />
+        <stop offset="100%" stop-color="rgba(0,0,0,0.75)" />
+      </linearGradient>
+    </defs>
+    <rect x="0" y="${yStart - 20}" width="${width}" height="${height - yStart + 20}" fill="url(#grad)" />
+    ${textElements}
+  </svg>`);
+}
+
+async function downloadImage(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Failed to download image: ${resp.status}`);
+  return Buffer.from(await resp.arrayBuffer());
+}
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -28,7 +77,7 @@ export default async function handler(req, res) {
     const desc = typeof item === 'string' ? item : item.description || '';
     const caption = typeof item === 'string' ? '' : item.caption || '';
 
-    const prompt = `Create a premium, photorealistic blog article image. CONCEPT: ${desc}. CRITICAL: DO NOT include ANY text, words, letters, numbers, logos, watermarks, or typography of any kind. The image must be completely clean of all text and writing. STYLE: Ultra high-quality editorial photography, professional lighting, modern composition, rich colors, shallow depth of field where appropriate. Think top-tier magazine or brand campaign quality.`;
+    const prompt = `Create a premium, photorealistic blog article image. CONCEPT: ${desc}. CRITICAL RULE: DO NOT include ANY text, words, letters, numbers, logos, watermarks, or typography of any kind. The image must be completely clean of all text and writing — text will be added separately with perfect typography. STYLE: Ultra high-quality editorial photography, professional lighting, modern composition, rich colors. Leave clean space in the lower third for text overlay. Think top-tier magazine or brand campaign quality.`;
 
     try {
       console.log(`[BlogImages] Generating image ${i + 1}/${toGenerate.length}`);
@@ -57,15 +106,37 @@ export default async function handler(req, res) {
       }
 
       const data = await resp.json();
-      const url = data.data?.[0]?.url;
-      if (!url) {
-        console.error('[BlogImages] No URL in response:', JSON.stringify(data).substring(0, 200));
+      const dalleUrl = data.data?.[0]?.url;
+      if (!dalleUrl) {
         results.push({ description: desc, caption, error: 'No image URL returned', imageUrl: null });
         continue;
       }
 
-      console.log(`[BlogImages] Image ${i + 1} generated successfully`);
-      results.push({ description: desc, caption, imageUrl: url });
+      if (caption) {
+        try {
+          console.log(`[BlogImages] Compositing text onto image ${i + 1}`);
+          const imgBuffer = await downloadImage(dalleUrl);
+          const metadata = await sharp(imgBuffer).metadata();
+          const w = metadata.width || 1792;
+          const h = metadata.height || 1024;
+
+          const overlaySvg = buildTextOverlaySvg(caption, w, h);
+          const composited = await sharp(imgBuffer)
+            .composite([{ input: overlaySvg, top: 0, left: 0 }])
+            .jpeg({ quality: 90 })
+            .toBuffer();
+
+          const b64 = composited.toString('base64');
+          const dataUrl = `data:image/jpeg;base64,${b64}`;
+          console.log(`[BlogImages] Image ${i + 1} composited successfully`);
+          results.push({ description: desc, caption, imageUrl: dataUrl });
+        } catch (compErr) {
+          console.warn(`[BlogImages] Text composite failed, using original:`, compErr.message);
+          results.push({ description: desc, caption, imageUrl: dalleUrl });
+        }
+      } else {
+        results.push({ description: desc, caption, imageUrl: dalleUrl });
+      }
     } catch (err) {
       console.error(`[BlogImages] Image ${i + 1} error:`, err.message);
       results.push({ description: desc, caption, error: err.message, imageUrl: null });
