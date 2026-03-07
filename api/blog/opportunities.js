@@ -199,11 +199,13 @@ Return JSON: {"opportunities":[{"title":"...","targetKeyword":"...","relatedKeyw
 
     const batchId = crypto.randomUUID();
 
+    const now = new Date().toISOString();
+
     if (supabase && opportunities.length > 0) {
-      const now = new Date().toISOString();
-      const baseRow = (opp) => ({
+      const fullRow = (opp) => ({
         site_url: siteUrl,
         project_id: projectId || null,
+        batch_id: batchId,
         title: opp.title,
         target_keyword: opp.targetKeyword,
         related_keywords: opp.relatedKeywords || [],
@@ -217,31 +219,39 @@ Return JSON: {"opportunities":[{"title":"...","targetKeyword":"...","relatedKeyw
         created_at: now,
       });
 
+      const coreRow = (opp) => ({
+        site_url: siteUrl,
+        project_id: projectId || null,
+        title: opp.title,
+        description: opp.description || '',
+        status: 'pending',
+        created_at: now,
+      });
+
       let inserted = null;
       let lastError = null;
 
-      const rowsWithBatch = opportunities.map((opp) => ({ ...baseRow(opp), batch_id: batchId }));
-      const result1 = await supabase.from('blog_opportunities').insert(rowsWithBatch).select();
+      const result1 = await supabase.from('blog_opportunities').insert(opportunities.map(fullRow)).select();
       if (!result1.error) {
         inserted = result1.data;
       } else {
-        console.warn('[BlogOpps] Insert with batch_id failed:', result1.error.message, '— retrying without');
-        const rowsNoBatch = opportunities.map((opp) => baseRow(opp));
-        const result2 = await supabase.from('blog_opportunities').insert(rowsNoBatch).select();
+        console.warn('[BlogOpps] Full insert failed:', result1.error.message, '— retrying with core columns');
+        const result2 = await supabase.from('blog_opportunities').insert(opportunities.map(coreRow)).select();
         if (!result2.error) {
           inserted = result2.data;
         } else {
           lastError = result2.error.message;
-          console.error('[BlogOpps] Insert without batch_id also failed:', lastError);
+          console.error('[BlogOpps] Core insert also failed:', lastError);
         }
       }
 
       if (!inserted) {
         console.error('[BlogOpps] All insert attempts failed. Last error:', lastError);
+        const fallback = opportunities.map((opp) => ({ ...opp, created_at: now, batch_id: batchId }));
         return res.status(200).json({
-          opportunities,
+          opportunities: fallback,
           batchId,
-          warning: 'Ideas generated but failed to save to database: ' + (lastError || 'unknown error') + '. Please check that the blog_opportunities table exists.',
+          warning: 'Ideas generated but failed to save to database: ' + (lastError || 'unknown error') + '. Please check that the blog_opportunities table has all required columns.',
         });
       }
 
@@ -250,7 +260,8 @@ Return JSON: {"opportunities":[{"title":"...","targetKeyword":"...","relatedKeyw
     }
 
     console.log(`[BlogOpps] Done (${Date.now() - startTime}ms total)`);
-    return res.status(200).json({ opportunities, batchId });
+    const withDates = opportunities.map((opp) => ({ ...opp, created_at: now, batch_id: batchId }));
+    return res.status(200).json({ opportunities: withDates, batchId });
   } catch (err) {
     console.error('[BlogOpps] Generation error:', err.message, err.stack);
     return res.status(500).json({ error: err.message });
