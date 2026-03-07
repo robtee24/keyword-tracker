@@ -54,6 +54,20 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true });
   }
 
+  if (req.method === 'PATCH') {
+    const { id, projectId: pid, status } = req.body || {};
+    if (!id || !status) return res.status(400).json({ error: 'id and status are required' });
+
+    let q = supabase.from('blog_opportunities').update({ status }).eq('id', id);
+    if (pid) q = q.eq('project_id', pid);
+    const { error } = await q;
+    if (error) {
+      console.error('[BlogOpps] Patch error:', error.message);
+      return res.status(500).json({ error: error.message });
+    }
+    return res.status(200).json({ success: true });
+  }
+
   if (req.method === 'DELETE') {
     const { batchId, id, projectId } = req.body || {};
 

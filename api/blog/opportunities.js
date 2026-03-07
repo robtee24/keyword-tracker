@@ -217,27 +217,36 @@ Return JSON: {"opportunities":[{"title":"...","targetKeyword":"...","relatedKeyw
         created_at: now,
       });
 
-      let rows = opportunities.map((opp) => ({ ...baseRow(opp), batch_id: batchId }));
-      let { data: inserted, error: insertErr } = await supabase
-        .from('blog_opportunities')
-        .insert(rows)
-        .select();
+      let inserted = null;
+      let lastError = null;
 
-      if (insertErr && insertErr.message?.includes('batch_id')) {
-        console.warn('[BlogOpps] batch_id column missing, retrying without it');
-        rows = opportunities.map((opp) => baseRow(opp));
-        const retry = await supabase.from('blog_opportunities').insert(rows).select();
-        inserted = retry.data;
-        insertErr = retry.error;
+      const rowsWithBatch = opportunities.map((opp) => ({ ...baseRow(opp), batch_id: batchId }));
+      const result1 = await supabase.from('blog_opportunities').insert(rowsWithBatch).select();
+      if (!result1.error) {
+        inserted = result1.data;
+      } else {
+        console.warn('[BlogOpps] Insert with batch_id failed:', result1.error.message, '— retrying without');
+        const rowsNoBatch = opportunities.map((opp) => baseRow(opp));
+        const result2 = await supabase.from('blog_opportunities').insert(rowsNoBatch).select();
+        if (!result2.error) {
+          inserted = result2.data;
+        } else {
+          lastError = result2.error.message;
+          console.error('[BlogOpps] Insert without batch_id also failed:', lastError);
+        }
       }
 
-      if (insertErr) {
-        console.error('[BlogOpps] Insert error:', insertErr.message);
-        return res.status(200).json({ opportunities, batchId, warning: 'Generated but failed to save: ' + insertErr.message });
+      if (!inserted) {
+        console.error('[BlogOpps] All insert attempts failed. Last error:', lastError);
+        return res.status(200).json({
+          opportunities,
+          batchId,
+          warning: 'Ideas generated but failed to save to database: ' + (lastError || 'unknown error') + '. Please check that the blog_opportunities table exists.',
+        });
       }
 
-      console.log(`[BlogOpps] Done (${Date.now() - startTime}ms total)`);
-      return res.status(200).json({ opportunities: inserted || opportunities, batchId });
+      console.log(`[BlogOpps] Saved ${inserted.length} opportunities (${Date.now() - startTime}ms total)`);
+      return res.status(200).json({ opportunities: inserted, batchId });
     }
 
     console.log(`[BlogOpps] Done (${Date.now() - startTime}ms total)`);

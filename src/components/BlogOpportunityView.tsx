@@ -126,6 +126,7 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [blogError, setBlogError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
 
   const batches = useMemo(() => groupIntoBatches(opportunities), [opportunities]);
 
@@ -148,6 +149,7 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
   const generateOpportunities = async () => {
     setGenerating(true);
     setError(null);
+    setWarning(null);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 100000);
     try {
@@ -174,7 +176,7 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
           setExpandedBatch(data.batchId);
         }
         if (data.warning) {
-          console.warn('[BlogOpps]', data.warning);
+          setWarning(data.warning);
         }
         logActivity(siteUrl, 'blog', 'opportunities', 'Generated blog topic opportunities');
       } else {
@@ -193,9 +195,8 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
     setGenerating(false);
   };
 
-  const generateBlogPost = async (opp: Opportunity) => {
-    if (!opp.id) return;
-    setGeneratingBlog(opp.id);
+  const generateBlogPost = async (opp: Opportunity, oppKey: string) => {
+    setGeneratingBlog(oppKey);
     setBlogError(null);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 120000);
@@ -212,7 +213,7 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
           relatedKeywords: opp.relatedKeywords,
           description: opp.description,
           objectives,
-          opportunityId: opp.id,
+          opportunityId: opp.id || undefined,
           source: 'idea',
         }),
         signal: controller.signal,
@@ -221,10 +222,10 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
       if (data.error) {
         setBlogError(data.error);
       } else if (data.blog) {
+        const matchFn = (o: Opportunity) =>
+          opp.id ? o.id === opp.id : o.title === opp.title && o.created_at === opp.created_at;
         setOpportunities((prev) =>
-          prev.map((o) =>
-            o.id === opp.id ? { ...o, status: 'completed', generated_blog: data.blog } : o
-          )
+          prev.map((o) => matchFn(o) ? { ...o, status: 'completed', generated_blog: data.blog } : o)
         );
         logActivity(siteUrl, 'blog', 'post-generated', `Generated blog post: ${opp.title}`);
       } else {
@@ -241,6 +242,36 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
       clearTimeout(timeout);
     }
     setGeneratingBlog(null);
+  };
+
+  const addToQueue = async (opp: Opportunity, oppKey: string) => {
+    if (opp.id) {
+      try {
+        await authenticatedFetch(API_ENDPOINTS.db.blogOpportunities, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: opp.id, projectId, status: 'queued' }),
+        });
+      } catch { /* best effort */ }
+    }
+    const matchFn = (o: Opportunity) =>
+      opp.id ? o.id === opp.id : o.title === opp.title && o.created_at === opp.created_at;
+    setOpportunities((prev) => prev.map((o) => matchFn(o) ? { ...o, status: 'queued' } : o));
+  };
+
+  const deleteIndividual = async (opp: Opportunity) => {
+    if (opp.id) {
+      try {
+        await authenticatedFetch(API_ENDPOINTS.db.blogOpportunities, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: opp.id, projectId }),
+        });
+      } catch { /* best effort */ }
+    }
+    const matchFn = (o: Opportunity) =>
+      opp.id ? o.id === opp.id : o.title === opp.title && o.created_at === opp.created_at;
+    setOpportunities((prev) => prev.filter((o) => !matchFn(o)));
   };
 
   const deleteBatch = async (batch: Batch) => {
@@ -263,7 +294,14 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
         }
       }
     } catch { /* best effort */ }
-    setOpportunities((prev) => prev.filter((o) => !ids.includes(o.id!)));
+    setOpportunities((prev) => {
+      const batchTitles = new Set(batch.opportunities.map(o => o.title));
+      return prev.filter((o) => {
+        if (ids.includes(o.id!)) return false;
+        if (!o.id && batchTitles.has(o.title)) return false;
+        return true;
+      });
+    });
     if (expandedBatch === batch.batchId) setExpandedBatch(null);
   };
 
@@ -315,6 +353,18 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
         </div>
       )}
 
+      {warning && (
+        <div className="bg-amber-50 border border-amber-200 rounded-apple p-4 flex items-center justify-between">
+          <div>
+            <p className="text-apple-sm text-amber-800 font-medium">Ideas generated but not saved</p>
+            <p className="text-apple-xs text-amber-600 mt-1">{warning}</p>
+          </div>
+          <button onClick={() => setWarning(null)} className="text-amber-400 hover:text-amber-600 shrink-0 ml-4">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+      )}
+
       {blogError && (
         <div className="bg-red-50 border border-red-200 rounded-apple p-4 flex items-center justify-between">
           <div>
@@ -342,7 +392,8 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
         <div className="space-y-3">
           {batches.map((batch) => {
             const isExp = expandedBatch === batch.batchId;
-            const articlesGenerated = batch.opportunities.filter((o) => o.generated_blog).length;
+            const articlesGenerated = batch.opportunities.filter((o) => o.generated_blog || o.status === 'completed').length;
+            const queuedCount = batch.opportunities.filter((o) => o.status === 'queued').length;
             const totalIdeas = batch.opportunities.length;
             const dateStr = batch.createdAt
               ? new Date(batch.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -350,7 +401,6 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
 
             return (
               <div key={batch.batchId} className="rounded-apple border border-apple-divider bg-white overflow-hidden shadow-sm">
-                {/* Batch Card Header */}
                 <div
                   className="p-4 flex items-center gap-3 cursor-pointer hover:bg-apple-fill-secondary/30 transition-colors"
                   onClick={() => setExpandedBatch(isExp ? null : batch.batchId)}
@@ -371,6 +421,11 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
                           · {articlesGenerated} article{articlesGenerated !== 1 ? 's' : ''} created
                         </span>
                       )}
+                      {queuedCount > 0 && (
+                        <span className="ml-2 text-purple-600">
+                          · {queuedCount} queued
+                        </span>
+                      )}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -389,7 +444,6 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
                   </div>
                 </div>
 
-                {/* Expanded: Ideas List */}
                 {isExp && (
                   <div className="border-t border-apple-divider bg-apple-fill-secondary/20 p-4 space-y-3">
                     {batch.opportunities.map((opp, idx) => {
@@ -398,10 +452,13 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
                         <OpportunityCard
                           key={oppKey}
                           opp={opp}
+                          oppKey={oppKey}
                           expanded={expandedId === oppKey}
                           onToggle={() => setExpandedId(expandedId === oppKey ? null : oppKey)}
-                          onGenerate={() => generateBlogPost(opp)}
-                          generatingBlog={generatingBlog === opp.id}
+                          onGenerate={() => generateBlogPost(opp, oppKey)}
+                          onAddToQueue={() => addToQueue(opp, oppKey)}
+                          onDelete={() => deleteIndividual(opp)}
+                          generatingBlog={generatingBlog === oppKey}
                           getVolumeColor={getVolumeColor}
                           getDifficultyColor={getDifficultyColor}
                           getFunnelColor={getFunnelColor}
@@ -420,18 +477,24 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
 }
 
 function OpportunityCard({
-  opp, expanded, onToggle, onGenerate, generatingBlog,
+  opp, oppKey, expanded, onToggle, onGenerate, onAddToQueue, onDelete, generatingBlog,
   getVolumeColor, getDifficultyColor, getFunnelColor,
 }: {
   opp: Opportunity;
+  oppKey: string;
   expanded: boolean;
   onToggle: () => void;
   onGenerate: () => void;
+  onAddToQueue: () => void;
+  onDelete: () => void;
   generatingBlog: boolean;
   getVolumeColor: (v: string) => string;
   getDifficultyColor: (d: string) => string;
   getFunnelColor: (f: string) => string;
 }) {
+  const isQueued = opp.status === 'queued';
+  const isCompleted = opp.status === 'completed' || !!opp.generated_blog;
+
   return (
     <div className="bg-white rounded-apple border border-apple-border">
       <button onClick={onToggle} className="w-full flex items-center gap-3 p-3 text-left hover:bg-apple-fill-secondary transition-colors">
@@ -450,9 +513,14 @@ function OpportunityCard({
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
               {opp.contentType}
             </span>
-            {opp.generated_blog && (
+            {isCompleted && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">
                 Article Created
+              </span>
+            )}
+            {isQueued && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-medium">
+                In Queue
               </span>
             )}
           </div>
@@ -483,27 +551,43 @@ function OpportunityCard({
           )}
           <p className="text-apple-sm text-apple-text-secondary">{opp.description}</p>
 
-          <div className="flex gap-2 pt-1">
-            {opp.generated_blog ? (
+          <div className="flex items-center gap-2 pt-1 flex-wrap">
+            {isCompleted ? (
               <span className="px-3 py-1.5 rounded-apple-sm bg-green-50 text-green-700 text-apple-xs font-medium border border-green-200">
                 Article Generated — View in Completed
               </span>
             ) : (
-              <button
-                onClick={onGenerate}
-                disabled={generatingBlog || !opp.id}
-                className="px-3 py-1.5 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
-              >
-                {generatingBlog ? (
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Generating Article...
-                  </span>
-                ) : (
-                  'Generate Article'
+              <>
+                <button
+                  onClick={onGenerate}
+                  disabled={generatingBlog}
+                  className="px-3 py-1.5 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
+                >
+                  {generatingBlog ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Generating Article...
+                    </span>
+                  ) : (
+                    'Generate Article'
+                  )}
+                </button>
+                {!isQueued && (
+                  <button
+                    onClick={onAddToQueue}
+                    className="px-3 py-1.5 rounded-apple-sm border border-purple-300 text-purple-700 text-apple-xs font-medium hover:bg-purple-50 transition-colors"
+                  >
+                    Add to Queue
+                  </button>
                 )}
-              </button>
+              </>
             )}
+            <button
+              onClick={onDelete}
+              className="px-3 py-1.5 rounded-apple-sm text-apple-text-tertiary text-apple-xs hover:text-red-600 hover:bg-red-50 transition-colors ml-auto"
+            >
+              Delete
+            </button>
           </div>
         </div>
       )}

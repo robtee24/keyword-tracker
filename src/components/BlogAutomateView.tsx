@@ -1,13 +1,15 @@
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
 
-interface SeriesTopic {
+interface QueueItem {
   id: string;
   title: string;
   description: string;
+  targetKeyword: string;
   generated: boolean;
+  fromQueue: boolean;
 }
 
 interface BlogAutomateViewProps {
@@ -18,7 +20,6 @@ interface BlogAutomateViewProps {
 export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateViewProps) {
   const [mode, setMode] = useState<'single' | 'series'>('single');
 
-  // Single article state
   const [inputMethod, setInputMethod] = useState<'describe' | 'keywords'>('describe');
   const [articleDescription, setArticleDescription] = useState('');
   const [keywords, setKeywords] = useState('');
@@ -27,12 +28,44 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
   const [generatingArticle, setGeneratingArticle] = useState(false);
   const [lastGeneratedTitle, setLastGeneratedTitle] = useState<string | null>(null);
 
-  // Series state
   const [seriesTheme, setSeriesTheme] = useState('');
   const [seriesCount, setSeriesCount] = useState(5);
-  const [seriesTopics, setSeriesTopics] = useState<SeriesTopic[]>([]);
+  const [seriesTopics, setSeriesTopics] = useState<QueueItem[]>([]);
   const [generatingTopics, setGeneratingTopics] = useState(false);
   const [generatingSeriesArticle, setGeneratingSeriesArticle] = useState<string | null>(null);
+
+  const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
+  const [loadingQueue, setLoadingQueue] = useState(false);
+
+  const loadQueue = useCallback(async () => {
+    setLoadingQueue(true);
+    try {
+      const resp = await authenticatedFetch(
+        `${API_ENDPOINTS.db.blogOpportunities}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`
+      );
+      const data = await resp.json();
+      const queued = (data.opportunities || [])
+        .filter((o: Record<string, string>) => o.status === 'queued')
+        .map((o: Record<string, string>) => ({
+          id: o.id,
+          title: o.title,
+          description: o.description || '',
+          targetKeyword: o.target_keyword || o.targetKeyword || '',
+          generated: false,
+          fromQueue: true,
+        }));
+      setQueueItems(queued);
+    } catch (err) {
+      console.error('[BlogWriter] Queue load error:', err);
+    }
+    setLoadingQueue(false);
+  }, [siteUrl, projectId]);
+
+  useEffect(() => {
+    loadQueue();
+  }, [loadQueue]);
+
+  const allSeriesItems = [...queueItems, ...seriesTopics.filter(t => !t.fromQueue)];
 
   const autoGenerateImages = useCallback(async (articleId: string, descriptions: string[]) => {
     try {
@@ -109,6 +142,7 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
     setGeneratingTopics(true);
     try {
       const objectives = localStorage.getItem('site_objectives') || localStorage.getItem(`kt_objectives_${projectId}`) || '';
+      const remainingCount = Math.max(1, seriesCount - queueItems.length);
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.opportunities, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -117,9 +151,9 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
           projectId,
           objectives,
           existingKeywords: [],
-          existingTopics: [],
+          existingTopics: queueItems.map(q => q.title),
           seriesTheme: seriesTheme.trim(),
-          count: seriesCount,
+          count: remainingCount,
         }),
       });
       const data = await resp.json();
@@ -129,7 +163,9 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
             id: o.id || `topic-${i}`,
             title: o.title,
             description: o.description || '',
+            targetKeyword: o.target_keyword || o.targetKeyword || '',
             generated: false,
+            fromQueue: false,
           }))
         );
       }
@@ -139,12 +175,23 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
     setGeneratingTopics(false);
   };
 
-  const removeTopic = (id: string) => {
-    setSeriesTopics((prev) => prev.filter((t) => t.id !== id));
+  const removeItem = async (item: QueueItem) => {
+    if (item.fromQueue && item.id) {
+      try {
+        await authenticatedFetch(API_ENDPOINTS.db.blogOpportunities, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: item.id, projectId, status: 'pending' }),
+        });
+      } catch { /* best effort */ }
+      setQueueItems((prev) => prev.filter((q) => q.id !== item.id));
+    } else {
+      setSeriesTopics((prev) => prev.filter((t) => t.id !== item.id));
+    }
   };
 
-  const generateSeriesArticle = async (topic: SeriesTopic) => {
-    setGeneratingSeriesArticle(topic.id);
+  const generateItemArticle = async (item: QueueItem) => {
+    setGeneratingSeriesArticle(item.id);
     try {
       const objectives = localStorage.getItem('site_objectives') || localStorage.getItem(`kt_objectives_${projectId}`) || '';
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.generate, {
@@ -153,24 +200,35 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
         body: JSON.stringify({
           siteUrl,
           projectId,
-          title: topic.title,
-          description: topic.description,
+          title: item.title,
+          targetKeyword: item.targetKeyword,
+          description: item.description,
           objectives,
-          source: 'series',
+          opportunityId: item.fromQueue ? item.id : undefined,
+          source: item.fromQueue ? 'queue' : 'series',
         }),
       });
       const data = await resp.json();
       if (data.blog) {
-        setSeriesTopics((prev) =>
-          prev.map((t) => (t.id === topic.id ? { ...t, generated: true } : t))
-        );
+        if (item.fromQueue) {
+          setQueueItems((prev) => prev.map((q) => q.id === item.id ? { ...q, generated: true } : q));
+          try {
+            await authenticatedFetch(API_ENDPOINTS.db.blogOpportunities, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: item.id, projectId, status: 'completed' }),
+            });
+          } catch { /* best effort */ }
+        } else {
+          setSeriesTopics((prev) => prev.map((t) => t.id === item.id ? { ...t, generated: true } : t));
+        }
         if (data.blog.articleId && data.blog.suggestedImages?.length > 0) {
           autoGenerateImages(data.blog.articleId, data.blog.suggestedImages);
         }
-        logActivity(siteUrl, 'blog', 'series-article', `Generated series article: ${topic.title}`);
+        logActivity(siteUrl, 'blog', 'series-article', `Generated article: ${item.title}`);
       }
     } catch (err) {
-      console.error('Failed to generate series article:', err);
+      console.error('Failed to generate article:', err);
     }
     setGeneratingSeriesArticle(null);
   };
@@ -184,7 +242,6 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
         </p>
       </div>
 
-      {/* Mode Toggle */}
       <div className="flex gap-1 bg-apple-fill-secondary rounded-apple-sm p-1 max-w-xs">
         <button
           onClick={() => setMode('single')}
@@ -204,7 +261,6 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
         </button>
       </div>
 
-      {/* Single Article Mode */}
       {mode === 'single' && (
         <div className="bg-white rounded-apple border border-apple-border p-5 space-y-4">
           <h2 className="text-base font-semibold text-apple-text">Write a Single Article</h2>
@@ -325,11 +381,96 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
         </div>
       )}
 
-      {/* Series Mode */}
       {mode === 'series' && (
         <div className="space-y-4">
+          {/* Queue Section */}
+          {queueItems.length > 0 && (
+            <div className="bg-white rounded-apple border border-purple-200 p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-purple-500" />
+                  <h3 className="text-base font-semibold text-apple-text">
+                    Writing Queue ({queueItems.filter(q => !q.generated).length} remaining)
+                  </h3>
+                </div>
+                <span className="text-apple-xs text-apple-text-tertiary">
+                  {queueItems.filter(q => q.generated).length} / {queueItems.length} completed
+                </span>
+              </div>
+              <p className="text-apple-xs text-apple-text-tertiary">
+                Topics added from Blog Ideas. Generate articles one at a time or plan additional series topics below.
+              </p>
+              <div className="space-y-2">
+                {queueItems.map((item, i) => (
+                  <div
+                    key={item.id}
+                    className={`flex items-center gap-3 p-3 rounded-apple-sm border ${
+                      item.generated ? 'border-green-200 bg-green-50/30' : 'border-purple-100 bg-purple-50/20'
+                    }`}
+                  >
+                    <span className="text-apple-xs text-apple-text-tertiary font-mono w-6 text-center shrink-0">
+                      {i + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-apple-sm font-medium ${item.generated ? 'text-green-700' : 'text-apple-text'}`}>
+                        {item.title}
+                      </p>
+                      {item.targetKeyword && (
+                        <p className="text-apple-xs text-apple-text-tertiary mt-0.5">
+                          Keyword: {item.targetKeyword}
+                        </p>
+                      )}
+                    </div>
+                    {item.generated ? (
+                      <span className="text-apple-xs text-green-600 font-medium shrink-0">Done</span>
+                    ) : (
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => generateItemArticle(item)}
+                          disabled={generatingSeriesArticle === item.id}
+                          className="px-3 py-1 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
+                        >
+                          {generatingSeriesArticle === item.id ? (
+                            <span className="flex items-center gap-1.5">
+                              <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              Writing...
+                            </span>
+                          ) : (
+                            'Generate'
+                          )}
+                        </button>
+                        <button
+                          onClick={() => removeItem(item)}
+                          className="text-apple-text-tertiary hover:text-apple-red text-apple-xs"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {loadingQueue && queueItems.length === 0 && (
+            <div className="flex items-center gap-2 py-4 text-apple-text-secondary text-apple-sm justify-center">
+              <div className="w-4 h-4 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
+              Loading queue...
+            </div>
+          )}
+
+          {/* Generate Series Topics */}
           <div className="bg-white rounded-apple border border-apple-border p-5 space-y-4">
-            <h2 className="text-base font-semibold text-apple-text">Create a Blog Series</h2>
+            <h2 className="text-base font-semibold text-apple-text">
+              {queueItems.length > 0 ? 'Add More Series Topics' : 'Create a Blog Series'}
+            </h2>
+            {queueItems.length > 0 && (
+              <p className="text-apple-xs text-apple-text-tertiary">
+                {queueItems.length} topic{queueItems.length !== 1 ? 's' : ''} already in queue.
+                Generate additional topics to fill out the series, or generate articles from the queue above.
+              </p>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="sm:col-span-2">
                 <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1.5">
@@ -345,14 +486,14 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
               </div>
               <div>
                 <label className="block text-apple-xs font-medium text-apple-text-secondary mb-1.5">
-                  Number of Articles
+                  Additional Articles
                 </label>
                 <input
                   type="number"
-                  min={2}
+                  min={1}
                   max={15}
                   value={seriesCount}
-                  onChange={(e) => setSeriesCount(Math.max(2, Math.min(15, parseInt(e.target.value) || 5)))}
+                  onChange={(e) => setSeriesCount(Math.max(1, Math.min(15, parseInt(e.target.value) || 5)))}
                   className="input w-full text-apple-sm"
                 />
               </div>
@@ -368,24 +509,24 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
                   Planning Series...
                 </span>
               ) : (
-                'Plan Series'
+                queueItems.length > 0 ? 'Generate Additional Topics' : 'Plan Series'
               )}
             </button>
           </div>
 
-          {seriesTopics.length > 0 && (
+          {/* Generated Series Topics */}
+          {seriesTopics.filter(t => !t.fromQueue).length > 0 && (
             <div className="bg-white rounded-apple border border-apple-border p-5 space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-base font-semibold text-apple-text">
-                  Series Articles ({seriesTopics.length})
+                  Series Articles ({seriesTopics.filter(t => !t.fromQueue).length})
                 </h3>
                 <span className="text-apple-xs text-apple-text-tertiary">
-                  {seriesTopics.filter((t) => t.generated).length} / {seriesTopics.length} completed
+                  {seriesTopics.filter((t) => !t.fromQueue && t.generated).length} / {seriesTopics.filter(t => !t.fromQueue).length} completed
                 </span>
               </div>
-
               <div className="space-y-2">
-                {seriesTopics.map((topic, i) => (
+                {seriesTopics.filter(t => !t.fromQueue).map((topic, i) => (
                   <div
                     key={topic.id}
                     className={`flex items-center gap-3 p-3 rounded-apple-sm border ${
@@ -393,7 +534,7 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
                     }`}
                   >
                     <span className="text-apple-xs text-apple-text-tertiary font-mono w-6 text-center shrink-0">
-                      {i + 1}
+                      {queueItems.length + i + 1}
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className={`text-apple-sm font-medium ${topic.generated ? 'text-green-700' : 'text-apple-text'}`}>
@@ -408,7 +549,7 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
                     ) : (
                       <div className="flex items-center gap-2 shrink-0">
                         <button
-                          onClick={() => generateSeriesArticle(topic)}
+                          onClick={() => generateItemArticle(topic)}
                           disabled={generatingSeriesArticle === topic.id}
                           className="px-3 py-1 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
                         >
@@ -422,7 +563,7 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
                           )}
                         </button>
                         <button
-                          onClick={() => removeTopic(topic.id)}
+                          onClick={() => removeItem(topic)}
                           className="text-apple-text-tertiary hover:text-apple-red text-apple-xs"
                         >
                           Remove
@@ -432,6 +573,14 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {queueItems.length === 0 && seriesTopics.length === 0 && !loadingQueue && (
+            <div className="bg-apple-fill-secondary/30 rounded-apple p-5 text-center">
+              <p className="text-apple-sm text-apple-text-secondary">
+                No topics in queue. Add topics from Blog Ideas using &quot;Add to Queue&quot;, or plan a new series above.
+              </p>
             </div>
           )}
         </div>
