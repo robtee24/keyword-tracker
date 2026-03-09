@@ -14,6 +14,7 @@ export type View =
   | 'blog-opportunity' | 'blog-automate' | 'blog-completed'
   | 'ads-google' | 'ads-meta' | 'ads-tiktok' | 'ads-linkedin' | 'ads-x'
   | 'social-instagram' | 'social-linkedin' | 'social-x' | 'social-facebook' | 'social-tiktok' | 'social-pinterest'
+  | 'video-ideas' | 'video-create'
   | 'build-rebuild' | 'build-new'
   | 'tasks' | 'activity'
   | 'brand'
@@ -34,6 +35,7 @@ const AD_AUDIT_VIEWS = new Set<View>(['ad-audit', 'ad-audit-google', 'ad-audit-m
 const CONTENT_VIEWS = new Set<View>(['blog-opportunity', 'blog-automate', 'blog-completed']);
 const ADS_VIEWS = new Set<View>(['ads-google', 'ads-meta', 'ads-tiktok', 'ads-linkedin', 'ads-x']);
 const SOCIAL_VIEWS = new Set<View>(['social-instagram', 'social-linkedin', 'social-x', 'social-facebook', 'social-tiktok', 'social-pinterest']);
+const VIDEO_ADS_VIEWS = new Set<View>(['video-ideas', 'video-create']);
 const PAGES_VIEWS = new Set<View>(['build-rebuild', 'build-new']);
 
 const searchSubItems: Array<{ id: View; label: string }> = [
@@ -87,6 +89,11 @@ const socialSubItems: Array<{ id: View; label: string }> = [
   { id: 'social-facebook', label: 'Facebook' },
   { id: 'social-tiktok', label: 'TikTok' },
   { id: 'social-pinterest', label: 'Pinterest' },
+];
+
+const videoAdsSubItems: Array<{ id: View; label: string }> = [
+  { id: 'video-ideas', label: 'Generate Ideas' },
+  { id: 'video-create', label: 'Create Video' },
 ];
 
 const pagesSubItems: Array<{ id: View; label: string }> = [
@@ -227,6 +234,7 @@ export default function Sidebar({
   const isContentActive = CONTENT_VIEWS.has(currentView);
   const isAdsActive = ADS_VIEWS.has(currentView);
   const isSocialActive = SOCIAL_VIEWS.has(currentView);
+  const isVideoAdsActive = VIDEO_ADS_VIEWS.has(currentView);
   const isPagesActive = PAGES_VIEWS.has(currentView);
 
   const [searchExpanded, setSearchExpanded] = useState(isSearchActive);
@@ -235,6 +243,7 @@ export default function Sidebar({
   const [contentExpanded, setContentExpanded] = useState(isContentActive);
   const [adsExpanded, setAdsExpanded] = useState(isAdsActive);
   const [socialExpanded, setSocialExpanded] = useState(isSocialActive);
+  const [videoAdsExpanded, setVideoAdsExpanded] = useState(isVideoAdsActive);
   const [pagesExpanded, setPagesExpanded] = useState(isPagesActive);
 
   const allowedAuditTypes = planInfo?.features?.audit_types || ['seo', 'content'];
@@ -482,6 +491,23 @@ export default function Sidebar({
               isGroupActive={isSocialActive}
               expanded={socialExpanded}
               onToggleExpand={() => setSocialExpanded(!socialExpanded)}
+              currentView={currentView}
+              onNavigate={onNavigate}
+              collapsed={collapsed}
+            />
+
+            <NavGroup
+              label="Video Ads"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              }
+              parentView="video-ideas"
+              subItems={videoAdsSubItems}
+              isGroupActive={isVideoAdsActive}
+              expanded={videoAdsExpanded}
+              onToggleExpand={() => setVideoAdsExpanded(!videoAdsExpanded)}
               currentView={currentView}
               onNavigate={onNavigate}
               collapsed={collapsed}

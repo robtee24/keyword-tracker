@@ -47,6 +47,8 @@ import BackgroundTaskIndicator from './components/BackgroundTaskIndicator';
 import UpgradePrompt from './components/UpgradePrompt';
 import SettingsView from './components/SettingsView';
 import BrandView from './components/BrandView';
+import VideoIdeasView from './components/VideoIdeasView';
+import VideoCreateView from './components/VideoCreateView';
 import GscPropertyDropdown from './components/GscPropertyDropdown';
 import GscRequiredModal from './components/GscRequiredModal';
 import type { DateRange } from './types';
@@ -98,6 +100,8 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   'social-facebook': 'Social › Facebook',
   'social-tiktok': 'Social › TikTok',
   'social-pinterest': 'Social › Pinterest',
+  'video-ideas': 'Video Ads › Generate Ideas',
+  'video-create': 'Video Ads › Create Video',
   'build-rebuild': 'Pages › Optimize Page',
   'build-new': 'Pages › Create Page',
   'tasks': 'Tasks',
@@ -203,6 +207,7 @@ function App() {
   const [projectsLoading, setProjectsLoading] = useState(false);
 
   const [visitedAudits, setVisitedAudits] = useState<Set<string>>(new Set());
+  const [adTizeIdea, setAdTizeIdea] = useState<Record<string, unknown> | null>(null);
 
   const [dateRange, setDateRange] = useState<DateRange>({
     startDate: new Date(new Date().setDate(new Date().getDate() - 30)),
@@ -801,6 +806,28 @@ function App() {
             <PlanGatedView limitField="page_builds">
               <BuildNewView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
             </PlanGatedView>
+          )}
+
+          {/* ── Video Ads ── */}
+          {currentView === 'video-ideas' && activeProject && (
+            <VideoIdeasView
+              key={connectionVersion}
+              siteUrl={getSiteUrl(activeProject)}
+              projectId={activeProject.id}
+              onAdTize={(idea) => {
+                setAdTizeIdea(idea as unknown as Record<string, unknown>);
+                setCurrentView('video-create');
+              }}
+            />
+          )}
+          {currentView === 'video-create' && activeProject && (
+            <VideoCreateView
+              key={connectionVersion}
+              siteUrl={getSiteUrl(activeProject)}
+              projectId={activeProject.id}
+              initialIdea={adTizeIdea as any}
+              onClearIdea={() => setAdTizeIdea(null)}
+            />
           )}
 
           {/* ── Consolidated Tasks & Activity ── */}

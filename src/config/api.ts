@@ -80,6 +80,15 @@ export const API_ENDPOINTS = {
     crawl: `${API_BASE_URL}/api/brand/crawl`,
     guidelines: `${API_BASE_URL}/api/brand/guidelines`,
   },
+  videoAds: {
+    generateIdeas: `${API_BASE_URL}/api/video-ads/generate-ideas`,
+    generateVariations: `${API_BASE_URL}/api/video-ads/generate-variations`,
+    createPrompts: `${API_BASE_URL}/api/video-ads/create-prompts`,
+    editPrompt: `${API_BASE_URL}/api/video-ads/edit-prompt`,
+    generateVideo: `${API_BASE_URL}/api/video-ads/generate-video`,
+    pollVideo: `${API_BASE_URL}/api/video-ads/poll-video`,
+    regenerate: `${API_BASE_URL}/api/video-ads/regenerate`,
+  },
   build: {
     crawl: `${API_BASE_URL}/api/build/crawl`,
     rebuild: `${API_BASE_URL}/api/build/rebuild`,
@@ -112,5 +121,6 @@ export const API_ENDPOINTS = {
     socialIdeas: `${API_BASE_URL}/api/db/social-ideas`,
     socialPosts: `${API_BASE_URL}/api/db/social-posts`,
     brand: `${API_BASE_URL}/api/db/brand`,
+    videoAds: `${API_BASE_URL}/api/db/video-ads`,
   },
 };
