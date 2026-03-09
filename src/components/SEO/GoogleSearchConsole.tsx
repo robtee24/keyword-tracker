@@ -4,6 +4,7 @@ import type { DateRange } from '../../types';
 import { fetchGoogleSearchConsole } from '../../services/googleSearchConsoleService';
 import { authenticatedFetch } from '../../services/authService';
 import { API_ENDPOINTS } from '../../config/api';
+import { useBackgroundTasks } from '../../contexts/BackgroundTaskContext';
 import SectionHeader from '../SectionHeader';
 import LineChart from '../LineChart';
 import RecommendationsPanel from './RecommendationsPanel';
@@ -35,6 +36,7 @@ export default function GoogleSearchConsole({
   loadTrigger,
   projectId,
 }: GoogleSearchConsoleProps) {
+  const { startTask } = useBackgroundTasks();
   const objectives = useMemo(() => {
     if (!projectId) return null;
     try {
@@ -442,24 +444,28 @@ export default function GoogleSearchConsole({
     let cancelled = false;
     setLoadingAiIntents(true);
 
-    fetch(API_ENDPOINTS.ai.classifyIntents, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ siteUrl, keywords, objectives: objectives || {} }),
-    })
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((result) => {
+    startTask(`ai-intents-${siteUrl}`, 'ai-intents', 'Classifying keyword intents', async () => {
+      try {
+        const resp = await fetch(API_ENDPOINTS.ai.classifyIntents, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ siteUrl, keywords, objectives: objectives || {} }),
+        });
+        const result = resp.ok ? await resp.json() : null;
         if (!cancelled && result?.intents) {
           setAiIntents(result.intents);
           console.log('[AI Intents] Classified:', Object.keys(result.intents).length,
             result.fromCache ? '(all cached)' : `(${result.classified || 0} new)`);
         }
-      })
-      .catch((err) => console.error('[AI Intents] Error:', err))
-      .finally(() => { if (!cancelled) setLoadingAiIntents(false); });
+      } catch (err) {
+        console.error('[AI Intents] Error:', err);
+      } finally {
+        if (!cancelled) setLoadingAiIntents(false);
+      }
+    });
 
     return () => { cancelled = true; };
-  }, [data, siteUrl, objectives]);
+  }, [data, siteUrl, objectives, startTask]);
 
   // Fetch alert data (positions across 3 time periods) after keyword data loads
   useEffect(() => {

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { authenticatedFetch } from '../../services/authService';
 import { API_ENDPOINTS } from '../../config/api';
+import { useBackgroundTasks } from '../../contexts/BackgroundTaskContext';
 import RecommendationsPanel from './RecommendationsPanel';
 import type { ScanResult, ChecklistItem } from './RecommendationsPanel';
 
@@ -81,6 +82,7 @@ export default function GroupRecommendations({
   onScanResultsUpdate,
   searchVolumes,
 }: GroupRecommendationsProps) {
+  const { startTask } = useBackgroundTasks();
   const [scanResults, setScanResults] = useState<Map<string, ScanResult>>(new Map(cachedScanResults));
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, keyword: '' });
@@ -100,59 +102,60 @@ export default function GroupRecommendations({
     const toScan = keywords.filter((kw) => !scanResults.has(kw));
     setScanProgress({ current: 0, total: toScan.length, keyword: '' });
 
-    const newResults = new Map(scanResults);
-    let completed = 0;
-    const CONCURRENCY = 3;
+    startTask(`keyword-scan-${groupName}-${Date.now()}`, 'keyword-scan', `Scanning ${toScan.length} keywords`, async () => {
+      const newResults = new Map(scanResults);
+      let completed = 0;
+      const CONCURRENCY = 3;
 
-    const scanKeyword = async (kw: string) => {
-      const pages = keywordPages.get(kw) || [];
-      if (pages.length === 0) {
-        setScanErrors((prev) => new Map(prev).set(kw, 'No pages found'));
-        completed++;
-        setScanProgress({ current: completed, total: toScan.length, keyword: kw });
-        return;
-      }
-
-      try {
-        const response = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.recommendations, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            keyword: kw,
-            pages: pages.map((p) => ({ url: p.page, clicks: p.clicks, impressions: p.impressions })),
-            siteUrl,
-            projectId,
-          }),
-        });
-
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-          throw new Error(err.error || `HTTP ${response.status}`);
+      const scanKeyword = async (kw: string) => {
+        const pages = keywordPages.get(kw) || [];
+        if (pages.length === 0) {
+          setScanErrors((prev) => new Map(prev).set(kw, 'No pages found'));
+          completed++;
+          setScanProgress({ current: completed, total: toScan.length, keyword: kw });
+          return;
         }
 
-        const result: ScanResult = await response.json();
-        newResults.set(kw, result);
-        setScanResults(new Map(newResults));
-      } catch (err: any) {
-        setScanErrors((prev) => new Map(prev).set(kw, err.message || 'Scan failed'));
-      }
+        try {
+          const response = await authenticatedFetch(API_ENDPOINTS.google.searchConsole.recommendations, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              keyword: kw,
+              pages: pages.map((p) => ({ url: p.page, clicks: p.clicks, impressions: p.impressions })),
+              siteUrl,
+              projectId,
+            }),
+          });
 
-      completed++;
-      setScanProgress({ current: completed, total: toScan.length, keyword: kw });
-    };
+          if (!response.ok) {
+            const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(err.error || `HTTP ${response.status}`);
+          }
 
-    // Run scans with concurrency limit
-    const queue = [...toScan];
-    const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const kw = queue.shift()!;
-        await scanKeyword(kw);
-      }
+          const result: ScanResult = await response.json();
+          newResults.set(kw, result);
+          setScanResults(new Map(newResults));
+        } catch (err: any) {
+          setScanErrors((prev) => new Map(prev).set(kw, err.message || 'Scan failed'));
+        }
+
+        completed++;
+        setScanProgress({ current: completed, total: toScan.length, keyword: kw });
+      };
+
+      const queue = [...toScan];
+      const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+        while (queue.length > 0) {
+          const kw = queue.shift()!;
+          await scanKeyword(kw);
+        }
+      });
+      await Promise.all(workers);
+
+      setScanning(false);
+      onScanResultsUpdate(newResults);
     });
-    await Promise.all(workers);
-
-    setScanning(false);
-    onScanResultsUpdate(newResults);
   };
 
   // Build ranked recommendations with conflict detection

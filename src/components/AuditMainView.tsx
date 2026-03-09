@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { logActivity } from '../utils/activityLog';
 import { InfoTooltip } from './Tooltip';
+import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 
 type AuditType = 'seo' | 'content' | 'aeo' | 'schema' | 'compliance' | 'speed';
 type AuditMode = 'page' | 'pages' | 'site';
@@ -94,6 +95,7 @@ function groupIntoRuns(results: PageAuditResult[]): PageAuditResult[][] {
 }
 
 export default function AuditMainView({ siteUrl, projectId }: AuditMainViewProps) {
+  const { startTask } = useBackgroundTasks();
   const [selectedTypes, setSelectedTypes] = useState<Set<AuditType>>(new Set(['seo', 'content', 'aeo', 'schema', 'compliance', 'speed']));
   const [mode, setMode] = useState<AuditMode | null>(null);
   const [pageUrlInput, setPageUrlInput] = useState('');
@@ -240,61 +242,65 @@ export default function AuditMainView({ siteUrl, projectId }: AuditMainViewProps
     if (clearPrevious) { completedUrlsRef.current = new Set(); }
 
     const typesArray = [...selectedTypes];
-    const remaining = urls.filter((u) => !completedUrlsRef.current.has(u));
-    const newResults: PageAuditResult[] = [];
+    const typesStr = typesArray.join(', ');
+    const taskId = `audit-multi-${projectId}-${Date.now()}`;
 
-    for (let i = 0; i < remaining.length; i += 3) {
-      if (abortRef.current) break;
-      const batch = remaining.slice(i, i + 3);
-      setCurrentBatch(batch);
+    startTask(taskId, 'site-audit', `Site Audit: ${urls.length} page${urls.length > 1 ? 's' : ''}`, async () => {
+      const remaining = urls.filter((u) => !completedUrlsRef.current.has(u));
+      const newResults: PageAuditResult[] = [];
 
-      const batchPromises = batch.map(async (pageUrl) => {
-        try {
-          const resp = await fetch(API_ENDPOINTS.audit.runMulti, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ siteUrl, projectId, pageUrl, auditTypes: typesArray }),
-          });
-          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-          const data = await resp.json();
-          return (data.results || []).map((r: any) => ({
-            id: r.id,
-            page_url: r.pageUrl || r.page_url || pageUrl,
-            audit_type: r.auditType || r.audit_type,
-            score: r.score || 0,
-            summary: r.summary || '',
-            strengths: Array.isArray(r.strengths) ? r.strengths : [],
-            recommendations: (r.recommendations || []).map((rec: any) => ({ ...rec, howToFix: rec.howToFix || rec.how_to_fix || '' })),
-            audited_at: new Date().toISOString(),
-            error: r.error,
-          } as PageAuditResult));
-        } catch (err: any) {
-          return typesArray.map((auditType) => ({
-            page_url: pageUrl,
-            audit_type: auditType,
-            score: 0,
-            summary: '',
-            strengths: [],
-            recommendations: [],
-            audited_at: new Date().toISOString(),
-            error: err.message,
-          } as PageAuditResult));
-        }
-      });
+      for (let i = 0; i < remaining.length; i += 3) {
+        if (abortRef.current) break;
+        const batch = remaining.slice(i, i + 3);
+        setCurrentBatch(batch);
 
-      const batchResults = await Promise.all(batchPromises);
-      const flat = batchResults.flat();
-      for (const r of flat) completedUrlsRef.current.add(r.page_url);
-      newResults.push(...flat);
-      setResults((prev) => [...flat, ...prev]);
-    }
+        const batchPromises = batch.map(async (pageUrl) => {
+          try {
+            const resp = await fetch(API_ENDPOINTS.audit.runMulti, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ siteUrl, projectId, pageUrl, auditTypes: typesArray }),
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            return (data.results || []).map((r: any) => ({
+              id: r.id,
+              page_url: r.pageUrl || r.page_url || pageUrl,
+              audit_type: r.auditType || r.audit_type,
+              score: r.score || 0,
+              summary: r.summary || '',
+              strengths: Array.isArray(r.strengths) ? r.strengths : [],
+              recommendations: (r.recommendations || []).map((rec: any) => ({ ...rec, howToFix: rec.howToFix || rec.how_to_fix || '' })),
+              audited_at: new Date().toISOString(),
+              error: r.error,
+            } as PageAuditResult));
+          } catch (err: any) {
+            return typesArray.map((auditType) => ({
+              page_url: pageUrl,
+              audit_type: auditType,
+              score: 0,
+              summary: '',
+              strengths: [],
+              recommendations: [],
+              audited_at: new Date().toISOString(),
+              error: err.message,
+            } as PageAuditResult));
+          }
+        });
 
-    setIsRunning(false);
-    setCurrentBatch([]);
-    const totalAudited = completedUrlsRef.current.size;
-    const typesStr = [...selectedTypes].join(', ');
-    logActivity(siteUrl, 'seo', 'full-audit', `Full audit completed: ${totalAudited} pages, types: ${typesStr}`);
-  }, [siteUrl, selectedTypes]);
+        const batchResults = await Promise.all(batchPromises);
+        const flat = batchResults.flat();
+        for (const r of flat) completedUrlsRef.current.add(r.page_url);
+        newResults.push(...flat);
+        setResults((prev) => [...flat, ...prev]);
+      }
+
+      setIsRunning(false);
+      setCurrentBatch([]);
+      const totalAudited = completedUrlsRef.current.size;
+      logActivity(siteUrl, 'seo', 'full-audit', `Full audit completed: ${totalAudited} pages, types: ${typesStr}`);
+    });
+  }, [siteUrl, projectId, selectedTypes, startTask]);
 
   const handleStartPage = () => {
     const url = pageUrlInput.trim();
@@ -307,18 +313,20 @@ export default function AuditMainView({ siteUrl, projectId }: AuditMainViewProps
     setClassifying(true); setError(null);
     const urls = await fetchSitemap();
     if (urls.length === 0) { setClassifying(false); return; }
-    try {
-      const resp = await fetch(API_ENDPOINTS.audit.classifyPages, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls }),
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        setTemplateGroups(data.groups || []);
-        setTemplateSummary({ totalPages: data.totalPages, uniqueTemplates: data.uniqueTemplates, dynamicGroups: data.dynamicGroups, auditablePages: data.auditablePages, blogGroups: data.blogGroups });
-      }
-    } catch { setError('Failed to classify pages'); }
-    setClassifying(false);
+    startTask(`classify-site-${projectId}`, 'site-audit', 'Classifying site pages', async () => {
+      try {
+        const resp = await fetch(API_ENDPOINTS.audit.classifyPages, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          setTemplateGroups(data.groups || []);
+          setTemplateSummary({ totalPages: data.totalPages, uniqueTemplates: data.uniqueTemplates, dynamicGroups: data.dynamicGroups, auditablePages: data.auditablePages, blogGroups: data.blogGroups });
+        }
+      } catch { setError('Failed to classify pages'); }
+      setClassifying(false);
+    });
   };
   const handleStartSiteFromTemplates = () => {
     if (!templateGroups) return;

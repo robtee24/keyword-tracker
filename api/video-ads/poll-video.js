@@ -16,8 +16,11 @@ export default async function handler(req, res) {
 
   try {
     const response = await fetch(
-      `${VEO_BASE}/${operationName}?key=${apiKey}`,
-      { method: 'GET' }
+      `${VEO_BASE}/${operationName}`,
+      {
+        method: 'GET',
+        headers: { 'x-goog-api-key': apiKey },
+      }
     );
 
     if (!response.ok) {

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
+import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 
 type AdAuditType = 'google' | 'meta' | 'linkedin' | 'reddit' | 'budget' | 'performance' | 'creative' | 'attribution' | 'structure';
 type ResultsTab = 'summary' | 'audits' | 'recommendations';
@@ -76,6 +77,7 @@ function recKey(auditType: string, idx: number) { return `ad::${auditType}::${id
 const RECS_PER_PAGE = 30;
 
 export default function AdAuditMainView({ siteUrl, projectId }: AdAuditMainViewProps) {
+  const { startTask, getTask } = useBackgroundTasks();
   const [selectedTypes, setSelectedTypes] = useState<Set<AdAuditType>>(new Set(ALL_AD_AUDIT_TYPES.map(t => t.id)));
   const [results, setResults] = useState<AdAuditResult[]>([]);
   const [isRunning, setIsRunning] = useState(false);
@@ -186,56 +188,58 @@ export default function AdAuditMainView({ siteUrl, projectId }: AdAuditMainViewP
     setProgress({ done: 0, total: typesWithFiles.length, current: '' });
     setResults([]);
 
-    for (let i = 0; i < typesWithFiles.length; i++) {
-      if (stopRef.current) break;
-      const auditType = typesWithFiles[i];
-      const file = uploadedFiles.get(auditType)!;
-      setProgress({ done: i, total: typesWithFiles.length, current: AD_AUDIT_TYPE_LABELS[auditType] });
+    const typesStr = typesWithFiles.join(', ');
+    startTask(`ad-audit-${projectId}`, 'ad-audit', `Ad Audit: ${typesStr}`, async () => {
+      for (let i = 0; i < typesWithFiles.length; i++) {
+        if (stopRef.current) break;
+        const auditType = typesWithFiles[i];
+        const file = uploadedFiles.get(auditType)!;
+        setProgress({ done: i, total: typesWithFiles.length, current: AD_AUDIT_TYPE_LABELS[auditType] });
 
-      try {
-        const fileContent = await file.text();
-        const res = await authenticatedFetch(API_ENDPOINTS.audit.runAdAudit, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            siteUrl,
-            projectId,
-            auditType,
-            fileName: file.name,
-            csvData: fileContent,
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
+        try {
+          const fileContent = await file.text();
+          const res = await authenticatedFetch(API_ENDPOINTS.audit.runAdAudit, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              siteUrl,
+              projectId,
+              auditType,
+              fileName: file.name,
+              csvData: fileContent,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setResults(prev => [...prev, {
+              audit_type: auditType,
+              score: data.score || 0,
+              summary: data.summary || '',
+              strengths: data.strengths || [],
+              recommendations: data.recommendations || [],
+              audited_at: new Date().toISOString(),
+              file_name: file.name,
+            }]);
+          }
+        } catch (err) {
+          console.error(`Ad audit failed for ${auditType}:`, err);
           setResults(prev => [...prev, {
             audit_type: auditType,
-            score: data.score || 0,
-            summary: data.summary || '',
-            strengths: data.strengths || [],
-            recommendations: data.recommendations || [],
+            score: 0,
+            summary: '',
+            strengths: [],
+            recommendations: [],
             audited_at: new Date().toISOString(),
             file_name: file.name,
+            error: String(err),
           }]);
         }
-      } catch (err) {
-        console.error(`Ad audit failed for ${auditType}:`, err);
-        setResults(prev => [...prev, {
-          audit_type: auditType,
-          score: 0,
-          summary: '',
-          strengths: [],
-          recommendations: [],
-          audited_at: new Date().toISOString(),
-          file_name: file.name,
-          error: String(err),
-        }]);
       }
-    }
-    setProgress(prev => ({ ...prev, done: typesWithFiles.length, current: '' }));
-    setIsRunning(false);
-    const typesStr = typesWithFiles.join(', ');
-    logActivity(siteUrl, 'ad', 'audit', `Advertising audit completed: ${typesStr}`);
-  }, [siteUrl, selectedTypes, uploadedFiles]);
+      setProgress(prev => ({ ...prev, done: typesWithFiles.length, current: '' }));
+      setIsRunning(false);
+      logActivity(siteUrl, 'ad', 'audit', `Advertising audit completed: ${typesStr}`);
+    });
+  }, [siteUrl, projectId, selectedTypes, uploadedFiles, startTask]);
 
   const stopAudit = () => { stopRef.current = true; };
 

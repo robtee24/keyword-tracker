@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
 import { parseJsonOrThrow } from '../utils/apiResponse';
+import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 
 interface AdIdea {
   title: string;
@@ -80,6 +81,7 @@ const PLATFORMS = [
 const ASPECT_RATIOS = ['16:9', '9:16', '1:1'];
 
 export default function VideoCreateView({ siteUrl, projectId, initialIdea, onClearIdea }: Props) {
+  const { startTask } = useBackgroundTasks();
   const [projects, setProjects] = useState<VideoProject[]>([]);
   const [expandedProject, setExpandedProject] = useState<string | null>(null);
   const [generatedVideos, setGeneratedVideos] = useState<Record<string, GeneratedVideo[]>>({});
@@ -125,65 +127,86 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
 
-  // Handle incoming idea from VideoIdeasView (ad-tize)
+  // Pending idea that has been ad-tized but not yet had prompts generated
+  const [pendingIdea, setPendingIdea] = useState<{ idea: AdIdea; sourceType: string } | null>(null);
+
+  // Handle incoming idea from VideoIdeasView (ad-tize) — stage it, don't generate prompts yet
   useEffect(() => {
     if (initialIdea) {
-      createProjectFromIdea(initialIdea);
+      setPendingIdea({ idea: initialIdea, sourceType: 'ad-tized' });
+      if (onClearIdea) onClearIdea();
     }
   }, [initialIdea]);
 
-  const createProjectFromIdea = async (idea: AdIdea, sourceType = 'ad-tized') => {
-    if (creatingProject) return;
+  const generateScriptsForPendingIdea = async () => {
+    if (!pendingIdea || creatingProject) return;
+    if (selectedPlatforms.length === 0) {
+      setError('Please select at least one platform');
+      return;
+    }
     setCreatingProject(true);
     setError('');
 
-    try {
-      const resp = await authenticatedFetch(API_ENDPOINTS.videoAds.createPrompts, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId,
-          siteUrl,
-          idea,
-          platforms: selectedPlatforms,
-          aspectRatio,
-          voiceStyle: voiceStyle.toLowerCase(),
-          videoStyle: videoStyle.toLowerCase(),
-        }),
-      });
-      const data = await parseJsonOrThrow<{ overallConcept: string; scenes: Scene[]; productionNotes?: string }>(resp);
+    const { idea, sourceType } = pendingIdea;
+    const objectives = (() => {
+      try { return localStorage.getItem(`kt_objectives_${projectId}`) || ''; } catch { return ''; }
+    })();
 
-      const saveResp = await authenticatedFetch(`${API_ENDPOINTS.db.videoAds}?table=projects`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId,
-          siteUrl,
-          idea,
-          sourceType,
-          platforms: selectedPlatforms,
-          aspectRatio,
-          voiceStyle: voiceStyle.toLowerCase(),
-          videoStyle: videoStyle.toLowerCase(),
-          overallConcept: data.overallConcept,
-          scenes: data.scenes,
-        }),
-      });
-      const saved = await parseJsonOrThrow<{ data: VideoProject }>(saveResp);
+    const taskLabel = idea.title ? `Video: ${idea.title.slice(0, 40)}` : 'Creating video project';
+    startTask(`video-create-${Date.now()}`, 'video-create', taskLabel, async () => {
+      try {
+        const resp = await authenticatedFetch(API_ENDPOINTS.videoAds.createPrompts, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId,
+            siteUrl,
+            idea,
+            platforms: selectedPlatforms,
+            aspectRatio,
+            voiceStyle: voiceStyle.toLowerCase(),
+            videoStyle: videoStyle.toLowerCase(),
+            objectives,
+          }),
+        });
+        const data = await parseJsonOrThrow<{ overallConcept: string; scenes: Scene[]; productionNotes?: string }>(resp);
 
-      setProjects(prev => [saved.data, ...prev]);
-      setExpandedProject(saved.data.id);
-      if (onClearIdea) onClearIdea();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create video project');
-    } finally {
-      setCreatingProject(false);
-    }
+        const saveResp = await authenticatedFetch(`${API_ENDPOINTS.db.videoAds}?table=projects`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId,
+            siteUrl,
+            idea,
+            sourceType,
+            platforms: selectedPlatforms,
+            aspectRatio,
+            voiceStyle: voiceStyle.toLowerCase(),
+            videoStyle: videoStyle.toLowerCase(),
+            overallConcept: data.overallConcept,
+            scenes: data.scenes,
+          }),
+        });
+        const saved = await parseJsonOrThrow<{ data: VideoProject }>(saveResp);
+
+        setProjects(prev => [saved.data, ...prev]);
+        setExpandedProject(saved.data.id);
+        setPendingIdea(null);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to create video project');
+        throw err;
+      } finally {
+        setCreatingProject(false);
+      }
+    });
   };
 
   const handleQuickGenerate = async () => {
     if (!quickIdea.trim() || quickGenerating) return;
-    setQuickGenerating(true);
+    if (selectedPlatforms.length === 0) {
+      setError('Please select at least one platform');
+      return;
+    }
 
     const idea: AdIdea = {
       title: quickIdea.trim().slice(0, 60),
@@ -196,9 +219,56 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
       platform: 'All',
     };
 
-    await createProjectFromIdea(idea, 'direct');
+    setPendingIdea({ idea, sourceType: 'direct' });
     setQuickIdea('');
-    setQuickGenerating(false);
+    // Auto-trigger generation for quick generate since user is already on the page
+    setQuickGenerating(true);
+    const objectives = (() => {
+      try { return localStorage.getItem(`kt_objectives_${projectId}`) || ''; } catch { return ''; }
+    })();
+
+    setCreatingProject(true);
+    setError('');
+    const taskLabel = `Video: ${idea.title.slice(0, 40)}`;
+    startTask(`video-create-${Date.now()}`, 'video-create', taskLabel, async () => {
+      try {
+        const resp = await authenticatedFetch(API_ENDPOINTS.videoAds.createPrompts, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId, siteUrl, idea,
+            platforms: selectedPlatforms, aspectRatio,
+            voiceStyle: voiceStyle.toLowerCase(),
+            videoStyle: videoStyle.toLowerCase(),
+            objectives,
+          }),
+        });
+        const data = await parseJsonOrThrow<{ overallConcept: string; scenes: Scene[]; productionNotes?: string }>(resp);
+
+        const saveResp = await authenticatedFetch(`${API_ENDPOINTS.db.videoAds}?table=projects`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId, siteUrl, idea, sourceType: 'direct',
+            platforms: selectedPlatforms, aspectRatio,
+            voiceStyle: voiceStyle.toLowerCase(),
+            videoStyle: videoStyle.toLowerCase(),
+            overallConcept: data.overallConcept, scenes: data.scenes,
+          }),
+        });
+        const saved = await parseJsonOrThrow<{ data: VideoProject }>(saveResp);
+
+        setProjects(prev => [saved.data, ...prev]);
+        setExpandedProject(saved.data.id);
+        setPendingIdea(null);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to create video project');
+        throw err;
+      } finally {
+        setCreatingProject(false);
+        setQuickGenerating(false);
+      }
+    });
   };
 
   const updateScenePrompt = async (vpId: string, sceneIdx: number, newPrompt: string) => {
@@ -261,51 +331,57 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
     const key = `${vpId}-${sceneIdx}`;
     setGeneratingScenes(prev => ({ ...prev, [key]: true }));
 
-    try {
-      const resp = await authenticatedFetch(API_ENDPOINTS.videoAds.generateVideo, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoProjectId: vpId,
-          sceneIndex: sceneIdx,
-          prompt: scene.prompt,
-          aspectRatio: project.aspect_ratio,
-          durationSeconds: scene.durationSeconds || 8,
-        }),
-      });
-      const data = await parseJsonOrThrow<{ operationName: string; sceneIndex: number }>(resp);
+    startTask(`video-gen-${key}`, 'video-generate', `Generating scene ${sceneIdx + 1}`, async () => {
+      try {
+        const resp = await authenticatedFetch(API_ENDPOINTS.videoAds.generateVideo, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            videoProjectId: vpId,
+            sceneIndex: sceneIdx,
+            prompt: scene.prompt,
+            aspectRatio: project.aspect_ratio,
+            durationSeconds: scene.durationSeconds || 8,
+          }),
+        });
+        const data = await parseJsonOrThrow<{ operationName: string; sceneIndex: number }>(resp);
 
-      if (data.operationName) {
-        startPolling(vpId, sceneIdx, data.operationName);
+        if (data.operationName) {
+          startPolling(vpId, sceneIdx, data.operationName);
+        }
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to start video generation');
+        setGeneratingScenes(prev => ({ ...prev, [key]: false }));
+        throw err;
       }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to start video generation');
-      setGeneratingScenes(prev => ({ ...prev, [key]: false }));
-    }
+    });
   };
 
   const generateAllScenes = async (vpId: string) => {
     const project = projects.find(p => p.id === vpId);
     if (!project) return;
 
-    try {
-      const resp = await authenticatedFetch(API_ENDPOINTS.videoAds.generateVideo, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoProjectId: vpId, generateAll: true }),
-      });
-      const data = await parseJsonOrThrow<{ operations: Array<{ sceneIndex: number; operationName?: string; status: string }> }>(resp);
+    startTask(`video-gen-all-${vpId}`, 'video-generate', `Generating all scenes`, async () => {
+      try {
+        const resp = await authenticatedFetch(API_ENDPOINTS.videoAds.generateVideo, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoProjectId: vpId, generateAll: true }),
+        });
+        const data = await parseJsonOrThrow<{ operations: Array<{ sceneIndex: number; operationName?: string; status: string }> }>(resp);
 
-      for (const op of data.operations) {
-        if (op.operationName) {
-          const key = `${vpId}-${op.sceneIndex}`;
-          setGeneratingScenes(prev => ({ ...prev, [key]: true }));
-          startPolling(vpId, op.sceneIndex, op.operationName);
+        for (const op of data.operations) {
+          if (op.operationName) {
+            const key = `${vpId}-${op.sceneIndex}`;
+            setGeneratingScenes(prev => ({ ...prev, [key]: true }));
+            startPolling(vpId, op.sceneIndex, op.operationName);
+          }
         }
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to generate videos');
+        throw err;
       }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to generate videos');
-    }
+    });
   };
 
   const startPolling = (vpId: string, sceneIdx: number, operationName: string) => {
@@ -356,26 +432,29 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
     const project = projects.find(p => p.id === regenModal.projectId);
     if (!project) return;
 
-    try {
-      const resp = await authenticatedFetch(API_ENDPOINTS.videoAds.regenerate, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currentPrompt: regenModal.prompt,
-          sceneDescription: project.scenes[regenModal.sceneIdx]?.description,
-          reason: regenReason.trim(),
-          voiceStyle: project.voice_style,
-          videoStyle: project.video_style,
-        }),
-      });
-      const data = await parseJsonOrThrow<{ updatedPrompt: string; changesMade: string }>(resp);
-      setRegenResult(data);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to regenerate');
-      setRegenModal(null);
-    } finally {
-      setRegenLoading(false);
-    }
+    startTask(`video-regen-${regenModal.projectId}-${regenModal.sceneIdx}`, 'video-regenerate', `Regenerating scene ${regenModal.sceneIdx + 1}`, async () => {
+      try {
+        const resp = await authenticatedFetch(API_ENDPOINTS.videoAds.regenerate, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            currentPrompt: regenModal.prompt,
+            sceneDescription: project.scenes[regenModal.sceneIdx]?.description,
+            reason: regenReason.trim(),
+            voiceStyle: project.voice_style,
+            videoStyle: project.video_style,
+          }),
+        });
+        const data = await parseJsonOrThrow<{ updatedPrompt: string; changesMade: string }>(resp);
+        setRegenResult(data);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to regenerate');
+        setRegenModal(null);
+        throw err;
+      } finally {
+        setRegenLoading(false);
+      }
+    });
   };
 
   const confirmRegenerate = async () => {
@@ -433,6 +512,32 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
           </button>
         </div>
       </div>
+
+      {/* Pending Idea - show when an idea has been ad-tized but settings not yet confirmed */}
+      {pendingIdea && !creatingProject && (
+        <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-apple border-2 border-purple-200 p-5 space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-100 text-purple-700 uppercase tracking-wider">
+                  {pendingIdea.sourceType === 'ad-tized' ? 'Ad-tized' : 'Direct'}
+                </span>
+                <h3 className="text-apple-sm font-semibold text-apple-text">{pendingIdea.idea.title}</h3>
+              </div>
+              <p className="text-apple-xs text-apple-text-secondary">{pendingIdea.idea.concept}</p>
+              <div className="flex gap-3 mt-2 text-[10px] text-apple-text-tertiary">
+                {pendingIdea.idea.hook && <span>Hook: "{pendingIdea.idea.hook}"</span>}
+                <span>Audience: {pendingIdea.idea.targetAudience}</span>
+                <span>{pendingIdea.idea.estimatedLength}s</span>
+              </div>
+            </div>
+            <button onClick={() => setPendingIdea(null)} className="text-apple-text-tertiary hover:text-red-500 transition-colors">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+          <p className="text-apple-xs text-purple-700 font-medium">Select your video settings below, then click "Generate Script & Prompts" to create the full video production plan.</p>
+        </div>
+      )}
 
       {/* Configuration */}
       <div className="bg-white rounded-apple border border-apple-border p-5 space-y-4">
@@ -504,6 +609,22 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
             </select>
           </div>
         </div>
+
+        {/* Generate Script button (only visible when pending idea exists) */}
+        {pendingIdea && !creatingProject && (
+          <div className="pt-2 border-t border-apple-border flex justify-end">
+            <button
+              onClick={generateScriptsForPendingIdea}
+              disabled={selectedPlatforms.length === 0}
+              className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-apple-sm text-apple-sm font-semibold hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 transition-all flex items-center gap-2 shadow-md"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+              Generate Script & Prompts
+            </button>
+          </div>
+        )}
       </div>
 
       {error && (

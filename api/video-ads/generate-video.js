@@ -9,13 +9,16 @@ async function generateVeoVideo(prompt, aspectRatio = '16:9', durationSeconds = 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
 
-  const model = 'veo-3.0-generate-preview';
+  const model = 'veo-3.1-generate-preview';
 
   const response = await fetch(
-    `${VEO_BASE}/models/${model}:predictLongRunning?key=${apiKey}`,
+    `${VEO_BASE}/models/${model}:predictLongRunning`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
       body: JSON.stringify({
         instances: [{ prompt }],
         parameters: {
@@ -23,7 +26,7 @@ async function generateVeoVideo(prompt, aspectRatio = '16:9', durationSeconds = 
           durationSeconds,
           sampleCount: 1,
           personGeneration: 'allow_adult',
-          generateAudio: true,
+          resolution: '720p',
         },
       }),
     }
@@ -42,8 +45,11 @@ async function pollOperation(operationName) {
   const apiKey = process.env.GEMINI_API_KEY;
 
   const response = await fetch(
-    `${VEO_BASE}/${operationName}?key=${apiKey}`,
-    { method: 'GET' }
+    `${VEO_BASE}/${operationName}`,
+    {
+      method: 'GET',
+      headers: { 'x-goog-api-key': apiKey },
+    }
   );
 
   if (!response.ok) {

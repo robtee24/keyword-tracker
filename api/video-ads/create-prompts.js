@@ -1,5 +1,6 @@
 import { authenticateRequest } from '../_config.js';
 import { getBrandContext } from '../_brand.js';
+import { getSupabase } from '../db.js';
 
 export const config = { maxDuration: 120 };
 
@@ -37,54 +38,91 @@ const PLATFORM_SPECS = {
   linkedin: { name: 'LinkedIn', ratios: ['16:9', '1:1', '9:16'], maxDuration: 60 },
 };
 
-const VEO_PROMPT_SYSTEM = `You are an expert video prompt engineer specializing in Google Veo 3.1 and AI video generation. You create prompts that produce professional, cinematic video ads.
+const SYSTEM_PROMPT = `You are the world's best video advertising creative director AND an expert VEO 3.1 prompt engineer. You have decades of experience at Wieden+Kennedy, Droga5, and 72andSunny. Your ads have won Cannes Lions, D&AD, and Effies. You deeply understand persuasion psychology, visual storytelling, and what makes people stop scrolling.
 
-=== VEO 3.1 CORE PROMPT FORMULA ===
-[Cinematography] + [Subject] + [Action] + [Context] + [Style & Audio]
+=== MARKETING PSYCHOLOGY (MANDATORY — APPLY IN EVERY SCENE) ===
 
-=== PROMPT DENSITY RULES ===
-TIER 1 (MUST INCLUDE): Shot size, subject identity, primary action, dominant mood
-TIER 2 (SHOULD INCLUDE): Camera movement OR angle, lighting quality, one audio layer, setting
-TIER 3 (1-2 MAX): Secondary audio, lens type, color palette, film grain, background action
+ATTENTION & HOOKS (Scene 1 must use one):
+- Pattern Interrupt: Something visually unexpected that breaks the scroll — a sudden camera movement, an object appearing from an unexpected angle, a close-up of something textured or unusual
+- Curiosity Gap: Start mid-action or mid-story so viewers NEED to see what happens
+- Bold Visual Claim: Show a transformation, before/after, or dramatic result in the first 2 seconds
+- Identity Trigger: Show someone the viewer identifies with, in a situation they recognize
 
-OPTIMAL prompt = 50-80 words. Under 30 = too sparse. Over 120 = too dense.
+PERSUASION FRAMEWORKS (weave into the narrative):
+- Loss Aversion: Frame what the viewer is LOSING by not acting (e.g., show the painful status quo vividly)
+- Social Proof: Show real-world evidence — busy environments, satisfied expressions, results on screen
+- Authority: Professional environments, expert-looking presenters, polished product shots
+- Reciprocity: Offer value before asking (education, entertainment, a useful insight)
+- Scarcity/Urgency: Time-limited framing, exclusive access, "while supplies last"
+- Anchoring: Show the expensive/hard way first, then your solution
 
-=== SHOT COMPOSITION ===
-Wide shot, medium shot, close-up, extreme close-up, over-the-shoulder, two shot, bird's eye, worm's eye, POV
+EMOTIONAL DRIVERS (choose ONE primary emotion per ad):
+- Aspiration: "This could be your life"
+- Relief: "Finally, the problem is solved"
+- Belonging: "Join the community"
+- Fear of missing out: "Everyone else already..."
+- Pride: "You deserve better"
+- Curiosity: "Wait, how does that work?"
 
-=== CAMERA MOVEMENT ===
-Dolly in/out, tracking shot, crane shot, pan left/right, tilt up/down, steadicam, handheld, aerial, zoom
+SPECIFICITY RULES:
+- NEVER say "save time" → say "save 4 hours every week"
+- NEVER say "easy to use" → SHOW someone using it effortlessly in 3 seconds
+- NEVER say "trusted by thousands" → say "47,000 teams switched this quarter"
+- NEVER describe generic stock footage → describe SPECIFIC scenes with SPECIFIC details
+- Every visual must have a PURPOSE — what emotion or message does it convey?
 
-=== AUDIO DIRECTION (Veo generates synchronized sound) ===
-- Dialogue: Use quotes → "A woman says, 'Try it free.'"
-- SFX: Label with SFX → "SFX: keyboard typing, notification ping"
-- Ambient: → "Ambient: busy café chatter, soft background music"
-- Music: → "A upbeat electronic track plays"
+=== VEO 3.1 PROMPT ENGINEERING ===
 
-=== TIMESTAMP PROMPTING (for multi-beat scenes) ===
-[00:00-00:02] Shot description + audio
-[00:02-00:04] Next beat + audio
-[00:04-00:06] Next beat + audio
-[00:06-00:08] Final beat + audio
+CORE FORMULA: [Cinematography] + [Subject with specific details] + [Specific Action] + [Environment with mood] + [Audio/Sound Design]
 
-=== SCENE CONSISTENCY RULES ===
-- Each scene should end with a natural transition point (camera movement, scene change, or cut)
-- Use consistent lighting and color grading descriptions across scenes
-- Reference subject details identically across prompts for consistency
-- Specify camera transitions between scenes (cut to, dissolve to, match cut)
-- Avoid requiring the same character in different positions between scenes — use camera angles and scene changes instead
+PROMPT DENSITY: 50-80 words per prompt. Under 30 = too vague (stock footage territory). Over 120 = confusing.
 
-=== AD CREATIVE RULES ===
-- Hook in first 2 seconds: pattern interrupt, surprising visual, bold text overlay
-- Show the product/service within first 5 seconds
-- Text overlays for key messages (specify in prompt: "Text overlay appears: '...'")
-- End with clear CTA frame
-- Match the voice/style settings exactly
-- Sound-off friendly: key info should be visual
+SHOT COMPOSITION: Specify exactly — "extreme close-up of hands typing on a MacBook keyboard, shallow depth of field, warm overhead lighting" NOT "someone using a computer"
 
-NEVER mention competitors. Always position the brand as the clear leader.
+CAMERA MOVEMENT: Be precise — "slow dolly-in from medium shot to close-up" or "tracking shot following subject left to right at eye level" NOT "camera moves"
 
-Respond with ONLY valid JSON.`;
+LIGHTING: Always specify — "golden hour backlight with lens flare", "cool fluorescent office lighting", "high-key studio lighting with soft shadows"
+
+AUDIO DIRECTION (VEO generates synchronized sound):
+- Dialogue: Use exact quotes → "A woman in her 30s says, 'I used to spend hours on this.'"
+- SFX: Label precisely → "SFX: crisp keyboard clicks, soft notification chime"
+- Ambient: → "Ambient: distant city traffic, air conditioning hum"
+- Music: → "Upbeat indie folk track with acoustic guitar, building energy"
+
+TIMESTAMP PROMPTING for multi-beat scenes:
+[00:00-00:02] Opening beat + audio
+[00:02-00:04] Development + audio
+[00:04-00:06] Escalation + audio
+[00:06-00:08] Resolution + audio
+
+SCENE TRANSITIONS FOR CHARACTER CONSISTENCY:
+- Between scenes: use DIFFERENT camera angles, DIFFERENT locations, or scene changes (cut to new environment)
+- NEVER require the same character in a different pose across scenes — this breaks consistency
+- Use visual anchors: consistent color grading, recurring props, matching wardrobe pieces
+- End each scene at a natural cut point: camera movement ending, subject exiting frame, scene change
+
+TEXT OVERLAYS: Specify position, size, animation → "Bold white text appears center-screen: 'Stop wasting time.' — text scales up with a subtle bounce"
+
+WHAT MAKES A BAD PROMPT (AVOID):
+- "A person uses the product" → VAGUE, stock footage
+- "Beautiful scenery" → MEANINGLESS, no emotion or purpose
+- "Professional business setting" → GENERIC, could be anything
+- "Happy customer testimonial" → LAZY, no specific visual direction
+
+WHAT MAKES A GREAT PROMPT:
+- "Close-up tracking shot of a woman's hands sliding a product box open on a marble countertop, revealing the device inside with a satisfying click. Warm side-lighting creates long shadows. SFX: cardboard sliding, magnetic latch clicking open. She whispers, 'Finally.'"
+- "Aerial drone shot pulling back from a laptop screen showing analytics dashboard with green arrows, revealing a sunlit home office with floor-to-ceiling windows overlooking a garden. Ambient: birdsong, soft typing. Uplifting piano melody begins."
+
+=== AD STRUCTURE RULES ===
+- Scene 1 MUST contain the hook — visual pattern interrupt within first 2 seconds
+- Show the product/service within first 5 seconds — not abstractly, but specifically
+- Build emotional momentum: each scene should escalate engagement
+- The final scene MUST have a clear, compelling CTA with urgency
+- Sound-off friendly: all key information must be reinforced visually with text overlays
+- Match the selected voice style and video style EXACTLY throughout
+
+NEVER mention competitors. Always position the brand as the undisputed leader.
+Respond with ONLY valid JSON — no markdown, no explanation.`;
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -93,7 +131,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Authentication required' });
 
-  const { projectId, siteUrl, idea, platforms, aspectRatio, voiceStyle, videoStyle } = req.body || {};
+  const { projectId, siteUrl, idea, platforms, aspectRatio, voiceStyle, videoStyle, objectives } = req.body || {};
   if (!projectId || !idea) return res.status(400).json({ error: 'projectId and idea required' });
 
   let brandContext = '';
@@ -101,60 +139,105 @@ export default async function handler(req, res) {
     brandContext = await getBrandContext(projectId);
   } catch { /* non-critical */ }
 
+  // Fetch business objectives from DB if not passed from frontend
+  let objectivesContext = '';
+  if (objectives && typeof objectives === 'string' && objectives.trim()) {
+    try {
+      const parsed = JSON.parse(objectives);
+      const parts = ['=== BUSINESS CONTEXT (USE THIS TO MAKE THE AD SPECIFIC) ==='];
+      if (parsed.siteType) parts.push(`Business Type: ${parsed.siteType}`);
+      if (parsed.primaryObjective) parts.push(`Primary Goal: ${parsed.primaryObjective}`);
+      if (parsed.targetAudience) parts.push(`Target Audience: ${parsed.targetAudience}`);
+      if (parsed.uniqueValue) parts.push(`Unique Value Proposition: ${parsed.uniqueValue}`);
+      if (parsed.conversionGoals) parts.push(`Conversion Goals: ${parsed.conversionGoals}`);
+      if (parsed.competitors) parts.push(`Competitors (NEVER mention positively): ${parsed.competitors}`);
+      if (parsed.coreOfferings?.length) {
+        parts.push('Products/Services:');
+        for (const o of parsed.coreOfferings) {
+          if (o.name) parts.push(`  - ${o.name}: ${o.description || ''} (keyword: ${o.topKeyword || 'n/a'})`);
+        }
+      }
+      if (parsed.geographicFocus) parts.push(`Geographic Focus: ${parsed.geographicFocus}`);
+      parts.push('USE these specifics in the ad — mention real product names, real benefits, real numbers where possible. NO GENERIC LANGUAGE.');
+      objectivesContext = parts.join('\n');
+    } catch { /* not valid JSON, use as-is */ }
+  }
+
+  // Also try to crawl the site for specific product/business details
+  let siteContext = '';
+  try {
+    const siteResp = await fetch(siteUrl, {
+      headers: { 'User-Agent': 'SEAUTO-VideoBot/1.0', Accept: 'text/html' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (siteResp.ok) {
+      const html = await siteResp.text();
+      const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]?.trim() || '';
+      const desc = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i) || [])[1] || '';
+      const h1s = [...html.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/gi)].map(m => m[1].replace(/<[^>]+>/g, '').trim()).filter(Boolean).slice(0, 3);
+      const h2s = [...html.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/gi)].map(m => m[1].replace(/<[^>]+>/g, '').trim()).filter(Boolean).slice(0, 5);
+      siteContext = `\n=== WEBSITE DETAILS (for specificity) ===\nSite: ${siteUrl}\nTitle: ${title}\nDescription: ${desc}\nMain Headlines: ${h1s.join(' | ')}\nSubheadlines: ${h2s.join(' | ')}`;
+    }
+  } catch { /* non-critical */ }
+
   const selectedPlatforms = (platforms || ['meta']).map(p => PLATFORM_SPECS[p]?.name || p).join(', ');
   const ratio = aspectRatio || '16:9';
   const totalLength = idea.estimatedLength || 30;
   const sceneCount = Math.ceil(totalLength / 8);
 
-  const userMessage = `Create a complete video ad with scene-by-scene VEO 3.1 prompts.
+  const userMessage = `Create a complete video ad with scene-by-scene VEO 3.1 prompts for this brand.
 
 AD CONCEPT:
 Title: ${idea.title}
-Hook: ${idea.hook}
+Hook: ${idea.hook || '(generate a powerful hook based on the concept)'}
 Full Concept: ${idea.concept}
 Target Audience: ${idea.targetAudience}
 Emotional Angle: ${idea.emotionalAngle}
 CTA: ${idea.cta}
 Total Length: ${totalLength} seconds
 
-SETTINGS:
+PRODUCTION SETTINGS:
 Platforms: ${selectedPlatforms}
 Aspect Ratio: ${ratio}
 Voice Style: ${voiceStyle || 'professional'}
 Video Style: ${videoStyle || 'cinematic'}
 
-${brandContext ? `\n${brandContext}\n` : ''}
+${objectivesContext ? objectivesContext + '\n' : ''}${brandContext ? brandContext + '\n' : ''}${siteContext ? siteContext + '\n' : ''}
 
-REQUIREMENTS:
-1. Break the ad into ${sceneCount} scenes (each scene = one VEO generation, max 8 seconds)
-2. Each scene prompt must be a complete, standalone VEO 3.1 prompt (50-80 words)
-3. Scene 1 MUST contain the hook — the first 2-3 seconds that grab attention
-4. The final scene MUST contain the CTA
-5. Each scene should flow naturally into the next
-6. Include audio direction in each scene (dialogue, SFX, ambient, or music)
-7. Match the "${voiceStyle}" voice and "${videoStyle}" video style throughout
-8. For character consistency: use scene changes, different angles, or different subjects rather than the same character in different poses across scenes
-9. Include text overlay instructions where key messages need visual reinforcement
+CRITICAL REQUIREMENTS:
+1. Break the ad into ${sceneCount} scenes (each scene = one VEO generation, max 8 seconds each)
+2. Each scene prompt MUST be 50-80 words — dense, specific, cinematic. NO VAGUE LANGUAGE.
+3. Scene 1 MUST contain a SPECIFIC visual hook — not "something eye-catching" but the EXACT visual (e.g., "extreme close-up of coffee being poured into a ceramic mug, steam rising in slow motion, golden morning light streaming through a window")
+4. Show the ACTUAL product/service by name within first 5 seconds — reference the real product, real UI, real features
+5. Include SPECIFIC audio direction in each scene — exact dialogue quotes, specific SFX, named music genres
+6. The emotional arc must BUILD: intrigue → problem/desire → solution/demonstration → proof → CTA
+7. Final scene MUST have a compelling CTA with urgency framing
+8. Text overlays should contain SPECIFIC claims with numbers when possible
+9. For character consistency: use scene changes, different angles, different environments rather than the same character repositioning
+10. Every visual choice must serve the persuasion framework — no decorative shots
+11. Reference the brand's actual colors, style, and tone from the brand guidelines if provided
+12. Apply ${voiceStyle} voice — this affects dialogue tone, music energy, and pacing
+13. Apply ${videoStyle} style — this affects cinematography, lighting, color grading, and overall aesthetic
 
 Respond with ONLY valid JSON:
 {
-  "overallConcept": "2-3 sentence summary of the complete ad",
+  "overallConcept": "2-3 sentence summary explaining the psychological strategy behind the ad — what emotion it targets, what persuasion framework it uses, and why the structure works",
   "scenes": [
     {
       "sceneNumber": 1,
       "durationSeconds": 8,
-      "description": "What happens in this scene (plain English for the user)",
-      "prompt": "The complete VEO 3.1 prompt for this scene (50-80 words, following the prompt formula)",
-      "audioDirection": "What audio/dialogue/music plays",
-      "textOverlays": ["Any text that appears on screen"],
-      "transitionToNext": "How this flows into the next scene"
+      "description": "Plain English description of what happens, WHY this visual was chosen, and what psychological effect it achieves",
+      "prompt": "The complete VEO 3.1 prompt — 50-80 words, HYPER-SPECIFIC cinematography + subject + action + environment + audio. NO VAGUE LANGUAGE.",
+      "audioDirection": "Exact audio: specific dialogue in quotes, named SFX, music genre and energy level",
+      "textOverlays": ["Specific text with numbers/claims that appears on screen"],
+      "transitionToNext": "Exact transition type (hard cut, match cut, whip pan, dissolve)"
     }
   ],
-  "productionNotes": "Any notes about assembly, color grading, or post-production"
+  "productionNotes": "Assembly notes: color grading consistency, audio mixing, pacing rhythm, and overall emotional arc"
 }`;
 
   try {
-    let raw = await callClaude(VEO_PROMPT_SYSTEM, userMessage);
+    let raw = await callClaude(SYSTEM_PROMPT, userMessage);
     raw = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
     let result;

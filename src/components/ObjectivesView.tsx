@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { API_ENDPOINTS } from '../config/api';
+import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 
 export interface SiteObjectives {
   siteType: string;
@@ -79,6 +80,7 @@ function getDefaults(): SiteObjectives {
 }
 
 export default function ObjectivesView({ projectId, projectName, siteUrl }: ObjectivesViewProps) {
+  const { startTask } = useBackgroundTasks();
   const [data, setData] = useState<SiteObjectives>(getDefaults);
   const [saved, setSaved] = useState(false);
   const [hasExisting, setHasExisting] = useState(false);
@@ -157,43 +159,47 @@ export default function ObjectivesView({ projectId, projectName, siteUrl }: Obje
   const handleCompleteWithAI = async () => {
     setAiLoading(true);
     setAiError(null);
-    try {
-      const resp = await fetch(API_ENDPOINTS.ai.analyzeSite, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl }),
-      });
 
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(err.error || `HTTP ${resp.status}`);
-      }
-
-      const { objectives } = await resp.json();
-      if (objectives) {
-        setData({
-          siteType: objectives.siteType || '',
-          primaryObjective: objectives.primaryObjective || '',
-          secondaryObjectives: objectives.secondaryObjectives || [],
-          coreOfferings: (objectives.coreOfferings || []).map((o: any) => ({
-            name: o.name || '',
-            description: o.description || '',
-            topKeyword: o.topKeyword || '',
-          })),
-          targetAudience: objectives.targetAudience || '',
-          geographicFocus: objectives.geographicFocus || '',
-          competitors: objectives.competitors || '',
-          uniqueValue: objectives.uniqueValue || '',
-          conversionGoals: objectives.conversionGoals || '',
-          contentStrategy: objectives.contentStrategy || '',
+    startTask(`analyze-site-${projectId}`, 'site-analysis', 'Analyzing site with AI', async () => {
+      try {
+        const resp = await fetch(API_ENDPOINTS.ai.analyzeSite, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ siteUrl }),
         });
-        setSaved(false);
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ error: 'Unknown error' }));
+          throw new Error(err.error || `HTTP ${resp.status}`);
+        }
+
+        const { objectives } = await resp.json();
+        if (objectives) {
+          setData({
+            siteType: objectives.siteType || '',
+            primaryObjective: objectives.primaryObjective || '',
+            secondaryObjectives: objectives.secondaryObjectives || [],
+            coreOfferings: (objectives.coreOfferings || []).map((o: any) => ({
+              name: o.name || '',
+              description: o.description || '',
+              topKeyword: o.topKeyword || '',
+            })),
+            targetAudience: objectives.targetAudience || '',
+            geographicFocus: objectives.geographicFocus || '',
+            competitors: objectives.competitors || '',
+            uniqueValue: objectives.uniqueValue || '',
+            conversionGoals: objectives.conversionGoals || '',
+            contentStrategy: objectives.contentStrategy || '',
+          });
+          setSaved(false);
+        }
+      } catch (err: any) {
+        setAiError(err.message || 'Failed to analyze site');
+        throw err;
+      } finally {
+        setAiLoading(false);
       }
-    } catch (err: any) {
-      setAiError(err.message || 'Failed to analyze site');
-    } finally {
-      setAiLoading(false);
-    }
+    });
   };
 
   const completionPct = (() => {

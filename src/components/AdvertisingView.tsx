@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { logActivity } from '../utils/activityLog';
+import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 
 type MatchTab = 'broad' | 'phrase' | 'exact' | 'negative';
 
@@ -51,6 +52,7 @@ function getScoreBg(score: number) {
 }
 
 export default function AdvertisingView({ siteUrl, projectId }: AdvertisingViewProps) {
+  const { startTask } = useBackgroundTasks();
   const [data, setData] = useState<AdData | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -79,34 +81,38 @@ export default function AdvertisingView({ siteUrl, projectId }: AdvertisingViewP
   const generate = useCallback(async () => {
     setGenerating(true);
     setError(null);
-    try {
-      let objectives = null;
-      try {
-        const stored = localStorage.getItem(STORAGE_KEY(projectId));
-        if (stored) objectives = JSON.parse(stored);
-      } catch { /* */ }
 
-      const resp = await fetch(API_ENDPOINTS.advertising.generate, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, objectives }),
-      });
-      const body = await resp.json().catch(() => null);
-      if (!resp.ok) {
-        throw new Error(body?.error || `Server error (${resp.status})`);
+    startTask(`ad-keywords-${projectId}`, 'ad-keywords', 'Generating ad keywords', async () => {
+      try {
+        let objectives = null;
+        try {
+          const stored = localStorage.getItem(STORAGE_KEY(projectId));
+          if (stored) objectives = JSON.parse(stored);
+        } catch { /* */ }
+
+        const resp = await fetch(API_ENDPOINTS.advertising.generate, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ siteUrl, objectives }),
+        });
+        const body = await resp.json().catch(() => null);
+        if (!resp.ok) {
+          throw new Error(body?.error || `Server error (${resp.status})`);
+        }
+        if (!body || (!body.broad && !body.phrase && !body.exact)) {
+          throw new Error('Server returned empty results. Check that your site has tracked keywords.');
+        }
+        setData(body);
+        const totalKw = (body.broad?.length || 0) + (body.phrase?.length || 0) + (body.exact?.length || 0) + (body.negative?.length || 0);
+        logActivity(siteUrl, 'ad', 'keywords-generated', `Generated ${totalKw} advertising keywords (broad, phrase, exact, negative)`);
+      } catch (err: any) {
+        setError(err.message);
+        throw err;
+      } finally {
+        setGenerating(false);
       }
-      if (!body || (!body.broad && !body.phrase && !body.exact)) {
-        throw new Error('Server returned empty results. Check that your site has tracked keywords.');
-      }
-      setData(body);
-      const totalKw = (body.broad?.length || 0) + (body.phrase?.length || 0) + (body.exact?.length || 0) + (body.negative?.length || 0);
-      logActivity(siteUrl, 'ad', 'keywords-generated', `Generated ${totalKw} advertising keywords (broad, phrase, exact, negative)`);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setGenerating(false);
-    }
-  }, [siteUrl, projectId]);
+    });
+  }, [siteUrl, projectId, startTask]);
 
   // Match type keywords: filtered + sorted
   const matchKeywords = useMemo(() => {
