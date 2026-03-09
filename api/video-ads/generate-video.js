@@ -190,8 +190,16 @@ export async function pollHandler(req, res) {
     const result = await pollOperation(operationName);
 
     if (result.done) {
-      const videos = result.response?.generatedVideos || result.result?.generatedVideos || [];
+      const videos = result.response?.generatedSamples
+        || result.response?.generatedVideos
+        || result.result?.generatedSamples
+        || result.result?.generatedVideos
+        || [];
       const videoUrl = videos[0]?.video?.uri || null;
+
+      if (!videoUrl) {
+        console.error('[PollVideo] No video URL found. Full response:', JSON.stringify(result).slice(0, 2000));
+      }
 
       // Update DB
       const supabase = getSupabase();
