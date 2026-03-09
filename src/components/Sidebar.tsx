@@ -15,7 +15,7 @@ export type View =
   | 'ads-google' | 'ads-meta' | 'ads-tiktok' | 'ads-linkedin' | 'ads-x'
   | 'social-instagram' | 'social-linkedin' | 'social-x' | 'social-facebook' | 'social-tiktok' | 'social-pinterest'
   | 'video-ideas' | 'video-create'
-  | 'build-rebuild' | 'build-new'
+  | 'build-rebuild' | 'build-new' | 'build-publish'
   | 'tasks' | 'activity'
   | 'brand'
   | 'settings';
@@ -36,7 +36,7 @@ const CONTENT_VIEWS = new Set<View>(['blog-opportunity', 'blog-automate', 'blog-
 const ADS_VIEWS = new Set<View>(['ads-google', 'ads-meta', 'ads-tiktok', 'ads-linkedin', 'ads-x']);
 const SOCIAL_VIEWS = new Set<View>(['social-instagram', 'social-linkedin', 'social-x', 'social-facebook', 'social-tiktok', 'social-pinterest']);
 const VIDEO_ADS_VIEWS = new Set<View>(['video-ideas', 'video-create']);
-const PAGES_VIEWS = new Set<View>(['build-rebuild', 'build-new']);
+const PAGES_VIEWS = new Set<View>(['build-rebuild', 'build-new', 'build-publish']);
 
 const searchSubItems: Array<{ id: View; label: string }> = [
   { id: 'overview', label: 'Dashboard' },
@@ -99,6 +99,7 @@ const videoAdsSubItems: Array<{ id: View; label: string }> = [
 const pagesSubItems: Array<{ id: View; label: string }> = [
   { id: 'build-rebuild', label: 'Optimize Page' },
   { id: 'build-new', label: 'Create Page' },
+  { id: 'build-publish', label: 'Publish' },
 ];
 
 function LockIcon() {
@@ -529,7 +530,7 @@ export default function Sidebar({
               onNavigate={onNavigate}
               collapsed={collapsed}
               locked={isPagesLocked}
-              lockedSubItems={isPagesLocked ? new Set<View>(['build-rebuild', 'build-new']) : undefined}
+              lockedSubItems={isPagesLocked ? new Set<View>(['build-rebuild', 'build-new', 'build-publish']) : undefined}
             />
 
             {/* ── TRACK ── */}

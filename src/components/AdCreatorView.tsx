@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
+import { parseJsonOrThrow } from '../utils/apiResponse';
 
 type AdPlatform = 'meta' | 'tiktok' | 'linkedin' | 'x';
 type CreativeType = 'static' | 'video';
@@ -252,6 +253,17 @@ function AdPreview({ variation, platform, spec, creativeType, generatedImageUrl 
   );
 }
 
+interface SavedCreative {
+  id: string;
+  platform: string;
+  creative_type: string;
+  objective: string;
+  target_audience: string;
+  result: GeneratedAd;
+  generated_images: Record<number, string>;
+  created_at: string;
+}
+
 export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreatorViewProps) {
   const [objective, setObjective] = useState('');
   const [targetAudience, setTargetAudience] = useState('');
@@ -265,16 +277,52 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
   const [showPreview, setShowPreview] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<Record<number, string>>({});
 
+  const [savedCreatives, setSavedCreatives] = useState<SavedCreative[]>([]);
+  const [expandedSaved, setExpandedSaved] = useState<string | null>(null);
+  const [activeCreativeId, setActiveCreativeId] = useState<string | null>(null);
+
   const { startTask, getTask, getTasksByType, clearTask } = useBackgroundTasks();
   const adTaskId = `ad-generate-${platform}-${projectId}`;
   const adTask = getTask(adTaskId);
   const generating = adTask?.status === 'running';
   const adImageTasks = getTasksByType(`ad-image-${platform}`);
 
+  const loadSavedCreatives = useCallback(async () => {
+    try {
+      const resp = await authenticatedFetch(
+        `${API_ENDPOINTS.db.adCreatives}?projectId=${projectId}&platform=${platform}`
+      );
+      const data = await parseJsonOrThrow<{ data: SavedCreative[] }>(resp);
+      setSavedCreatives(data.data || []);
+    } catch { /* silent */ }
+  }, [projectId, platform]);
+
+  useEffect(() => { loadSavedCreatives(); }, [loadSavedCreatives]);
+
+  const saveCreative = async (adResult: GeneratedAd, images: Record<number, string>) => {
+    try {
+      const resp = await authenticatedFetch(API_ENDPOINTS.db.adCreatives, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId, siteUrl, platform,
+          creativeType, objective, targetAudience, valueProposition,
+          landingPageUrl, additionalContext,
+          result: adResult, generatedImages: images,
+        }),
+      });
+      const data = await parseJsonOrThrow<{ data: SavedCreative }>(resp);
+      setSavedCreatives(prev => [data.data, ...prev]);
+      setActiveCreativeId(data.data.id);
+    } catch { /* non-critical */ }
+  };
+
   useEffect(() => {
     if (adTask?.status === 'completed' && adTask.result) {
-      setResult(adTask.result as GeneratedAd);
+      const adResult = adTask.result as GeneratedAd;
+      setResult(adResult);
       setActiveVariation(0);
+      saveCreative(adResult, {});
       clearTask(adTaskId);
     } else if (adTask?.status === 'failed') {
       setError(adTask.error || 'Failed to generate ads');
@@ -286,7 +334,17 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
     for (const task of adImageTasks) {
       if (task.status === 'completed' && task.result) {
         const { variationIndex, imageUrl } = task.result as { variationIndex: number; imageUrl: string };
-        setGeneratedImages((prev) => ({ ...prev, [variationIndex]: imageUrl }));
+        setGeneratedImages((prev) => {
+          const updated = { ...prev, [variationIndex]: imageUrl };
+          if (activeCreativeId) {
+            authenticatedFetch(API_ENDPOINTS.db.adCreatives, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: activeCreativeId, generatedImages: updated }),
+            }).catch(() => {});
+          }
+          return updated;
+        });
         clearTask(task.id);
       } else if (task.status === 'failed') {
         setError(task.error || 'Image generation failed');
@@ -297,6 +355,7 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
 
   const handleGenerate = () => {
     setError(null);
+    setActiveCreativeId(null);
     startTask(adTaskId, 'ad-generate', `${platform} ad copy`, async () => {
       const objectives = localStorage.getItem(`kt_objectives_${projectId}`) || '';
       const resp = await authenticatedFetch(API_ENDPOINTS.advertising.generateAd, {
@@ -718,6 +777,47 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
           >
             Copy All Variations
           </button>
+        </div>
+      )}
+
+      {/* Saved Creatives */}
+      {savedCreatives.length > 0 && (
+        <div className="bg-white rounded-apple border border-apple-border p-5 space-y-3">
+          <h3 className="text-apple-sm font-semibold text-apple-text">Saved Creatives ({savedCreatives.length})</h3>
+          <div className="space-y-2">
+            {savedCreatives.map(creative => (
+              <div key={creative.id} className="border border-apple-border rounded-apple-sm overflow-hidden">
+                <button
+                  onClick={() => {
+                    if (expandedSaved === creative.id) {
+                      setExpandedSaved(null);
+                    } else {
+                      setExpandedSaved(creative.id);
+                      setResult(creative.result);
+                      setGeneratedImages(creative.generated_images || {});
+                      setActiveCreativeId(creative.id);
+                      setActiveVariation(0);
+                    }
+                  }}
+                  className="w-full px-4 py-3 flex items-center justify-between hover:bg-apple-fill-secondary/50 transition-colors text-left"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <svg className={`w-3.5 h-3.5 text-apple-text-tertiary transition-transform shrink-0 ${expandedSaved === creative.id ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                    <div className="min-w-0">
+                      <p className="text-apple-xs font-medium text-apple-text truncate">
+                        {creative.objective || 'Ad Creative'} — {creative.creative_type}
+                      </p>
+                      <p className="text-[10px] text-apple-text-tertiary">
+                        {creative.result?.variations?.length || 0} variations • {new Date(creative.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

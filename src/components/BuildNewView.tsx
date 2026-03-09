@@ -16,6 +16,7 @@ interface PageSuggestion {
   priority: string;
   outline: string[];
   built?: boolean;
+  rejected?: boolean;
   builtContent?: BuiltPage | null;
 }
 
@@ -68,6 +69,8 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
   const [modifyInput, setModifyInput] = useState('');
   const [isModifying, setIsModifying] = useState(false);
   const [modifyError, setModifyError] = useState('');
+  const [seoEditIdx, setSeoEditIdx] = useState<number | null>(null);
+  const [seoForm, setSeoForm] = useState({ slug: '', title: '', metaDescription: '', ogImage: '' });
 
   const { startTask, getTask, getTasksByType, clearTask } = useBackgroundTasks();
   const buildPageTasks = getTasksByType('build-page');
@@ -97,10 +100,27 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
 
   useEffect(() => { loadSavedData(); }, [loadSavedData]);
 
-  const generateSuggestions = useCallback(async () => {
+  const suggestTaskId = `build-suggest-${projectId}`;
+  const suggestTask = getTask(suggestTaskId);
+
+  useEffect(() => {
+    if (suggestTask?.status === 'completed' && suggestTask.result) {
+      const data = suggestTask.result as { suggestions: PageSuggestion[]; dbRecordId?: string };
+      setSuggestions(data.suggestions);
+      setHasSuggestions(true);
+      if (data.dbRecordId) setDbRecordId(data.dbRecordId);
+      setLoading(false);
+      clearTask(suggestTaskId);
+    } else if (suggestTask?.status === 'failed') {
+      setLoading(false);
+      clearTask(suggestTaskId);
+    }
+  }, [suggestTask?.status]);
+
+  const generateSuggestions = useCallback(() => {
     setLoading(true);
-    try {
-      const objectives = localStorage.getItem('site_objectives') || '';
+    startTask(suggestTaskId, 'build-suggest', 'Generating page ideas', async () => {
+      const objectives = localStorage.getItem('site_objectives') || localStorage.getItem(`kt_objectives_${projectId}`) || '';
       const sitemapResp = await authenticatedFetch(`${API_ENDPOINTS.audit.sitemap}?siteUrl=${encodeURIComponent(siteUrl)}`);
       const sitemapData = await parseJsonOrThrow<{ urls?: string[] }>(sitemapResp);
 
@@ -115,27 +135,28 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
       });
       const data = await parseJsonOrThrow<{ suggestions?: PageSuggestion[] }>(resp);
       const newSuggestions = (data.suggestions || []).map((s: PageSuggestion) => ({ ...s, built: false, builtContent: null }));
-      setSuggestions(newSuggestions);
-      setHasSuggestions(true);
 
       const saveResp = await authenticatedFetch(API_ENDPOINTS.db.buildSuggestions, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ siteUrl, projectId, suggestions: newSuggestions }),
       });
-      const saveData = await parseJsonOrThrow<{ id?: string }>(saveResp).catch(() => ({ id: undefined }));
-      if (saveData.id) setDbRecordId(saveData.id);
-      else {
-        const reloadResp = await authenticatedFetch(`${API_ENDPOINTS.db.buildSuggestions}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`);
-        const reloadData = await parseJsonOrThrow<{ id?: string }>(reloadResp).catch(() => ({ id: undefined }));
-        if (reloadData.id) setDbRecordId(reloadData.id);
+      let recordId: string | undefined;
+      try {
+        const saveData = await parseJsonOrThrow<{ id?: string }>(saveResp);
+        recordId = saveData.id;
+      } catch { /* ignore */ }
+      if (!recordId) {
+        try {
+          const reloadResp = await authenticatedFetch(`${API_ENDPOINTS.db.buildSuggestions}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`);
+          const reloadData = await parseJsonOrThrow<{ id?: string }>(reloadResp);
+          recordId = reloadData.id;
+        } catch { /* ignore */ }
       }
       logActivity(siteUrl, 'build', 'suggestions', `Generated ${newSuggestions.length} new page suggestions`);
-    } catch (err) {
-      console.error('Failed to generate suggestions:', err);
-    }
-    setLoading(false);
-  }, [siteUrl]);
+      return { suggestions: newSuggestions, dbRecordId: recordId };
+    });
+  }, [siteUrl, projectId]);
 
   const buildPage = (idx: number) => {
     const suggestion = suggestions[idx];
@@ -318,6 +339,62 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
       setModifyError(err instanceof Error ? err.message : 'Modification failed');
     }
     setIsModifying(false);
+  };
+
+  const [activeTab, setActiveTab] = useState<'ideas' | 'created' | 'rejected'>('ideas');
+  const [publishMsg, setPublishMsg] = useState('');
+
+  const ideaSuggestions = suggestions.filter(s => !s.built && !s.rejected);
+  const createdSuggestions = suggestions.filter(s => s.built && !s.rejected);
+  const rejectedSuggestions = suggestions.filter(s => s.rejected);
+  const displaySuggestions = activeTab === 'ideas' ? ideaSuggestions :
+    activeTab === 'created' ? createdSuggestions : rejectedSuggestions;
+
+  const rejectSuggestion = async (idx: number) => {
+    setSuggestions(prev => prev.map((s, i) => i === idx ? { ...s, rejected: true } : s));
+    if (dbRecordId) {
+      await authenticatedFetch(API_ENDPOINTS.db.buildSuggestions, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: dbRecordId, projectId, suggestionIndex: idx, rejected: true }),
+      }).catch(() => {});
+    }
+  };
+
+  const unrejectSuggestion = async (idx: number) => {
+    setSuggestions(prev => prev.map((s, i) => i === idx ? { ...s, rejected: false } : s));
+    if (dbRecordId) {
+      await authenticatedFetch(API_ENDPOINTS.db.buildSuggestions, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: dbRecordId, projectId, suggestionIndex: idx, rejected: false }),
+      }).catch(() => {});
+    }
+  };
+
+  const moveToPublish = async (page: BuiltPage, title: string, slug: string, sourceType: string) => {
+    try {
+      await authenticatedFetch(API_ENDPOINTS.db.pagePublish, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId, siteUrl,
+          sourceType,
+          title: page.title || title,
+          slug: page.slug || slug,
+          metaDescription: page.metaDescription || '',
+          htmlContent: page.htmlContent || '',
+          schemaMarkup: page.schemaMarkup || '',
+          pageUrl: page.slug ? `/${page.slug}` : '',
+          status: 'queued',
+        }),
+      });
+      setPublishMsg(`"${page.title || title}" moved to Publish queue`);
+      setTimeout(() => setPublishMsg(''), 4000);
+    } catch {
+      setPublishMsg('Failed to move to Publish');
+      setTimeout(() => setPublishMsg(''), 4000);
+    }
   };
 
   const getPriorityColor = (p: string) => {
@@ -543,6 +620,15 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
                       >
                         Modify Page
                       </button>
+                      <button
+                        onClick={() => moveToPublish(wizardResult, wizardData.title || 'Custom Page', wizardResult.slug || '', 'new')}
+                        className="px-4 py-2 rounded-apple-sm bg-green-600 text-white text-apple-sm font-medium hover:bg-green-700 transition-colors flex items-center gap-1.5"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        Move to Publish
+                      </button>
                       <button onClick={() => setShowWizard(false)} className="px-4 py-2 rounded-apple-sm border border-apple-border text-apple-sm font-medium text-apple-text-secondary hover:bg-apple-fill-secondary transition-colors">Done</button>
                     </div>
 
@@ -588,6 +674,34 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
         </div>
       )}
 
+      {publishMsg && (
+        <div className="p-3 bg-green-50 border border-green-200 rounded-apple-sm text-green-700 text-apple-xs">
+          {publishMsg}
+        </div>
+      )}
+
+      {/* Ideas / Created / Rejected Tabs */}
+      {hasSuggestions && (
+        <div className="flex items-center gap-1 bg-apple-fill-secondary rounded-apple p-1">
+          {(['ideas', 'created', 'rejected'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 px-4 py-2 rounded-apple-sm text-apple-sm font-medium transition-colors ${
+                activeTab === tab
+                  ? 'bg-white shadow-sm text-apple-text'
+                  : 'text-apple-text-secondary hover:text-apple-text'
+              }`}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              <span className="ml-1.5 text-[10px] font-mono bg-apple-fill-tertiary px-1.5 py-0.5 rounded-full">
+                {tab === 'ideas' ? ideaSuggestions.length : tab === 'created' ? createdSuggestions.length : rejectedSuggestions.length}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Suggestions List */}
       {!hasSuggestions && !loading ? (
         <div className="bg-white rounded-apple border border-apple-border p-8 text-center">
@@ -602,7 +716,21 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
         </div>
       ) : (
         <div className="space-y-2">
-          {suggestions.map((s, i) => (
+          {displaySuggestions.length === 0 && (
+            <div className="bg-white rounded-apple border border-apple-border p-8 text-center">
+              <p className="text-apple-text-secondary text-apple-sm">
+                {activeTab === 'ideas' ? 'All ideas have been built or rejected.'
+                  : activeTab === 'created' ? 'No created pages yet. Build an idea to see it here.'
+                  : 'No rejected ideas.'}
+              </p>
+            </div>
+          )}
+          {suggestions.map((s, i) => {
+            const show = activeTab === 'ideas' ? (!s.built && !s.rejected)
+              : activeTab === 'created' ? (s.built && !s.rejected)
+              : !!s.rejected;
+            if (!show) return null;
+            return (
             <div key={i} className={`bg-white rounded-apple border ${s.built ? 'border-green-200' : 'border-apple-border'}`}>
               <button
                 onClick={() => setExpandedIdx(expandedIdx === i ? null : i)}
@@ -654,19 +782,34 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
                   )}
 
                   <div className="flex gap-2 pt-1">
-                    {!s.built ? (
+                    {s.rejected ? (
                       <button
-                        onClick={() => buildPage(i)}
-                        disabled={buildingIdx === i}
-                        className="px-4 py-1.5 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
+                        onClick={() => unrejectSuggestion(i)}
+                        className="px-4 py-1.5 rounded-apple-sm border border-apple-border text-apple-xs font-medium text-apple-text-secondary hover:bg-apple-fill-secondary transition-colors"
                       >
-                        {buildingIdx === i ? (
-                          <span className="flex items-center gap-1.5">
-                            <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                            Building...
-                          </span>
-                        ) : 'Build'}
+                        Restore to Ideas
                       </button>
+                    ) : !s.built ? (
+                      <>
+                        <button
+                          onClick={() => buildPage(i)}
+                          disabled={buildingIdx === i}
+                          className="px-4 py-1.5 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
+                        >
+                          {buildingIdx === i ? (
+                            <span className="flex items-center gap-1.5">
+                              <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              Building...
+                            </span>
+                          ) : 'Build'}
+                        </button>
+                        <button
+                          onClick={() => rejectSuggestion(i)}
+                          className="px-4 py-1.5 rounded-apple-sm border border-red-300 text-red-600 text-apple-xs font-medium hover:bg-red-50 transition-colors"
+                        >
+                          Reject
+                        </button>
+                      </>
                     ) : (
                       <>
                         <button
@@ -693,9 +836,82 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
                         >
                           Modify
                         </button>
+                        <button
+                          onClick={() => moveToPublish(s.builtContent!, s.title, s.slug, 'new')}
+                          className="px-4 py-1.5 rounded-apple-sm bg-green-600 text-white text-apple-xs font-medium hover:bg-green-700 transition-colors flex items-center gap-1.5"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                          </svg>
+                          Move to Publish
+                        </button>
                       </>
                     )}
                   </div>
+
+                  {/* SEO Settings */}
+                  {s.built && (
+                    <div className="mt-3">
+                      <button
+                        onClick={() => {
+                          if (seoEditIdx === i) { setSeoEditIdx(null); }
+                          else {
+                            setSeoEditIdx(i);
+                            setSeoForm({
+                              slug: s.builtContent?.slug || s.slug || '',
+                              title: s.builtContent?.title || s.title || '',
+                              metaDescription: s.builtContent?.metaDescription || '',
+                              ogImage: '',
+                            });
+                          }
+                        }}
+                        className="text-apple-xs text-apple-text-secondary hover:text-apple-text font-medium flex items-center gap-1"
+                      >
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        SEO Settings
+                      </button>
+                      {seoEditIdx === i && (
+                        <div className="mt-2 p-3 bg-gray-50 border border-apple-border rounded-apple-sm space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] font-medium text-apple-text-secondary">Page Title</label>
+                              <input type="text" value={seoForm.title} onChange={e => setSeoForm(f => ({ ...f, title: e.target.value }))} className="input text-apple-xs w-full" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-medium text-apple-text-secondary">Slug</label>
+                              <input type="text" value={seoForm.slug} onChange={e => setSeoForm(f => ({ ...f, slug: e.target.value }))} className="input text-apple-xs w-full" placeholder="/page-slug" />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-medium text-apple-text-secondary">Meta Description</label>
+                            <textarea value={seoForm.metaDescription} onChange={e => setSeoForm(f => ({ ...f, metaDescription: e.target.value }))} className="input text-apple-xs w-full resize-none" rows={2} />
+                            <p className="text-[9px] text-apple-text-tertiary mt-0.5">{seoForm.metaDescription.length}/160</p>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-medium text-apple-text-secondary">OG Image URL</label>
+                            <input type="text" value={seoForm.ogImage} onChange={e => setSeoForm(f => ({ ...f, ogImage: e.target.value }))} className="input text-apple-xs w-full" placeholder="https://..." />
+                          </div>
+                          <button
+                            onClick={() => {
+                              setSuggestions(prev => prev.map((sg, si) => si !== i ? sg : {
+                                ...sg,
+                                title: seoForm.title,
+                                slug: seoForm.slug,
+                                builtContent: sg.builtContent ? { ...sg.builtContent, title: seoForm.title, slug: seoForm.slug, metaDescription: seoForm.metaDescription } : sg.builtContent,
+                              }));
+                              setSeoEditIdx(null);
+                            }}
+                            className="px-3 py-1 rounded bg-apple-blue text-white text-[10px] font-medium"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {modifyTarget?.type === 'suggestion' && modifyTarget.idx === i && s.builtContent && (
                     <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-apple-sm space-y-3">
@@ -734,7 +950,8 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
                 </div>
               )}
             </div>
-          ))}
+          );
+          })}
         </div>
       )}
 
@@ -801,6 +1018,15 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
                         }`}
                       >
                         Modify Page
+                      </button>
+                      <button
+                        onClick={() => moveToPublish(r, r.title || 'Custom Page', r.slug || '', 'new')}
+                        className="px-4 py-2 rounded-apple-sm bg-green-600 text-white text-apple-xs font-medium hover:bg-green-700 transition-colors flex items-center gap-1.5"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        Move to Publish
                       </button>
                     </div>
 

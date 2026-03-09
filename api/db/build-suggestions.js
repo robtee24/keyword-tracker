@@ -54,7 +54,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'PUT') {
-    const { id, projectId, suggestionIndex, built, builtContent } = req.body || {};
+    const { id, projectId, suggestionIndex, built, builtContent, rejected } = req.body || {};
     if (!id || suggestionIndex === undefined) return res.status(400).json({ error: 'id and suggestionIndex required' });
 
     const { data: existing, error: fetchErr } = await supabase
@@ -73,6 +73,7 @@ export default async function handler(req, res) {
         ...suggestions[suggestionIndex],
         built: built !== undefined ? built : suggestions[suggestionIndex].built,
         builtContent: builtContent !== undefined ? builtContent : suggestions[suggestionIndex].builtContent,
+        rejected: rejected !== undefined ? rejected : suggestions[suggestionIndex].rejected,
       };
     }
 

@@ -13,9 +13,33 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'GET') {
-    const { siteUrl, projectId, keyword } = req.query;
-    if (!siteUrl || !keyword) {
-      return res.status(400).json({ error: 'siteUrl and keyword are required' });
+    const { siteUrl, projectId, keyword, all } = req.query;
+    if (!siteUrl) {
+      return res.status(400).json({ error: 'siteUrl is required' });
+    }
+
+    if (all === 'true') {
+      let query = supabase
+        .from('recommendations')
+        .select('keyword, scan_result, scanned_at')
+        .eq('site_url', siteUrl);
+      if (projectId) query = query.eq('project_id', projectId);
+      const { data, error } = await query;
+      if (error) {
+        console.error('DB error fetching recommendations:', error);
+        return res.status(500).json({ error: error.message });
+      }
+      const results = {};
+      for (const row of (data || [])) {
+        if (row.scan_result) {
+          results[row.keyword] = row.scan_result;
+        }
+      }
+      return res.status(200).json({ results });
+    }
+
+    if (!keyword) {
+      return res.status(400).json({ error: 'keyword is required (or pass all=true)' });
     }
 
     let query = supabase

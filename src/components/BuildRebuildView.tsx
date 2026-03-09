@@ -90,6 +90,7 @@ export default function BuildRebuildView({ siteUrl, projectId }: BuildRebuildVie
   const [isModifying, setIsModifying] = useState(false);
   const [modifyError, setModifyError] = useState('');
   const [previewModalIdx, setPreviewModalIdx] = useState<number | null>(null);
+  const [publishMsg, setPublishMsg] = useState('');
 
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -308,6 +309,33 @@ export default function BuildRebuildView({ siteUrl, projectId }: BuildRebuildVie
     setIsModifying(false);
   };
 
+  const moveToPublish = async (build: SavedBuild) => {
+    const r = build.result;
+    if (!r) return;
+    try {
+      await authenticatedFetch(API_ENDPOINTS.db.pagePublish, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId, siteUrl,
+          sourceType: 'rebuild',
+          title: r.title || '',
+          slug: '',
+          metaDescription: r.metaDescription || '',
+          htmlContent: r.htmlContent || '',
+          schemaMarkup: r.schemaMarkup || '',
+          pageUrl: build.page_url || '',
+          status: 'queued',
+        }),
+      });
+      setPublishMsg(`"${r.title || build.page_url}" moved to Publish queue`);
+      setTimeout(() => setPublishMsg(''), 4000);
+    } catch {
+      setPublishMsg('Failed to move to Publish');
+      setTimeout(() => setPublishMsg(''), 4000);
+    }
+  };
+
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
     const sec = s % 60;
@@ -331,6 +359,11 @@ export default function BuildRebuildView({ siteUrl, projectId }: BuildRebuildVie
 
   return (
     <div className="space-y-6 max-w-5xl">
+      {publishMsg && (
+        <div className="p-3 bg-green-50 border border-green-200 rounded-apple-sm text-green-700 text-apple-xs">
+          {publishMsg}
+        </div>
+      )}
       <div>
         <h1 className="text-2xl font-semibold text-apple-text">Rebuild Page</h1>
         <p className="text-apple-sm text-apple-text-secondary mt-1">
@@ -567,6 +600,17 @@ export default function BuildRebuildView({ siteUrl, projectId }: BuildRebuildVie
                         >
                           Modify Page
                         </button>
+                        {r?.htmlContent && (
+                          <button
+                            onClick={() => moveToPublish(build)}
+                            className="px-4 py-2 rounded-apple-sm bg-green-600 text-white text-apple-xs font-medium hover:bg-green-700 transition-colors flex items-center gap-1.5"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                            </svg>
+                            Move to Publish
+                          </button>
+                        )}
                       </div>
                     </div>
 

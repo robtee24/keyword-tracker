@@ -116,7 +116,7 @@ export default function GoogleSearchConsole({
   const [showGroupScan, setShowGroupScan] = useState(false);
   const [addToGroupKeywords, setAddToGroupKeywords] = useState<Set<string>>(new Set());
   const [showAddToGroup, setShowAddToGroup] = useState(false);
-  const [newKeywords, setNewKeywords] = useState<Set<string>>(new Set());
+  // newKeywords detection handled by backend keywords table (first_seen_at)
   const [lostKeywords, setLostKeywords] = useState<Array<{ keyword: string; lastSeenAt: string }>>([]);
   const [aiIntents, setAiIntents] = useState<Record<string, KeywordIntent>>({});
   const [loadingAiIntents, setLoadingAiIntents] = useState(false);
@@ -401,7 +401,6 @@ export default function GoogleSearchConsole({
     const keywords: string[] = data.current.keywords.map((kw: any) => kw.keyword);
     if (keywords.length === 0) return;
 
-    // Always store keywords / detect new/lost (cheap DB call)
     (async () => {
       try {
         const storeResp = await fetch(API_ENDPOINTS.db.keywords, {
@@ -411,8 +410,25 @@ export default function GoogleSearchConsole({
         });
         if (storeResp.ok) {
           const storeResult = await storeResp.json();
-          setNewKeywords(new Set(storeResult.newKeywords || []));
           setLostKeywords(storeResult.lostKeywords || []);
+        }
+      } catch { /* non-critical */ }
+
+      try {
+        const recsResp = await authenticatedFetch(
+          `${API_ENDPOINTS.db.recommendations}?siteUrl=${encodeURIComponent(siteUrl)}&all=true${projectId ? `&projectId=${projectId}` : ''}`
+        );
+        if (recsResp.ok) {
+          const recsData = await recsResp.json();
+          if (recsData.results && Object.keys(recsData.results).length > 0) {
+            setScanResults(prev => {
+              const next = new Map(prev);
+              for (const [kw, result] of Object.entries(recsData.results)) {
+                next.set(kw, result as ScanResult);
+              }
+              return next;
+            });
+          }
         }
       } catch { /* non-critical */ }
     })();
@@ -1482,6 +1498,7 @@ export default function GoogleSearchConsole({
                       onRowClick={() => handleKeywordRowClick(keyword.keyword)}
                       getCompareColor={getCompareColor}
                       scanResult={scanResults.get(keyword.keyword) || null}
+                      hasExistingScan={scanResults.has(keyword.keyword)}
                       isLoadingRecs={loadingRecs.has(keyword.keyword)}
                       recsError={recsError.get(keyword.keyword) || null}
                       onScanRecommendations={() => handleScanRecommendations(keyword.keyword)}
@@ -1494,7 +1511,7 @@ export default function GoogleSearchConsole({
                       onIntentOverride={handleIntentOverride}
                       activeGroupId={activeGroup?.id || null}
                       onRemoveFromGroup={activeGroup ? (kw: string) => removeKeywordFromGroup(activeGroup.id, kw) : undefined}
-                      isNew={newKeywords.has(keyword.keyword)}
+                      
                       competitorBrands={competitorBrands}
                       aiIntents={aiIntents}
                       projectId={projectId}
@@ -1999,6 +2016,7 @@ function KeywordRow({
   onRowClick,
   getCompareColor,
   scanResult,
+  hasExistingScan,
   isLoadingRecs,
   recsError,
   onScanRecommendations,
@@ -2011,7 +2029,6 @@ function KeywordRow({
   onIntentOverride,
   activeGroupId,
   onRemoveFromGroup,
-  isNew,
   competitorBrands,
   aiIntents,
   projectId,
@@ -2027,6 +2044,7 @@ function KeywordRow({
   onRowClick: () => void;
   getCompareColor: (metric: string, current: number | null, compare: number | null) => string;
   scanResult: ScanResult | null;
+  hasExistingScan: boolean;
   isLoadingRecs: boolean;
   recsError: string | null;
   onScanRecommendations: () => void;
@@ -2040,7 +2058,6 @@ function KeywordRow({
   activeGroupId: number | null;
   projectId?: string;
   onRemoveFromGroup?: (keyword: string) => void;
-  isNew: boolean;
   competitorBrands: string[];
   aiIntents: Record<string, KeywordIntent>;
 }) {
@@ -2082,9 +2099,9 @@ function KeywordRow({
         <td className="px-6 py-3.5 text-apple-sm font-medium text-apple-text">
           <div className="flex items-center gap-2">
             {keyword.keyword}
-            {isNew && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded-apple-pill text-[10px] font-bold uppercase tracking-wide bg-green-100 text-green-700">
-                New
+            {hasExistingScan && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-apple-pill text-[10px] font-medium bg-blue-50 text-blue-600">
+                Scanned
               </span>
             )}
             {activeGroupId && onRemoveFromGroup && (

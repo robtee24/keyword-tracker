@@ -147,25 +147,23 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
       const data = await parseJsonOrThrow<{ opportunities?: Record<string, unknown>[] }>(resp);
       const dbOpps = (data.opportunities || []).map((o: Record<string, unknown>) => normalizeOpp(o));
 
-      const backupRaw = localStorage.getItem(localStorageKey);
-      if (backupRaw) {
-        try {
-          const backup: Opportunity[] = JSON.parse(backupRaw);
-          const dbTitles = new Set(dbOpps.map((o: Opportunity) => o.title));
-          const unsaved = backup.filter((o: Opportunity) => !dbTitles.has(o.title));
-          if (unsaved.length > 0) {
-            setOpportunities([...dbOpps, ...unsaved]);
-            setWarning(`${unsaved.length} idea(s) were not saved to the database and are loaded from local backup. Generate again after fixing the database to persist them.`);
-          } else {
-            localStorage.removeItem(localStorageKey);
-            setOpportunities(dbOpps);
-          }
-        } catch {
-          localStorage.removeItem(localStorageKey);
-          setOpportunities(dbOpps);
-        }
-      } else {
+      if (dbOpps.length > 0) {
+        localStorage.removeItem(localStorageKey);
         setOpportunities(dbOpps);
+        setWarning(null);
+      } else {
+        const backupRaw = localStorage.getItem(localStorageKey);
+        if (backupRaw) {
+          try {
+            const backup: Opportunity[] = JSON.parse(backupRaw);
+            if (backup.length > 0) {
+              setOpportunities(backup);
+              setWarning('Loaded ideas from local backup. Database may not have saved them.');
+            }
+          } catch {
+            localStorage.removeItem(localStorageKey);
+          }
+        }
       }
     } catch (err) {
       console.error('[BlogOpps] Load error:', err);
@@ -213,21 +211,8 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
       if (data.batchId) setExpandedBatch(data.batchId);
       if (data.warning) {
         setWarning(data.warning);
-      } else {
-        setTimeout(async () => {
-          try {
-            const verifyResp = await authenticatedFetch(
-              `${API_ENDPOINTS.db.blogOpportunities}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`
-            );
-            const verifyData = await parseJsonOrThrow<{ opportunities?: unknown[] }>(verifyResp);
-            const dbCount = (verifyData.opportunities || []).length;
-            if (dbCount < normalized.length) {
-              setWarning(`Ideas may not have saved. ${dbCount} found in database but ${normalized.length} were just generated. Ideas are backed up locally.`);
-            } else {
-              localStorage.removeItem(localStorageKey);
-            }
-          } catch { /* keep backup */ }
-        }, 2000);
+      } else if (data.batchId) {
+        localStorage.removeItem(localStorageKey);
       }
       logActivity(siteUrl, 'blog', 'opportunities', 'Generated blog topic opportunities');
       clearTask(topicTaskId);

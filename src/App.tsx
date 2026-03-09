@@ -22,6 +22,7 @@ import BlogAutomateView from './components/BlogAutomateView';
 import CompletedArticlesView from './components/CompletedArticlesView';
 import BuildRebuildView from './components/BuildRebuildView';
 import BuildNewView from './components/BuildNewView';
+import PagePublishView from './components/PagePublishView';
 import SocialPlatformView from './components/SocialPlatformView';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import LandingPage from './components/LandingPage';
@@ -104,6 +105,7 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   'video-create': 'Video Ads › Create Video',
   'build-rebuild': 'Pages › Optimize Page',
   'build-new': 'Pages › Create Page',
+  'build-publish': 'Pages › Publish',
   'tasks': 'Tasks',
   'activity': 'Activity Log',
   'brand': 'Brand',
@@ -805,6 +807,11 @@ function App() {
           {currentView === 'build-new' && activeProject && (
             <PlanGatedView limitField="page_builds">
               <BuildNewView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
+            </PlanGatedView>
+          )}
+          {currentView === 'build-publish' && activeProject && (
+            <PlanGatedView limitField="page_builds">
+              <PagePublishView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
             </PlanGatedView>
           )}
 

@@ -122,5 +122,7 @@ export const API_ENDPOINTS = {
     socialPosts: `${API_BASE_URL}/api/db/social-posts`,
     brand: `${API_BASE_URL}/api/db/brand`,
     videoAds: `${API_BASE_URL}/api/db/video-ads`,
+    adCreatives: `${API_BASE_URL}/api/db/ad-creatives`,
+    pagePublish: `${API_BASE_URL}/api/db/page-publish`,
   },
 };
