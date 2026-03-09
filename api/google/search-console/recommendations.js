@@ -38,6 +38,20 @@ export default async function handler(req, res) {
   }
 
   try {
+    // 0. Load existing recommendations to detect conflicts
+    const supabaseForRead = getSupabase();
+    let existingRecs = [];
+    if (supabaseForRead) {
+      let recsQuery = supabaseForRead
+        .from('recommendations')
+        .select('keyword, scan_result')
+        .eq('site_url', siteUrl)
+        .neq('keyword', keyword);
+      if (req.body.projectId) recsQuery = recsQuery.eq('project_id', req.body.projectId);
+      const { data: existingData } = await recsQuery;
+      existingRecs = (existingData || []).filter(r => r.scan_result?.checklist?.length > 0);
+    }
+
     // 1. Crawl all pages in parallel (max 3 pages)
     const pagesToCrawl = pages.slice(0, 3);
     const pageAnalyses = await Promise.all(
@@ -54,14 +68,27 @@ export default async function handler(req, res) {
       })
     );
 
-    // 2. Grade the top ranking page
+    // 2. Detect if homepage is the top-ranking page
+    let homepageUrl = '';
+    try {
+      const parsed = new URL(siteUrl.replace(/\/$/, ''));
+      homepageUrl = parsed.origin + '/';
+    } catch { /* ignore */ }
+    const topPageUrl = pages[0]?.url || '';
+    const isHomepageTop = topPageUrl && homepageUrl && (
+      topPageUrl === homepageUrl ||
+      topPageUrl === homepageUrl.replace(/\/$/, '') ||
+      topPageUrl.replace(/\/$/, '') === homepageUrl.replace(/\/$/, '')
+    );
+
+    // 3. Grade the top ranking page
     const topPageAnalysis = pageAnalyses[0];
     const audit = topPageAnalysis?.crawlSuccess
       ? gradePageSEO(topPageAnalysis, keyword)
       : { url: pages[0]?.url || '', overallGrade: 'N/A', grades: {} };
 
-    // 3. Build the prompt and call OpenAI for strategy + checklist
-    const prompt = buildPrompt(keyword, siteUrl, pages, pageAnalyses);
+    // 4. Build the prompt and call OpenAI for strategy + checklist
+    const prompt = buildPrompt(keyword, siteUrl, pages, pageAnalyses, isHomepageTop, existingRecs);
     const aiResult = await callOpenAI(openaiKey, prompt);
 
     const scanResult = {
@@ -70,26 +97,25 @@ export default async function handler(req, res) {
       checklist: aiResult.checklist || [],
     };
 
-    // Persist to Supabase (non-blocking, best-effort)
     const supabase = getSupabase();
+    const scannedAt = new Date().toISOString();
     if (supabase) {
-      supabase
+      const { error: dbErr } = await supabase
         .from('recommendations')
         .upsert(
           {
             site_url: siteUrl,
+            project_id: req.body.projectId || null,
             keyword,
             scan_result: scanResult,
-            scanned_at: new Date().toISOString(),
+            scanned_at: scannedAt,
           },
           { onConflict: 'site_url,keyword' }
-        )
-        .then(({ error: dbErr }) => {
-          if (dbErr) console.error('Failed to save recommendation to DB:', dbErr.message);
-        });
+        );
+      if (dbErr) console.error('Failed to save recommendation to DB:', dbErr.message);
     }
 
-    return res.status(200).json(scanResult);
+    return res.status(200).json({ ...scanResult, scannedAt });
   } catch (error) {
     console.error('Recommendations API error:', error);
     return res.status(500).json({
@@ -444,7 +470,7 @@ function stripTags(html) {
 /*  OpenAI Prompt Builder                                             */
 /* ------------------------------------------------------------------ */
 
-function buildPrompt(keyword, siteUrl, pages, pageAnalyses) {
+function buildPrompt(keyword, siteUrl, pages, pageAnalyses, isHomepageTop = false, existingRecs = []) {
   const domain = siteDomain(siteUrl);
   const topPage = pageAnalyses[0];
   const topUrl = topPage?.url || pages[0]?.url || siteUrl;
@@ -541,6 +567,48 @@ Evaluate the data below through ALL of these lenses:
     prompt += `- Schema: ${a.hasSchema ? 'Yes (' + a.schemaTypes.join(', ') + ')' : 'None'}\n`;
     prompt += `- Canonical: ${a.hasCanonical ? a.canonicalUrl : 'Not set'}\n`;
   });
+
+  // Homepage priority rule
+  if (isHomepageTop) {
+    prompt += `
+## HOMEPAGE PRIORITY RULE — MANDATORY
+The homepage (${topUrl}) is the TOP-RANKING page for "${keyword}". This is critical:
+- ALL optimization recommendations for "${keyword}" MUST target the homepage as the primary page.
+- Do NOT recommend redirecting SEO efforts to a different page or creating a new page to replace the homepage for this keyword.
+- The homepage takes ABSOLUTE precedence. If you suggest changes to headings, title tags, or content, they must be changes TO the homepage.
+- It IS acceptable to recommend SUPPORTING pages (e.g., a new blog post or subpage that links back to the homepage), but the homepage must remain the target page in the strategy.
+`;
+  }
+
+  // Conflict detection with existing recommendations
+  if (existingRecs.length > 0) {
+    prompt += `
+## EXISTING RECOMMENDATIONS FOR OTHER KEYWORDS — AVOID CONFLICTS
+Other keywords have already been scanned with the following recommendations. You MUST NOT create conflicting recommendations. If two keywords want different H1s, title tags, or meta descriptions for the SAME page, prioritize the keyword with higher search volume and more direct transactional intent.
+
+Review these existing recommendations and ensure your new recommendations are COMPATIBLE:
+`;
+    for (const rec of existingRecs.slice(0, 10)) {
+      const checklist = rec.scan_result.checklist || [];
+      const conflictItems = checklist.filter(item =>
+        ['title-tag', 'meta-description', 'heading-structure'].includes(item.category) &&
+        item.priority === 'high'
+      );
+      if (conflictItems.length > 0) {
+        prompt += `\nKeyword: "${rec.keyword}"\n`;
+        for (const item of conflictItems) {
+          prompt += `  - [${item.category}] ${item.page || 'unknown page'}: ${item.task.substring(0, 200)}\n`;
+        }
+      }
+    }
+    prompt += `
+CONFLICT RESOLUTION RULES:
+1. If an existing recommendation says to change an H1 on a page, do NOT recommend a DIFFERENT H1 for the same page. Instead, recommend adding a new H2/H3 section for your keyword.
+2. If an existing recommendation already set a title tag for a page, do NOT recommend a different title tag. Instead, note that the title is already optimized for a higher-priority keyword and suggest alternative approaches (e.g., content sections, internal linking, new supporting page).
+3. The keyword with highest search volume AND most direct transactional intent wins any conflict.
+4. When you cannot change a shared element (H1, title, meta) because of a higher-priority keyword, recommend ADDITIVE changes: new H2 sections, new content blocks, new internal links, or new supporting pages.
+`;
+  }
 
   prompt += `
 ## Response Format

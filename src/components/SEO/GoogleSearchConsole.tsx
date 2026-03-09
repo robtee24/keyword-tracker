@@ -90,6 +90,7 @@ export default function GoogleSearchConsole({
   >(new Map());
   const [loadingPages, setLoadingPages] = useState<Set<string>>(new Set());
   const [scanResults, setScanResults] = useState<Map<string, ScanResult>>(new Map());
+  const [scanDates, setScanDates] = useState<Map<string, string>>(new Map());
   const [loadingRecs, setLoadingRecs] = useState<Set<string>>(new Set());
   const [recsError, setRecsError] = useState<Map<string, string>>(new Map());
   const [keywordHistory, setKeywordHistory] = useState<Map<string, MonthlyPosition[]>>(new Map());
@@ -425,6 +426,15 @@ export default function GoogleSearchConsole({
               const next = new Map(prev);
               for (const [kw, result] of Object.entries(recsData.results)) {
                 next.set(kw, result as ScanResult);
+              }
+              return next;
+            });
+          }
+          if (recsData.scannedDates) {
+            setScanDates(prev => {
+              const next = new Map(prev);
+              for (const [kw, date] of Object.entries(recsData.scannedDates)) {
+                next.set(kw, date as string);
               }
               return next;
             });
@@ -858,8 +868,12 @@ export default function GoogleSearchConsole({
         throw new Error(err.error || `HTTP ${response.status}`);
       }
 
-      const result: ScanResult = await response.json();
-      setScanResults((prev) => new Map(prev).set(keyword, result));
+      const result = await response.json();
+      const { scannedAt, ...scanResult } = result;
+      setScanResults((prev) => new Map(prev).set(keyword, scanResult as ScanResult));
+      if (scannedAt) {
+        setScanDates((prev) => new Map(prev).set(keyword, scannedAt));
+      }
     } catch (err: any) {
       console.error('Failed to get recommendations:', err);
       setRecsError((prev) => new Map(prev).set(keyword, err.message || 'Failed to generate recommendations'));
@@ -1499,6 +1513,7 @@ export default function GoogleSearchConsole({
                       getCompareColor={getCompareColor}
                       scanResult={scanResults.get(keyword.keyword) || null}
                       hasExistingScan={scanResults.has(keyword.keyword)}
+                      scanDate={scanDates.get(keyword.keyword) || null}
                       isLoadingRecs={loadingRecs.has(keyword.keyword)}
                       recsError={recsError.get(keyword.keyword) || null}
                       onScanRecommendations={() => handleScanRecommendations(keyword.keyword)}
@@ -2017,6 +2032,7 @@ function KeywordRow({
   getCompareColor,
   scanResult,
   hasExistingScan,
+  scanDate,
   isLoadingRecs,
   recsError,
   onScanRecommendations,
@@ -2045,6 +2061,7 @@ function KeywordRow({
   getCompareColor: (metric: string, current: number | null, compare: number | null) => string;
   scanResult: ScanResult | null;
   hasExistingScan: boolean;
+  scanDate: string | null;
   isLoadingRecs: boolean;
   recsError: string | null;
   onScanRecommendations: () => void;
@@ -2407,7 +2424,10 @@ function KeywordRow({
                 {/* Results: strategy + audit + checklist */}
                 {scanResult && (
                   <div>
-                    <div className="flex items-center justify-end mb-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-apple-xs text-apple-text-tertiary">
+                        Last Scan: {scanDate ? new Date(scanDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Unknown'}
+                      </span>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

@@ -30,12 +30,14 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: error.message });
       }
       const results = {};
+      const scannedDates = {};
       for (const row of (data || [])) {
         if (row.scan_result) {
           results[row.keyword] = row.scan_result;
+          scannedDates[row.keyword] = row.scanned_at;
         }
       }
-      return res.status(200).json({ results });
+      return res.status(200).json({ results, scannedDates });
     }
 
     if (!keyword) {
