@@ -114,6 +114,8 @@ export default async function handler(req, res) {
             voice_style: body.voiceStyle || 'professional',
             video_style: body.videoStyle || 'cinematic',
             overall_concept: body.overallConcept,
+            character_bibles: body.characterBibles || [],
+            color_grading: body.colorGrading || '',
             scenes: body.scenes || [],
             status: body.status || 'draft',
           })

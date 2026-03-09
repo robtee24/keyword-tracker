@@ -25,7 +25,6 @@ async function generateVeoVideo(prompt, aspectRatio = '16:9', durationSeconds = 
           aspectRatio,
           durationSeconds,
           sampleCount: 1,
-          personGeneration: 'allow_adult',
           resolution: '720p',
         },
       }),
@@ -86,10 +85,9 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: 'No operation returned from VEO' });
       }
 
-      // Save to DB if videoProjectId provided
       const supabase = getSupabase();
       if (supabase && videoProjectId) {
-        await supabase.from('video_generated').upsert({
+        await supabase.from('video_generated').insert({
           video_project_id: videoProjectId,
           scene_index: sceneIndex,
           prompt,
@@ -97,7 +95,7 @@ export default async function handler(req, res) {
           status: 'generating',
           duration_seconds: durationSeconds || 8,
           aspect_ratio: aspectRatio || '16:9',
-        }, { onConflict: 'video_project_id,scene_index' }).select();
+        });
       }
 
       return res.status(200).json({ operationName, sceneIndex, status: 'generating' });
@@ -112,18 +110,27 @@ export default async function handler(req, res) {
     const supabase = getSupabase();
     if (!supabase) return res.status(500).json({ error: 'Database not available' });
 
-    const { data: project } = await supabase
+    const { data: project, error: projErr } = await supabase
       .from('video_projects')
       .select('*')
       .eq('id', videoProjectId)
       .single();
 
-    if (!project) return res.status(404).json({ error: 'Video project not found' });
+    if (projErr || !project) {
+      console.error('[GenerateVideo] Project fetch error:', projErr?.message);
+      return res.status(404).json({ error: 'Video project not found' });
+    }
 
     const scenes = project.scenes || [];
+    if (scenes.length === 0) {
+      return res.status(400).json({ error: 'Project has no scenes' });
+    }
+
     const operations = [];
 
-    for (const scene of scenes) {
+    for (let i = 0; i < scenes.length; i++) {
+      const scene = scenes[i];
+      const sceneIdx = i;
       try {
         const operationName = await generateVeoVideo(
           scene.prompt,
@@ -131,24 +138,30 @@ export default async function handler(req, res) {
           scene.durationSeconds || 8
         );
 
-        await supabase.from('video_generated').upsert({
+        if (!operationName) {
+          operations.push({ sceneIndex: sceneIdx, status: 'failed', error: 'No operation returned from VEO' });
+          continue;
+        }
+
+        await supabase.from('video_generated').insert({
           video_project_id: videoProjectId,
-          scene_index: scene.sceneNumber - 1,
+          scene_index: sceneIdx,
           prompt: scene.prompt,
           operation_name: operationName,
           status: 'generating',
           duration_seconds: scene.durationSeconds || 8,
           aspect_ratio: project.aspect_ratio || '16:9',
-        }, { onConflict: 'video_project_id,scene_index' }).select();
+        });
 
         operations.push({
-          sceneIndex: scene.sceneNumber - 1,
+          sceneIndex: sceneIdx,
           operationName,
           status: 'generating',
         });
       } catch (err) {
+        console.error(`[GenerateVideo] Scene ${sceneIdx} error:`, err.message);
         operations.push({
-          sceneIndex: scene.sceneNumber - 1,
+          sceneIndex: sceneIdx,
           status: 'failed',
           error: err.message,
         });

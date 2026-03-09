@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Authentication required' });
 
-  const { currentPrompt, editInstruction, sceneDescription, voiceStyle, videoStyle } = req.body || {};
+  const { currentPrompt, editInstruction, sceneDescription, voiceStyle, videoStyle, characterBibles, colorGrading } = req.body || {};
   if (!currentPrompt || !editInstruction) {
     return res.status(400).json({ error: 'currentPrompt and editInstruction required' });
   }
@@ -17,16 +17,26 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
 
-  const systemPrompt = `You are a VEO 3.1 video prompt editor. You modify existing video generation prompts based on user instructions while maintaining prompt quality and structure.
+  let characterContext = '';
+  if (characterBibles?.length) {
+    characterContext = '\n\nCHARACTER BIBLES (these descriptions MUST remain VERBATIM in the prompt — do NOT change any character description words):\n';
+    for (const cb of characterBibles) {
+      characterContext += `- ${cb.name}: ${cb.description}\n`;
+    }
+  }
+
+  const systemPrompt = `You are a VEO 3.1 video prompt editor. You modify existing video generation prompts based on user instructions while maintaining prompt quality and character consistency.
 
 RULES:
 - Apply ONLY the user's requested change
-- Maintain the optimal prompt density (50-80 words)
-- Keep the VEO 3.1 prompt formula: [Cinematography] + [Subject] + [Action] + [Context] + [Style & Audio]
-- Preserve audio direction unless the user changes it
+- Maintain the optimal prompt density (60-100 words)
+- Keep the layered prompt structure: Identity + Cinematography + Environment + Performance + Audio + Negatives
+- CRITICAL: If the prompt contains a character description from the Character Bible, do NOT alter those exact words. The character identity text must remain verbatim.
+- Preserve audio direction unless the user explicitly changes it
 - Keep the same voice style (${voiceStyle || 'professional'}) and video style (${videoStyle || 'cinematic'})
+${colorGrading ? `- Maintain the locked color grading: "${colorGrading}"` : ''}
 - Return the updated prompt, nothing else
-
+${characterContext}
 Respond with ONLY valid JSON.`;
 
   const userMessage = `CURRENT PROMPT:
@@ -36,7 +46,7 @@ ${sceneDescription ? `SCENE CONTEXT: ${sceneDescription}` : ''}
 
 USER EDIT REQUEST: ${editInstruction}
 
-Apply the user's edit to the prompt. Return the updated prompt.
+Apply the user's edit to the prompt. Keep all character bible descriptions EXACTLY as they are. Return the updated prompt.
 
 {
   "updatedPrompt": "the modified VEO 3.1 prompt incorporating the user's change",

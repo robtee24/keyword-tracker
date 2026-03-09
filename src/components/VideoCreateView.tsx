@@ -25,6 +25,11 @@ interface Scene {
   transitionToNext: string;
 }
 
+interface CharacterBible {
+  name: string;
+  description: string;
+}
+
 interface VideoProject {
   id: string;
   project_id: string;
@@ -36,6 +41,8 @@ interface VideoProject {
   voice_style: string;
   video_style: string;
   overall_concept: string;
+  character_bibles?: CharacterBible[];
+  color_grading?: string;
   scenes: Scene[];
   status: string;
   created_at: string;
@@ -169,7 +176,7 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
             objectives,
           }),
         });
-        const data = await parseJsonOrThrow<{ overallConcept: string; scenes: Scene[]; productionNotes?: string }>(resp);
+        const data = await parseJsonOrThrow<{ overallConcept: string; scenes: Scene[]; characterBibles?: CharacterBible[]; colorGrading?: string; productionNotes?: string }>(resp);
 
         const saveResp = await authenticatedFetch(`${API_ENDPOINTS.db.videoAds}?table=projects`, {
           method: 'POST',
@@ -184,6 +191,8 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
             voiceStyle: voiceStyle.toLowerCase(),
             videoStyle: videoStyle.toLowerCase(),
             overallConcept: data.overallConcept,
+            characterBibles: data.characterBibles || [],
+            colorGrading: data.colorGrading || '',
             scenes: data.scenes,
           }),
         });
@@ -221,7 +230,6 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
 
     setPendingIdea({ idea, sourceType: 'direct' });
     setQuickIdea('');
-    // Auto-trigger generation for quick generate since user is already on the page
     setQuickGenerating(true);
     const objectives = (() => {
       try { return localStorage.getItem(`kt_objectives_${projectId}`) || ''; } catch { return ''; }
@@ -243,7 +251,7 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
             objectives,
           }),
         });
-        const data = await parseJsonOrThrow<{ overallConcept: string; scenes: Scene[]; productionNotes?: string }>(resp);
+        const data = await parseJsonOrThrow<{ overallConcept: string; scenes: Scene[]; characterBibles?: CharacterBible[]; colorGrading?: string; productionNotes?: string }>(resp);
 
         const saveResp = await authenticatedFetch(`${API_ENDPOINTS.db.videoAds}?table=projects`, {
           method: 'POST',
@@ -253,7 +261,10 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
             platforms: selectedPlatforms, aspectRatio,
             voiceStyle: voiceStyle.toLowerCase(),
             videoStyle: videoStyle.toLowerCase(),
-            overallConcept: data.overallConcept, scenes: data.scenes,
+            overallConcept: data.overallConcept,
+            characterBibles: data.characterBibles || [],
+            colorGrading: data.colorGrading || '',
+            scenes: data.scenes,
           }),
         });
         const saved = await parseJsonOrThrow<{ data: VideoProject }>(saveResp);
@@ -309,6 +320,8 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
           sceneDescription: scene.description,
           voiceStyle: project.voice_style,
           videoStyle: project.video_style,
+          characterBibles: project.character_bibles || [],
+          colorGrading: project.color_grading || '',
         }),
       });
       const data = await parseJsonOrThrow<{ updatedPrompt: string; changesMade: string }>(resp);
@@ -361,14 +374,23 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
     const project = projects.find(p => p.id === vpId);
     if (!project) return;
 
-    startTask(`video-gen-all-${vpId}`, 'video-generate', `Generating all scenes`, async () => {
+    startTask(`video-gen-all-${vpId}-${Date.now()}`, 'video-generate', `Generating all scenes`, async () => {
       try {
         const resp = await authenticatedFetch(API_ENDPOINTS.videoAds.generateVideo, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ videoProjectId: vpId, generateAll: true }),
         });
-        const data = await parseJsonOrThrow<{ operations: Array<{ sceneIndex: number; operationName?: string; status: string }> }>(resp);
+        const data = await parseJsonOrThrow<{ operations: Array<{ sceneIndex: number; operationName?: string; status: string; error?: string }> }>(resp);
+
+        const failedOps = data.operations.filter(op => op.status === 'failed');
+        if (failedOps.length === data.operations.length) {
+          setError(`All scenes failed: ${failedOps[0]?.error || 'Unknown error'}`);
+          return;
+        }
+        if (failedOps.length > 0) {
+          setError(`${failedOps.length} scene(s) failed. ${data.operations.length - failedOps.length} generating.`);
+        }
 
         for (const op of data.operations) {
           if (op.operationName) {
@@ -443,6 +465,8 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
             reason: regenReason.trim(),
             voiceStyle: project.voice_style,
             videoStyle: project.video_style,
+            characterBibles: project.character_bibles || [],
+            colorGrading: project.color_grading || '',
           }),
         });
         const data = await parseJsonOrThrow<{ updatedPrompt: string; changesMade: string }>(resp);
@@ -710,11 +734,53 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
                     <span>Style: {project.video_style}</span>
                   </div>
 
-                  {/* Generate All button */}
-                  <div className="px-5 py-3 border-b border-apple-border flex justify-end">
+                  {/* Character Bibles & Color Grading */}
+                  {(project.character_bibles?.length || project.color_grading) && (
+                    <div className="px-5 py-3 border-b border-apple-border space-y-2">
+                      {project.character_bibles?.map((cb, cbi) => (
+                        <div key={cbi} className="bg-purple-50 rounded-lg p-3 border border-purple-200">
+                          <span className="text-[10px] font-semibold text-purple-700 uppercase tracking-wider">Character: {cb.name}</span>
+                          <p className="text-apple-xs text-purple-900 mt-1">{cb.description}</p>
+                        </div>
+                      ))}
+                      {project.color_grading && (
+                        <div className="bg-blue-50 rounded-lg p-2 px-3 border border-blue-200">
+                          <span className="text-[10px] font-semibold text-blue-700 uppercase tracking-wider">Color Grading</span>
+                          <span className="text-apple-xs text-blue-900 ml-2">{project.color_grading}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Action bar */}
+                  <div className="px-5 py-3 border-b border-apple-border flex items-center justify-between gap-3">
+                    {/* Combine All download */}
+                    {videos.filter(v => v.video_url).length > 1 && (
+                      <button
+                        onClick={() => {
+                          const completedVideos = videos.filter(v => v.video_url).sort((a, b) => a.scene_index - b.scene_index);
+                          completedVideos.forEach((v, i) => {
+                            const a = document.createElement('a');
+                            a.href = v.video_url!;
+                            a.download = `${project.idea?.title || 'video'}-scene-${i + 1}.mp4`;
+                            a.target = '_blank';
+                            a.rel = 'noopener';
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                          });
+                        }}
+                        className="px-3 py-1.5 text-apple-xs font-medium rounded-apple-sm border border-green-300 text-green-700 hover:bg-green-50 transition-colors flex items-center gap-1.5"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download All Scenes ({videos.filter(v => v.video_url).length})
+                      </button>
+                    )}
                     <button
                       onClick={() => generateAllScenes(project.id)}
-                      className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-apple-sm text-apple-xs font-medium hover:from-purple-700 hover:to-blue-700 transition-all flex items-center gap-2"
+                      className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-apple-sm text-apple-xs font-medium hover:from-purple-700 hover:to-blue-700 transition-all flex items-center gap-2 ml-auto"
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
@@ -845,14 +911,26 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
                             </p>
                           )}
 
-                          {/* Generated video preview */}
+                          {/* Generated video preview + download */}
                           {video?.video_url && (
-                            <div className="mt-2">
+                            <div className="mt-2 space-y-2">
                               <video
                                 src={video.video_url}
                                 controls
                                 className="w-full max-w-md rounded-lg border border-gray-200"
                               />
+                              <a
+                                href={video.video_url}
+                                download={`${project.idea?.title || 'video'}-scene-${idx + 1}.mp4`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded border border-apple-border text-apple-text-secondary hover:bg-apple-fill-secondary transition-colors"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                                Download Scene {idx + 1}
+                              </a>
                             </div>
                           )}
                           {video?.status === 'failed' && (
