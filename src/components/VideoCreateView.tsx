@@ -108,7 +108,7 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
 
   // Generating state
   const [generatingScenes, setGeneratingScenes] = useState<Record<string, boolean>>({});
-  const pollingRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const pollingRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
 
   const [error, setError] = useState('');
   const [creatingProject, setCreatingProject] = useState(false);
