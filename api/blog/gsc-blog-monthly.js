@@ -30,42 +30,32 @@ export default async function handler(req, res) {
     const endDate = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
     const startDate = new Date(now.getFullYear() - 1, now.getMonth(), 1).toISOString().slice(0, 10);
 
-    let domain = siteUrl;
-    if (domain.startsWith('sc-domain:')) {
-      domain = domain.replace('sc-domain:', '');
+    const response = await fetch(
+      `${API_CONFIG.googleSearchConsole.baseUrl}/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          startDate,
+          endDate,
+          dimensions: ['date'],
+          dimensionFilterGroups: [{
+            filters: [{ dimension: 'page', operator: 'contains', expression: rootPath }],
+          }],
+          rowLimit: 25000,
+        }),
+      }
+    );
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => '');
+      console.error(`[BlogGscBlogMonthly] API error ${response.status}: ${errBody.substring(0, 300)}`);
+      return res.status(200).json({ months: [] });
     }
-    domain = domain.replace(/^https?:\/\//, '').replace(/\/+$/, '');
-
-    const pageFilter = `https://${domain.replace(/^www\./, '')}${rootPath}`;
-    const pageFilterWww = `https://www.${domain.replace(/^www\./, '')}${rootPath}`;
-
-    const fetchMonthly = async (expression) => {
-      const response = await fetch(
-        `${API_CONFIG.googleSearchConsole.baseUrl}/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            startDate,
-            endDate,
-            dimensions: ['date'],
-            dimensionFilterGroups: [{
-              filters: [{ dimension: 'page', operator: 'includingRegex', expression }],
-            }],
-            rowLimit: 25000,
-          }),
-        }
-      );
-      if (!response.ok) return [];
-      const data = await response.json();
-      return data.rows || [];
-    };
-
-    const regex = `^https?://(www\\.)?${domain.replace(/^www\./, '').replace(/\./g, '\\.')}${rootPath.replace(/\//g, '\\/')}`;
-    const rows = await fetchMonthly(regex);
+    const data = await response.json();
+    const rows = data.rows || [];
 
     const monthlyMap = new Map();
     for (const row of rows) {

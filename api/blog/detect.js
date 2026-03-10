@@ -137,23 +137,31 @@ export default async function handler(req, res) {
       .filter(r => r.status === 'fulfilled')
       .map(r => r.value);
 
-    // 6. Fetch GSC data for ALL blogs in PARALLEL (bulk per blog)
+    // 6. Fetch GSC data for ALL blogs in PARALLEL
     let gscData = {};
-    if (timeLeft() > 10000) {
+    const gscTimeLeft = timeLeft();
+    console.log(`[BlogDetect] GSC phase starting, timeLeft=${gscTimeLeft}ms, blogs=${blogs.length}`);
+    if (gscTimeLeft > 10000) {
       try {
         const accessToken = await getServiceToken(auth.user.id, siteUrl, 'google_search_console');
+        console.log(`[BlogDetect] GSC accessToken: ${accessToken ? 'found' : 'NOT FOUND'}`);
         if (accessToken) {
           const endDate = new Date().toISOString().slice(0, 10);
           const startDate = new Date(Date.now() - 28 * 86400000).toISOString().slice(0, 10);
 
           const gscResults = await Promise.allSettled(
-            blogs.map(blog => fetchBlogGscBulk(accessToken, siteUrl, blog.rootPath, startDate, endDate))
+            blogs.map(blog => fetchBlogGscBulk(accessToken, siteUrl, blog.rootPath, blog.posts, startDate, endDate))
           );
 
           for (let bi = 0; bi < blogs.length; bi++) {
             const r = gscResults[bi];
-            if (r.status !== 'fulfilled') continue;
+            if (r.status !== 'fulfilled') {
+              console.error(`[BlogDetect] GSC for ${blogs[bi].rootPath} rejected:`, r.reason?.message || r.reason);
+              continue;
+            }
             const blogGsc = r.value;
+            const gscUrlCount = Object.keys(blogGsc).length;
+            console.log(`[BlogDetect] GSC for ${blogs[bi].rootPath}: ${gscUrlCount} URLs with data`);
             Object.assign(gscData, blogGsc);
 
             blogs[bi].posts = blogs[bi].posts.map(p => {
@@ -176,8 +184,10 @@ export default async function handler(req, res) {
           }
         }
       } catch (gscErr) {
-        console.error('[BlogDetect] GSC fetch failed (non-fatal):', gscErr.message);
+        console.error('[BlogDetect] GSC fetch failed (non-fatal):', gscErr.message, gscErr.stack);
       }
+    } else {
+      console.warn(`[BlogDetect] SKIPPING GSC — only ${gscTimeLeft}ms left (need >10000)`);
     }
 
     // 7. Save to database
@@ -201,6 +211,10 @@ export default async function handler(req, res) {
       );
     }
 
+    const gscPostsWithData = blogs.reduce((sum, b) => sum + b.posts.filter(p => p.gscData?.totalClicks > 0 || p.gscData?.totalImpressions > 0).length, 0);
+    const totalPosts = blogs.reduce((sum, b) => sum + b.posts.length, 0);
+    console.log(`[BlogDetect] Done. ${blogs.length} blogs, ${totalPosts} posts, ${gscPostsWithData} with GSC data. Took ${Date.now() - functionStart}ms`);
+
     return res.status(200).json({ blogs, totalUrls: parsedUrls.length, crawledAt: new Date().toISOString() });
   } catch (error) {
     console.error('[BlogDetect] Error:', error);
@@ -209,55 +223,45 @@ export default async function handler(req, res) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  GSC Bulk Fetch (single call per blog using page+query dimensions)  */
+/*  GSC Bulk Fetch — tries 'contains' filter, falls back to per-URL   */
 /* ------------------------------------------------------------------ */
 
-async function fetchBlogGscBulk(accessToken, siteUrl, rootPath, startDate, endDate) {
-  let domain = siteUrl;
-  if (domain.startsWith('sc-domain:')) domain = domain.replace('sc-domain:', '');
-  domain = domain.replace(/^https?:\/\//, '').replace(/\/+$/, '');
-  const bare = domain.replace(/^www\./, '');
-
-  const regex = `^https?://(www\\.)?${bare.replace(/\./g, '\\.')}${rootPath.replace(/\//g, '\\/')}`;
+async function fetchBlogGscBulk(accessToken, siteUrl, rootPath, posts, startDate, endDate) {
+  const apiUrl = `${API_CONFIG.googleSearchConsole.baseUrl}/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`;
   const pageData = {};
   const fetchStart = Date.now();
-  const MAX_GSC_TIME = 25000; // 25s max per blog
+  const MAX_GSC_TIME = 30000;
 
-  let startRow = 0;
-  let hasMore = true;
-  while (hasMore && (Date.now() - fetchStart) < MAX_GSC_TIME) {
-    try {
-      const response = await fetch(
-        `${API_CONFIG.googleSearchConsole.baseUrl}/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            startDate, endDate,
-            dimensions: ['page', 'query'],
-            dimensionFilterGroups: [{
-              filters: [{ dimension: 'page', operator: 'includingRegex', expression: regex }],
-            }],
-            rowLimit: 25000,
-            startRow,
-          }),
-          signal: AbortSignal.timeout(20000),
-        }
-      );
+  // Strategy 1: Bulk fetch using 'contains' filter (simpler, more reliable than regex)
+  console.log(`[GSC Bulk] Fetching for rootPath="${rootPath}" using 'contains' filter`);
+  let bulkSuccess = false;
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        startDate, endDate,
+        dimensions: ['page', 'query'],
+        dimensionFilterGroups: [{
+          filters: [{ dimension: 'page', operator: 'contains', expression: rootPath }],
+        }],
+        rowLimit: 25000,
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
 
-      if (!response.ok) {
-        console.error('[GSC Bulk] API error:', response.status);
-        break;
-      }
-
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => '');
+      console.error(`[GSC Bulk] 'contains' API error ${response.status}: ${errBody.substring(0, 500)}`);
+    } else {
       const data = await response.json();
       const rows = data.rows || [];
+      console.log(`[GSC Bulk] 'contains' returned ${rows.length} rows for rootPath="${rootPath}"`);
 
       for (const row of rows) {
         const pageUrl = row.keys?.[0] || '';
         const keyword = row.keys?.[1] || '';
         if (!pageUrl) continue;
-
         if (!pageData[pageUrl]) {
           pageData[pageUrl] = { totalClicks: 0, totalImpressions: 0, keywords: [] };
         }
@@ -269,19 +273,107 @@ async function fetchBlogGscBulk(accessToken, siteUrl, rootPath, startDate, endDa
         });
       }
 
-      hasMore = rows.length === 25000;
-      startRow += rows.length;
-    } catch (err) {
-      console.error('[GSC Bulk] Fetch error:', err.message);
-      break;
+      if (rows.length > 0) bulkSuccess = true;
+
+      // Paginate if needed
+      if (rows.length === 25000 && (Date.now() - fetchStart) < MAX_GSC_TIME) {
+        try {
+          const resp2 = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              startDate, endDate,
+              dimensions: ['page', 'query'],
+              dimensionFilterGroups: [{
+                filters: [{ dimension: 'page', operator: 'contains', expression: rootPath }],
+              }],
+              rowLimit: 25000,
+              startRow: 25000,
+            }),
+            signal: AbortSignal.timeout(20000),
+          });
+          if (resp2.ok) {
+            const d2 = await resp2.json();
+            for (const row of (d2.rows || [])) {
+              const pageUrl = row.keys?.[0] || '';
+              const keyword = row.keys?.[1] || '';
+              if (!pageUrl) continue;
+              if (!pageData[pageUrl]) {
+                pageData[pageUrl] = { totalClicks: 0, totalImpressions: 0, keywords: [] };
+              }
+              pageData[pageUrl].totalClicks += row.clicks || 0;
+              pageData[pageUrl].totalImpressions += row.impressions || 0;
+              pageData[pageUrl].keywords.push({
+                keyword, clicks: row.clicks || 0, impressions: row.impressions || 0,
+                position: Math.round((row.position || 0) * 10) / 10,
+              });
+            }
+          }
+        } catch (e) {
+          console.error('[GSC Bulk] Pagination error:', e.message);
+        }
+      }
     }
+  } catch (err) {
+    console.error('[GSC Bulk] contains fetch error:', err.message);
+  }
+
+  // Strategy 2: If bulk returned nothing, try per-URL fetches for first 20 posts
+  if (!bulkSuccess && posts.length > 0 && (Date.now() - fetchStart) < MAX_GSC_TIME) {
+    console.log(`[GSC Bulk] Falling back to per-URL fetch for ${Math.min(posts.length, 20)} posts`);
+    const subset = posts.slice(0, 20);
+    const perUrlResults = await Promise.allSettled(
+      subset.map(p => fetchSinglePageGsc(accessToken, apiUrl, p.url, startDate, endDate))
+    );
+    for (let i = 0; i < subset.length; i++) {
+      const r = perUrlResults[i];
+      if (r.status === 'fulfilled' && r.value) {
+        pageData[subset[i].url] = r.value;
+      }
+    }
+    console.log(`[GSC Bulk] Per-URL fallback got data for ${Object.keys(pageData).length} URLs`);
   }
 
   for (const url of Object.keys(pageData)) {
     pageData[url].keywords.sort((a, b) => b.clicks - a.clicks);
   }
 
+  console.log(`[GSC Bulk] Final: ${Object.keys(pageData).length} URLs with data for rootPath="${rootPath}" (${Date.now() - fetchStart}ms)`);
   return pageData;
+}
+
+async function fetchSinglePageGsc(accessToken, apiUrl, pageUrl, startDate, endDate) {
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        startDate, endDate,
+        dimensions: ['query'],
+        dimensionFilterGroups: [{
+          filters: [{ dimension: 'page', operator: 'equals', expression: pageUrl }],
+        }],
+        rowLimit: 5000,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const rows = data.rows || [];
+    if (rows.length === 0) return null;
+
+    const result = { totalClicks: 0, totalImpressions: 0, keywords: [] };
+    for (const row of rows) {
+      result.totalClicks += row.clicks || 0;
+      result.totalImpressions += row.impressions || 0;
+      result.keywords.push({
+        keyword: row.keys?.[0] || '', clicks: row.clicks || 0,
+        impressions: row.impressions || 0,
+        position: Math.round((row.position || 0) * 10) / 10,
+      });
+    }
+    return result;
+  } catch { return null; }
 }
 
 function normalizeUrlForMatch(url) {
