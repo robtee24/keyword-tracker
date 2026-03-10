@@ -64,6 +64,7 @@ export const API_ENDPOINTS = {
     detect: `${API_BASE_URL}/api/blog/detect`,
     discoverPosts: `${API_BASE_URL}/api/blog/discover-posts`,
     rewrite: `${API_BASE_URL}/api/blog/rewrite`,
+    gscMonthly: `${API_BASE_URL}/api/blog/gsc-monthly`,
     audit: `${API_BASE_URL}/api/blog/audit`,
     opportunities: `${API_BASE_URL}/api/blog/opportunities`,
     generate: `${API_BASE_URL}/api/blog/generate`,
