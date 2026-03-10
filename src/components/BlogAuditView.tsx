@@ -1,13 +1,34 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { API_ENDPOINTS } from '../config/api';
+import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
+import { parseJsonOrThrow } from '../utils/apiResponse';
 
-interface BlogUrl {
-  id?: string;
-  site_url: string;
-  blog_url: string;
-  added_at: string;
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
+
+interface BlogPost {
+  url: string;
+  title: string;
+  metaDescription: string;
+  gscData?: {
+    totalClicks: number;
+    totalImpressions: number;
+    keywords: { keyword: string; clicks: number; impressions: number; position: number }[];
+  };
+  auditResult?: AuditResult;
+  auditedAt?: string;
+  rewrittenAt?: string;
+  articleId?: string;
+}
+
+interface AuditResult {
+  score: number;
+  summary: string;
+  strengths: string[];
+  recommendations: Recommendation[];
 }
 
 interface Recommendation {
@@ -17,213 +38,297 @@ interface Recommendation {
   recommendation: string;
   howToFix: string;
   impact: string;
-  done?: boolean;
 }
 
-interface PostResult {
-  url: string;
-  score: number;
+interface BlogDiscovery {
+  id: string;
+  project_id: string;
+  site_url: string;
+  root_path: string;
+  blog_name: string;
+  posts: BlogPost[];
+  overview: BlogOverview | null;
+  gsc_data: Record<string, unknown>;
+  crawled_at: string;
+}
+
+interface BlogOverview {
   summary: string;
-  strengths: string[];
-  recommendations: Recommendation[];
-  error?: string;
+  totalClicks: number;
+  top5: { url: string; title: string; clicks: number }[];
 }
-
-interface BlogAuditResult {
-  blogUrl: string;
-  mode: 'single' | 'full';
-  overview?: { score: number; summary: string; strengths: string[]; recommendations: Recommendation[] };
-  posts?: PostResult[];
-  totalPosts?: number;
-  auditedPosts?: number;
-  score?: number;
-  summary?: string;
-  strengths?: string[];
-  recommendations?: Recommendation[];
-  error?: string;
-}
-
-interface SavedAudit {
-  blog_url: string;
-  audit_mode: string;
-  score: number;
-  summary: string;
-  strengths: string[];
-  recommendations: Recommendation[];
-  audited_at: string;
-}
-
-type AuditTab = 'summary' | 'by-post' | 'recommendations';
 
 interface BlogAuditViewProps {
   siteUrl: string;
   projectId: string;
 }
 
-export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps) {
-  const [blogUrls, setBlogUrls] = useState<BlogUrl[]>([]);
-  const [newBlogUrl, setNewBlogUrl] = useState('');
-  const [detecting, setDetecting] = useState(false);
-  const [loading, setLoading] = useState(true);
+/* ------------------------------------------------------------------ */
+/*  Component                                                          */
+/* ------------------------------------------------------------------ */
 
-  const [selectedBlog, setSelectedBlog] = useState('');
-  const [auditMode, setAuditMode] = useState<'single' | 'full'>('full');
-  const [singleUrl, setSingleUrl] = useState('');
-  const [progress, setProgress] = useState('');
+export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps) {
+  const [blogs, setBlogs] = useState<BlogDiscovery[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedBlogs, setExpandedBlogs] = useState<Set<string>>(new Set());
+  const [expandedPosts, setExpandedPosts] = useState<Set<string>>(new Set());
+  const [expandedKeywords, setExpandedKeywords] = useState<Set<string>>(new Set());
+  const [gscLoading, setGscLoading] = useState<Set<string>>(new Set());
 
   const { startTask, getTask, clearTask } = useBackgroundTasks();
-  const blogAuditTaskId = `blog-audit-${projectId}`;
-  const blogAuditTask = getTask(blogAuditTaskId);
-  const running = blogAuditTask?.status === 'running';
+  const detectTaskId = `blog-detect-${projectId}`;
+  const detectTask = getTask(detectTaskId);
+  const isDetecting = detectTask?.status === 'running';
 
-  const [result, setResult] = useState<BlogAuditResult | null>(null);
-  const [savedAudits, setSavedAudits] = useState<SavedAudit[]>([]);
-  const [activeTab, setActiveTab] = useState<AuditTab>('summary');
-  const [expandedPosts, setExpandedPosts] = useState<Set<string>>(new Set());
-  const [expandedRecs, setExpandedRecs] = useState<Set<string>>(new Set());
-
-  const loadBlogUrls = useCallback(async () => {
+  /* ----- Load saved discoveries ----- */
+  const loadDiscoveries = useCallback(async () => {
     setLoading(true);
     try {
-      const resp = await fetch(`${API_ENDPOINTS.db.blogUrls}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`);
-      const data = await resp.json();
-      setBlogUrls(data.urls || []);
+      const resp = await authenticatedFetch(
+        `${API_ENDPOINTS.db.blogDiscoveries}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`
+      );
+      const data = await parseJsonOrThrow(resp);
+      setBlogs(data.discoveries || []);
     } catch { /* ignore */ }
     setLoading(false);
-  }, [siteUrl]);
+  }, [siteUrl, projectId]);
 
-  const loadSavedAudits = useCallback(async () => {
-    try {
-      const resp = await fetch(`${API_ENDPOINTS.db.blogAudits}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`);
-      const data = await resp.json();
-      setSavedAudits(data.audits || []);
-    } catch { /* ignore */ }
-  }, [siteUrl]);
+  useEffect(() => { loadDiscoveries(); }, [loadDiscoveries]);
 
+  /* ----- Handle background detect completion ----- */
   useEffect(() => {
-    loadBlogUrls();
-    loadSavedAudits();
-  }, [loadBlogUrls, loadSavedAudits]);
-
-  const detectBlogUrls = async () => {
-    setDetecting(true);
-    try {
-      const resp = await fetch(`${API_ENDPOINTS.blog.detect}?siteUrl=${encodeURIComponent(siteUrl)}`);
-      const data = await resp.json();
-      const detected = data.blogUrls || [];
-      for (const url of detected) {
-        await fetch(API_ENDPOINTS.db.blogUrls, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ siteUrl, projectId, blogUrl: url }),
-        });
+    if (detectTask?.status === 'completed' && detectTask.result) {
+      const data = detectTask.result as { blogs: BlogDiscovery[] };
+      if (data.blogs?.length) {
+        loadDiscoveries();
       }
-      await loadBlogUrls();
-    } catch (err) {
-      console.error('Detection failed:', err);
+      clearTask(detectTaskId);
+    } else if (detectTask?.status === 'failed') {
+      clearTask(detectTaskId);
     }
-    setDetecting(false);
-  };
+  }, [detectTask?.status]);
 
-  const addBlogUrl = async () => {
-    if (!newBlogUrl.trim()) return;
-    let url = newBlogUrl.trim();
-    if (!url.startsWith('http')) url = `https://${url}`;
-    if (!url.endsWith('/')) url += '/';
-
-    await fetch(API_ENDPOINTS.db.blogUrls, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ siteUrl, projectId, blogUrl: url }),
-    });
-    setNewBlogUrl('');
-    await loadBlogUrls();
-  };
-
-  const removeBlogUrl = async (blogUrl: string) => {
-    await fetch(API_ENDPOINTS.db.blogUrls, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ siteUrl, projectId, blogUrl }),
-    });
-    await loadBlogUrls();
-  };
-
-  useEffect(() => {
-    if (blogAuditTask?.status === 'completed' && blogAuditTask.result) {
-      const data = blogAuditTask.result as BlogAuditResult;
-      setResult(data);
-      setActiveTab('summary');
-      loadSavedAudits();
-      setProgress('');
-      clearTask(blogAuditTaskId);
-    } else if (blogAuditTask?.status === 'failed') {
-      setProgress('');
-      clearTask(blogAuditTaskId);
-    }
-  }, [blogAuditTask?.status]);
-
-  const runAudit = () => {
-    const targetUrl = auditMode === 'single' ? singleUrl.trim() : selectedBlog;
-    if (!targetUrl) return;
-    const mode = auditMode;
-    setResult(null);
-    setProgress(mode === 'full' ? 'Discovering blog posts and running audits...' : 'Auditing blog post...');
-
-    startTask(blogAuditTaskId, 'blog-audit', `Blog audit: ${targetUrl.slice(0, 50)}`, async () => {
-      const resp = await fetch(API_ENDPOINTS.blog.audit, {
+  /* ----- Find All Posts ----- */
+  const handleFindAllPosts = () => {
+    startTask(detectTaskId, 'blog-detect', `Finding all blog posts on ${siteUrl}`, async () => {
+      const resp = await authenticatedFetch(API_ENDPOINTS.blog.detect, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, projectId, blogUrl: targetUrl, mode }),
+        body: JSON.stringify({ siteUrl, projectId }),
       });
-      const data: BlogAuditResult = await resp.json();
-      const postCount = data.posts?.length || 0;
-      logActivity(siteUrl, 'blog', 'audit', `Blog audit completed: ${mode === 'full' ? `Full audit (${postCount} posts)` : `Single post: ${targetUrl}`} — Score: ${data.overview?.score || data.score || data.posts?.[0]?.score || 'N/A'}`);
+      const data = await parseJsonOrThrow(resp);
+      logActivity(siteUrl, 'blog', 'detect', `Found ${data.blogs?.length || 0} blog section(s)`);
       return data;
     });
   };
 
-  const togglePost = (url: string) => {
-    setExpandedPosts((prev) => {
-      const next = new Set(prev);
-      next.has(url) ? next.delete(url) : next.add(url);
-      return next;
-    });
-  };
-
-  const toggleRec = (key: string) => {
-    setExpandedRecs((prev) => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-  };
-
-  const addToTasklist = async (rec: Recommendation, source: string) => {
+  /* ----- Fetch GSC Data for a blog ----- */
+  const fetchGscData = async (blog: BlogDiscovery) => {
+    const key = blog.root_path;
+    setGscLoading(prev => new Set(prev).add(key));
     try {
-      await fetch(API_ENDPOINTS.db.completedTasks, {
+      const urls = blog.posts.map(p => p.url);
+      const resp = await authenticatedFetch(API_ENDPOINTS.blog.discoverPosts, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl, urls }),
+      });
+      const data = await parseJsonOrThrow(resp);
+      const gscMap = data.data || {};
+
+      const updatedPosts = blog.posts.map(p => ({
+        ...p,
+        gscData: gscMap[p.url] || p.gscData || { totalClicks: 0, totalImpressions: 0, keywords: [] },
+      }));
+
+      // Build overview
+      const totalClicks = updatedPosts.reduce((s, p) => s + (p.gscData?.totalClicks || 0), 0);
+      const sorted = [...updatedPosts].sort((a, b) => (b.gscData?.totalClicks || 0) - (a.gscData?.totalClicks || 0));
+      const top5 = sorted.slice(0, 5).map(p => ({ url: p.url, title: p.title, clicks: p.gscData?.totalClicks || 0 }));
+      const overview: BlogOverview = {
+        summary: `${blog.blog_name || blog.root_path} contains ${updatedPosts.length} posts with ${totalClicks.toLocaleString()} total monthly clicks.`,
+        totalClicks,
+        top5,
+      };
+
+      // Persist to DB
+      await authenticatedFetch(API_ENDPOINTS.db.blogDiscoveries, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId,
+          siteUrl,
+          rootPath: blog.root_path,
+          updates: { posts: updatedPosts, overview, gscData: gscMap },
+        }),
+      });
+
+      setBlogs(prev => prev.map(b =>
+        b.root_path === blog.root_path ? { ...b, posts: updatedPosts, overview, gsc_data: gscMap } : b
+      ));
+    } catch (err) {
+      console.error('Failed to fetch GSC data:', err);
+    }
+    setGscLoading(prev => { const n = new Set(prev); n.delete(key); return n; });
+  };
+
+  /* ----- Audit a single post ----- */
+  const auditPost = (blog: BlogDiscovery, postUrl: string) => {
+    const taskId = `blog-audit-post-${postUrl}`;
+    startTask(taskId, 'blog-audit', `Auditing: ${postUrl.slice(0, 60)}`, async () => {
+      const resp = await authenticatedFetch(API_ENDPOINTS.blog.audit, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl, projectId, blogUrl: postUrl, mode: 'single' }),
+      });
+      const data = await parseJsonOrThrow(resp);
+
+      const auditResult: AuditResult = {
+        score: data.score || 0,
+        summary: data.summary || '',
+        strengths: data.strengths || [],
+        recommendations: data.recommendations || [],
+      };
+
+      // Update the post in local state + persist
+      setBlogs(prev => prev.map(b => {
+        if (b.root_path !== blog.root_path) return b;
+        const updatedPosts = b.posts.map(p =>
+          p.url === postUrl ? { ...p, auditResult, auditedAt: new Date().toISOString() } : p
+        );
+        // Persist asynchronously
+        authenticatedFetch(API_ENDPOINTS.db.blogDiscoveries, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId, siteUrl, rootPath: blog.root_path, updates: { posts: updatedPosts } }),
+        }).catch(() => {});
+        return { ...b, posts: updatedPosts };
+      }));
+
+      logActivity(siteUrl, 'blog', 'audit', `Audited post: ${postUrl} — Score: ${auditResult.score}`);
+      return auditResult;
+    });
+  };
+
+  /* ----- Audit all posts in a blog ----- */
+  const auditAllPosts = (blog: BlogDiscovery) => {
+    const unaudited = blog.posts.filter(p => !p.auditedAt);
+    for (const post of unaudited) {
+      auditPost(blog, post.url);
+    }
+  };
+
+  /* ----- Rewrite a single post ----- */
+  const rewritePost = (blog: BlogDiscovery, postUrl: string) => {
+    const taskId = `blog-rewrite-${postUrl}`;
+    startTask(taskId, 'blog-rewrite', `Rewriting: ${postUrl.slice(0, 60)}`, async () => {
+      const otherPostUrls = blog.posts.filter(p => p.url !== postUrl).map(p => p.url);
+      const resp = await authenticatedFetch(API_ENDPOINTS.blog.rewrite, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl, projectId, postUrl, blogRootPath: blog.root_path, otherPostUrls }),
+      });
+      const data = await parseJsonOrThrow(resp);
+
+      // Mark as rewritten in local state
+      setBlogs(prev => prev.map(b => {
+        if (b.root_path !== blog.root_path) return b;
+        const updatedPosts = b.posts.map(p =>
+          p.url === postUrl ? { ...p, rewrittenAt: new Date().toISOString(), articleId: data.blog?.articleId } : p
+        );
+        authenticatedFetch(API_ENDPOINTS.db.blogDiscoveries, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId, siteUrl, rootPath: blog.root_path, updates: { posts: updatedPosts } }),
+        }).catch(() => {});
+        return { ...b, posts: updatedPosts };
+      }));
+
+      logActivity(siteUrl, 'blog', 'rewrite', `Rewrote post: ${postUrl}`);
+      return data;
+    });
+  };
+
+  /* ----- Rewrite all posts in a blog ----- */
+  const rewriteAllPosts = (blog: BlogDiscovery) => {
+    const unrewritten = blog.posts.filter(p => !p.rewrittenAt);
+    for (const post of unrewritten) {
+      rewritePost(blog, post.url);
+    }
+  };
+
+  /* ----- Generate Post Ideas (routes to Blog Ideas section) ----- */
+  const generatePostIdeas = async (blog: BlogDiscovery) => {
+    const taskId = `blog-ideas-${blog.root_path}`;
+    startTask(taskId, 'blog-ideas', `Generating ideas for ${blog.blog_name || blog.root_path}`, async () => {
+      const existingTitles = blog.posts.map(p => p.title).filter(Boolean).slice(0, 30);
+      const resp = await authenticatedFetch(API_ENDPOINTS.blog.opportunities, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
           projectId,
-          keyword: `blog:${source}`,
-          taskId: `blog-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          taskText: `${rec.issue} → ${rec.recommendation}`,
-          category: rec.category,
-          status: 'pending',
+          context: `Blog section: ${blog.blog_name || blog.root_path}. Existing posts: ${existingTitles.join(', ')}. Generate ideas that complement existing content and fill gaps.`,
         }),
       });
-    } catch (err) {
-      console.error('Failed to add to tasklist:', err);
-    }
+      const data = await parseJsonOrThrow(resp);
+      logActivity(siteUrl, 'blog', 'ideas', `Generated ${data.topics?.length || 0} post ideas for ${blog.blog_name || blog.root_path}`);
+      return data;
+    });
   };
 
-  const getPriorityColor = (p: string) => {
-    if (p === 'high') return 'bg-red-100 text-red-700';
-    if (p === 'medium') return 'bg-amber-100 text-amber-700';
-    return 'bg-green-100 text-green-700';
+  /* ----- Toggle helpers ----- */
+  const toggleBlog = (rootPath: string) => {
+    setExpandedBlogs(prev => {
+      const n = new Set(prev);
+      n.has(rootPath) ? n.delete(rootPath) : n.add(rootPath);
+      return n;
+    });
   };
+
+  const togglePost = (url: string) => {
+    setExpandedPosts(prev => {
+      const n = new Set(prev);
+      n.has(url) ? n.delete(url) : n.add(url);
+      return n;
+    });
+  };
+
+  const toggleKeywords = (url: string) => {
+    setExpandedKeywords(prev => {
+      const n = new Set(prev);
+      n.has(url) ? n.delete(url) : n.add(url);
+      return n;
+    });
+  };
+
+  /* ----- Search filtering ----- */
+  const filteredBlogs = useMemo(() => {
+    if (!searchQuery.trim()) return blogs;
+    const q = searchQuery.toLowerCase();
+    return blogs.map(blog => {
+      const blogNameMatch = blog.blog_name?.toLowerCase().includes(q) || blog.root_path.toLowerCase().includes(q);
+      const matchingPosts = blog.posts.filter(p =>
+        p.url.toLowerCase().includes(q) || p.title?.toLowerCase().includes(q)
+      );
+      if (blogNameMatch) return blog;
+      if (matchingPosts.length > 0) return { ...blog, posts: matchingPosts };
+      return null;
+    }).filter(Boolean) as BlogDiscovery[];
+  }, [blogs, searchQuery]);
+
+  /* ----- Task status helpers ----- */
+  const isPostAuditing = (url: string) => getTask(`blog-audit-post-${url}`)?.status === 'running';
+  const isPostRewriting = (url: string) => getTask(`blog-rewrite-${url}`)?.status === 'running';
+  const isGeneratingIdeas = (rootPath: string) => getTask(`blog-ideas-${rootPath}`)?.status === 'running';
+
+  const crawledAt = blogs.length > 0
+    ? blogs.reduce((latest, b) => {
+        const d = new Date(b.crawled_at).getTime();
+        return d > latest ? d : latest;
+      }, 0)
+    : null;
 
   const getScoreColor = (s: number) => {
     if (s >= 80) return 'text-green-600';
@@ -231,379 +336,397 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
     return 'text-red-600';
   };
 
-  const allRecs: (Recommendation & { source: string })[] = [];
-  if (result) {
-    if (result.mode === 'full') {
-      for (const rec of result.overview?.recommendations || []) {
-        allRecs.push({ ...rec, source: 'Blog Strategy' });
-      }
-      for (const post of result.posts || []) {
-        for (const rec of post.recommendations || []) {
-          allRecs.push({ ...rec, source: post.url });
-        }
-      }
-    } else {
-      for (const rec of result.recommendations || []) {
-        allRecs.push({ ...rec, source: result.blogUrl });
-      }
-    }
-  }
-
-  if (allRecs.length === 0 && savedAudits.length > 0 && !result) {
-    for (const a of savedAudits) {
-      for (const rec of a.recommendations || []) {
-        allRecs.push({ ...rec, source: a.blog_url });
-      }
-    }
-  }
+  /* ------------------------------------------------------------------ */
+  /*  Render                                                             */
+  /* ------------------------------------------------------------------ */
 
   return (
     <div className="space-y-6 max-w-5xl">
-      <div>
-        <h1 className="text-2xl font-semibold text-apple-text">Blog Audit</h1>
-        <p className="text-apple-sm text-apple-text-secondary mt-1">
-          Audit individual blog posts or your entire blog for content quality, SEO, engagement, and conversion optimization.
-        </p>
-      </div>
-
-      {/* Blog URLs Section */}
-      <div className="bg-white rounded-apple border border-apple-border p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-apple-text">Blog URLs</h2>
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-apple-text">Find All Posts</h1>
+          <p className="text-apple-sm text-apple-text-secondary mt-1">
+            Discover blog sections from your sitemap, view GSC performance, audit posts, and rewrite content.
+          </p>
+          {crawledAt && (
+            <p className="text-apple-xs text-apple-text-tertiary mt-1">
+              Last crawled: {new Date(crawledAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+            </p>
+          )}
+        </div>
+        <div className="flex gap-2">
+          {blogs.length > 0 && (
+            <button
+              onClick={handleFindAllPosts}
+              disabled={isDetecting}
+              className="px-3 py-1.5 rounded-apple-sm border border-apple-border text-apple-sm font-medium hover:bg-apple-fill-secondary transition-colors disabled:opacity-50"
+            >
+              {isDetecting ? 'Crawling...' : 'Find New Posts'}
+            </button>
+          )}
           <button
-            onClick={detectBlogUrls}
-            disabled={detecting}
-            className="px-3 py-1.5 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
+            onClick={handleFindAllPosts}
+            disabled={isDetecting}
+            className="px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
           >
-            {detecting ? 'Detecting...' : 'Auto-Detect from Sitemap'}
+            {isDetecting ? (
+              <span className="flex items-center gap-2">
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Crawling Sitemaps...
+              </span>
+            ) : blogs.length > 0 ? 'Re-Crawl All' : 'Find All Posts'}
           </button>
         </div>
+      </div>
 
-        {loading ? (
-          <div className="flex items-center gap-2 py-4 text-apple-text-secondary text-apple-sm">
-            <div className="w-4 h-4 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
-            Loading...
-          </div>
-        ) : blogUrls.length === 0 ? (
-          <p className="text-apple-sm text-apple-text-tertiary py-3">
-            No blog URLs found. Use auto-detect or add one manually.
-          </p>
-        ) : (
-          <div className="space-y-2 mb-4">
-            {blogUrls.map((bu) => (
-              <div key={bu.blog_url} className="flex items-center gap-3 py-2 px-3 bg-apple-fill-secondary rounded-apple-sm">
-                <a href={bu.blog_url} target="_blank" rel="noopener noreferrer" className="text-apple-sm text-apple-blue hover:underline flex-1 truncate">
-                  {bu.blog_url}
-                </a>
-                <button onClick={() => removeBlogUrl(bu.blog_url)} className="text-apple-text-tertiary hover:text-apple-red text-apple-xs">
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="flex gap-2">
+      {/* Search Bar */}
+      {blogs.length > 0 && (
+        <div className="relative">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
           <input
             type="text"
-            value={newBlogUrl}
-            onChange={(e) => setNewBlogUrl(e.target.value)}
-            placeholder="https://example.com/blog/"
-            className="input text-apple-sm flex-1"
-            onKeyDown={(e) => e.key === 'Enter' && addBlogUrl()}
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search blog posts by URL or title..."
+            className="input text-apple-sm w-full pl-10"
           />
-          <button onClick={addBlogUrl} className="px-3 py-1.5 rounded-apple-sm border border-apple-border text-apple-sm hover:bg-apple-fill-secondary transition-colors">
-            Add
-          </button>
         </div>
-      </div>
+      )}
 
-      {/* Run Audit Section */}
-      <div className="bg-white rounded-apple border border-apple-border p-5">
-        <h2 className="text-base font-semibold text-apple-text mb-4">Run Audit</h2>
-
-        <div className="flex gap-3 mb-4">
-          <button
-            onClick={() => setAuditMode('full')}
-            className={`px-4 py-2 rounded-apple-sm text-apple-sm font-medium transition-colors ${
-              auditMode === 'full' ? 'bg-apple-blue text-white' : 'bg-apple-fill-secondary text-apple-text-secondary hover:bg-gray-200'
-            }`}
-          >
-            Full Blog Audit
-          </button>
-          <button
-            onClick={() => setAuditMode('single')}
-            className={`px-4 py-2 rounded-apple-sm text-apple-sm font-medium transition-colors ${
-              auditMode === 'single' ? 'bg-apple-blue text-white' : 'bg-apple-fill-secondary text-apple-text-secondary hover:bg-gray-200'
-            }`}
-          >
-            Single Post Audit
-          </button>
+      {/* Loading State */}
+      {loading && (
+        <div className="flex items-center gap-2 py-8 justify-center text-apple-text-secondary text-apple-sm">
+          <div className="w-4 h-4 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
+          Loading discoveries...
         </div>
+      )}
 
-        {auditMode === 'full' ? (
-          <div className="flex gap-2">
-            <select
-              value={selectedBlog}
-              onChange={(e) => setSelectedBlog(e.target.value)}
-              className="input text-apple-sm flex-1"
-            >
-              <option value="">Select a blog to audit...</option>
-              {blogUrls.map((bu) => (
-                <option key={bu.blog_url} value={bu.blog_url}>{bu.blog_url}</option>
-              ))}
-            </select>
+      {/* Empty State */}
+      {!loading && blogs.length === 0 && !isDetecting && (
+        <div className="bg-white rounded-apple border border-apple-border p-8 text-center">
+          <div className="text-4xl mb-3">📝</div>
+          <h3 className="text-base font-semibold text-apple-text mb-1">No blog posts found yet</h3>
+          <p className="text-apple-sm text-apple-text-secondary mb-4">
+            Click "Find All Posts" to crawl your sitemap and discover all blog sections and articles.
+          </p>
+        </div>
+      )}
+
+      {/* Detecting Progress */}
+      {isDetecting && blogs.length === 0 && (
+        <div className="bg-white rounded-apple border border-apple-border p-6">
+          <div className="flex items-center gap-3">
+            <div className="w-5 h-5 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
+            <div>
+              <p className="text-apple-sm font-medium text-apple-text">Crawling sitemaps...</p>
+              <p className="text-apple-xs text-apple-text-tertiary">Recursively parsing sitemap indexes and identifying blog sections.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Blog Cards */}
+      {filteredBlogs.map(blog => {
+        const isExpanded = expandedBlogs.has(blog.root_path);
+        const totalClicks = blog.overview?.totalClicks || blog.posts.reduce((s, p) => s + (p.gscData?.totalClicks || 0), 0);
+        const auditedCount = blog.posts.filter(p => p.auditedAt).length;
+        const rewrittenCount = blog.posts.filter(p => p.rewrittenAt).length;
+        const hasGscData = blog.posts.some(p => p.gscData);
+        const isLoadingGsc = gscLoading.has(blog.root_path);
+
+        return (
+          <div key={blog.root_path} className="bg-white rounded-apple border border-apple-border overflow-hidden">
+            {/* Blog Card Header */}
             <button
-              onClick={runAudit}
-              disabled={running || !selectedBlog}
-              className="px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
+              onClick={() => toggleBlog(blog.root_path)}
+              className="w-full flex items-center gap-4 p-5 text-left hover:bg-apple-fill-secondary/50 transition-colors"
             >
-              {running ? 'Running...' : 'Run Full Audit'}
-            </button>
-          </div>
-        ) : (
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={singleUrl}
-              onChange={(e) => setSingleUrl(e.target.value)}
-              placeholder="https://example.com/blog/my-post"
-              className="input text-apple-sm flex-1"
-            />
-            <button
-              onClick={runAudit}
-              disabled={running || !singleUrl.trim()}
-              className="px-4 py-2 rounded-apple-sm bg-apple-blue text-white text-apple-sm font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
-            >
-              {running ? 'Running...' : 'Audit Post'}
-            </button>
-          </div>
-        )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-semibold text-apple-text">{blog.blog_name || 'Blog'}</h3>
+                  <span className="text-apple-xs text-apple-text-tertiary bg-apple-fill-secondary px-2 py-0.5 rounded-full">
+                    {blog.root_path}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4 mt-1 text-apple-xs text-apple-text-secondary">
+                  <span>{blog.posts.length} post{blog.posts.length !== 1 ? 's' : ''}</span>
+                  {totalClicks > 0 && <span>{totalClicks.toLocaleString()} monthly clicks</span>}
+                  {auditedCount > 0 && <span>{auditedCount} audited</span>}
+                  {rewrittenCount > 0 && <span className="text-green-600">{rewrittenCount} rewritten</span>}
+                </div>
+                {blog.overview?.summary && (
+                  <p className="text-apple-xs text-apple-text-tertiary mt-1 line-clamp-2">{blog.overview.summary}</p>
+                )}
+              </div>
 
-        {running && progress && (
-          <div className="mt-3 flex items-center gap-2 text-apple-sm text-apple-text-secondary">
-            <div className="w-4 h-4 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
-            {progress}
-          </div>
-        )}
-      </div>
-
-      {/* Results Section */}
-      {(result || savedAudits.length > 0) && (
-        <div className="bg-white rounded-apple border border-apple-border p-5">
-          <div className="flex gap-2 border-b border-apple-divider pb-3 mb-4">
-            {['summary', 'by-post', 'recommendations'].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab as AuditTab)}
-                className={`px-3 py-1.5 rounded-apple-sm text-apple-sm font-medium transition-colors ${
-                  activeTab === tab ? 'bg-apple-blue text-white' : 'text-apple-text-secondary hover:bg-apple-fill-secondary'
-                }`}
-              >
-                {tab === 'summary' ? 'Summary' : tab === 'by-post' ? 'By Post' : `Recommendations (${allRecs.length})`}
-              </button>
-            ))}
-          </div>
-
-          {activeTab === 'summary' && (
-            <div className="space-y-4">
-              {result?.mode === 'full' && result.overview ? (
-                <>
-                  <div className="flex items-center gap-4">
-                    <span className={`text-4xl font-bold ${getScoreColor(result.overview.score)}`}>{result.overview.score}</span>
-                    <div>
-                      <span className="text-apple-sm text-apple-text-secondary">/100 overall blog score</span>
-                      <p className="text-apple-sm text-apple-text-secondary mt-0.5">
-                        {result.auditedPosts} of {result.totalPosts} posts audited
-                      </p>
-                    </div>
-                  </div>
-                  <p className="text-apple-sm text-apple-text">{result.overview.summary}</p>
-                  {result.overview.strengths?.length > 0 && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-apple-text mb-2">Strengths</h3>
-                      <ul className="space-y-1">
-                        {result.overview.strengths.map((s, i) => (
-                          <li key={i} className="text-apple-sm text-apple-text-secondary flex gap-2">
-                            <span className="text-green-500 shrink-0">✓</span> {s}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </>
-              ) : result?.mode === 'single' ? (
-                <>
-                  <div className="flex items-center gap-4">
-                    <span className={`text-4xl font-bold ${getScoreColor(result.score || 0)}`}>{result.score}</span>
-                    <span className="text-apple-sm text-apple-text-secondary">/100</span>
-                  </div>
-                  <p className="text-apple-sm text-apple-text">{result.summary}</p>
-                  {result.strengths && result.strengths.length > 0 && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-apple-text mb-2">Strengths</h3>
-                      <ul className="space-y-1">
-                        {result.strengths.map((s, i) => (
-                          <li key={i} className="text-apple-sm text-apple-text-secondary flex gap-2">
-                            <span className="text-green-500 shrink-0">✓</span> {s}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </>
-              ) : savedAudits.length > 0 ? (
-                <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-apple-text">Previous Audits</h3>
-                  {savedAudits.map((a, i) => (
-                    <div key={i} className="bg-apple-fill-secondary rounded-apple-sm p-3">
-                      <div className="flex items-center gap-3">
-                        <span className={`text-lg font-bold ${getScoreColor(a.score)}`}>{a.score}</span>
-                        <div className="flex-1 min-w-0">
-                          <a href={a.blog_url} target="_blank" rel="noopener noreferrer" className="text-apple-sm text-apple-blue hover:underline truncate block">
-                            {a.blog_url}
-                          </a>
-                          <span className="text-apple-xs text-apple-text-tertiary">
-                            {a.audit_mode} &middot; {new Date(a.audited_at).toLocaleDateString()}
-                          </span>
-                        </div>
-                      </div>
+              {/* Top 5 mini-list (collapsed only) */}
+              {!isExpanded && blog.overview?.top5 && blog.overview.top5.length > 0 && (
+                <div className="hidden md:block text-right shrink-0 max-w-[300px]">
+                  {blog.overview.top5.slice(0, 3).map((t, i) => (
+                    <div key={i} className="text-apple-xs text-apple-text-tertiary truncate">
+                      {t.title || new URL(t.url).pathname} — <span className="font-medium">{t.clicks} clicks</span>
                     </div>
                   ))}
                 </div>
-              ) : null}
-            </div>
-          )}
+              )}
 
-          {activeTab === 'by-post' && (
-            <div className="space-y-2">
-              {result?.mode === 'full' && result.posts ? (
-                result.posts.map((post) => (
-                  <div key={post.url} className="border border-apple-border rounded-apple-sm">
-                    <button
-                      onClick={() => togglePost(post.url)}
-                      className="w-full flex items-center gap-3 p-3 text-left hover:bg-apple-fill-secondary transition-colors"
-                    >
-                      <span className={`text-lg font-bold ${getScoreColor(post.score)}`}>{post.score}</span>
-                      <div className="flex-1 min-w-0">
-                        <a href={post.url} target="_blank" rel="noopener noreferrer" className="text-apple-sm text-apple-blue hover:underline truncate block" onClick={(e) => e.stopPropagation()}>
-                          {post.url.replace(/^https?:\/\/[^/]+/, '')}
-                        </a>
-                      </div>
-                      <span className="text-apple-xs text-apple-text-tertiary">{post.recommendations?.length || 0} recs</span>
-                      <svg className={`w-4 h-4 transition-transform ${expandedPosts.has(post.url) ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-                    {expandedPosts.has(post.url) && (
-                      <div className="border-t border-apple-divider p-4 space-y-3">
-                        <p className="text-apple-sm text-apple-text">{post.summary}</p>
-                        {post.strengths?.length > 0 && (
-                          <div>
-                            <h4 className="text-apple-xs font-semibold text-apple-text-secondary mb-1">Strengths</h4>
-                            <ul className="space-y-0.5">
-                              {post.strengths.map((s, i) => (
-                                <li key={i} className="text-apple-xs text-apple-text-secondary flex gap-1.5">
-                                  <span className="text-green-500 shrink-0">✓</span> {s}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        {post.recommendations?.length > 0 && (
-                          <div>
-                            <h4 className="text-apple-xs font-semibold text-apple-text-secondary mb-1">Recommendations</h4>
-                            <div className="space-y-2">
-                              {post.recommendations.map((rec, ri) => {
-                                const key = `${post.url}-${ri}`;
-                                return (
-                                  <div key={ri} className="border border-apple-border rounded-apple-sm">
-                                    <button onClick={() => toggleRec(key)} className="w-full flex items-center gap-2 p-2 text-left">
-                                      <span className={`text-apple-xs px-1.5 py-0.5 rounded ${getPriorityColor(rec.priority)}`}>{rec.priority}</span>
-                                      <span className="text-apple-xs text-apple-text flex-1">{rec.issue}</span>
-                                      <svg className={`w-3 h-3 transition-transform ${expandedRecs.has(key) ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                                      </svg>
-                                    </button>
-                                    {expandedRecs.has(key) && (
-                                      <div className="border-t border-apple-divider p-3 space-y-2 bg-apple-fill-secondary">
-                                        <p className="text-apple-xs text-apple-text"><strong>Fix:</strong> {rec.recommendation}</p>
-                                        <p className="text-apple-xs text-apple-text-secondary"><strong>How:</strong> {rec.howToFix}</p>
-                                        <p className="text-apple-xs text-apple-text-tertiary"><strong>Impact:</strong> {rec.impact}</p>
-                                        <button
-                                          onClick={() => addToTasklist(rec, post.url)}
-                                          className="text-apple-xs text-apple-blue hover:underline"
-                                        >
-                                          Add to Tasklist
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
+              <svg className={`w-5 h-5 text-apple-text-tertiary transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {/* Blog Card Actions (always visible) */}
+            <div className="flex items-center gap-2 px-5 pb-3 -mt-1">
+              {!hasGscData && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); fetchGscData(blog); }}
+                  disabled={isLoadingGsc}
+                  className="px-3 py-1 rounded-apple-sm border border-apple-border text-apple-xs font-medium hover:bg-apple-fill-secondary transition-colors disabled:opacity-50"
+                >
+                  {isLoadingGsc ? 'Loading GSC...' : 'Load GSC Data'}
+                </button>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); auditAllPosts(blog); }}
+                disabled={blog.posts.every(p => p.auditedAt)}
+                className="px-3 py-1 rounded-apple-sm border border-apple-border text-apple-xs font-medium hover:bg-apple-fill-secondary transition-colors disabled:opacity-50"
+              >
+                {blog.posts.every(p => p.auditedAt) ? 'All Audited' : `Audit All (${blog.posts.filter(p => !p.auditedAt).length})`}
+              </button>
+              {blog.posts.every(p => p.auditedAt) && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); rewriteAllPosts(blog); }}
+                  disabled={blog.posts.every(p => p.rewrittenAt)}
+                  className="px-3 py-1 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
+                >
+                  {blog.posts.every(p => p.rewrittenAt) ? 'All Rewritten' : `Rewrite All (${blog.posts.filter(p => !p.rewrittenAt).length})`}
+                </button>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); generatePostIdeas(blog); }}
+                disabled={isGeneratingIdeas(blog.root_path)}
+                className="px-3 py-1 rounded-apple-sm border border-apple-border text-apple-xs font-medium hover:bg-apple-fill-secondary transition-colors disabled:opacity-50"
+              >
+                {isGeneratingIdeas(blog.root_path) ? 'Generating...' : 'Generate Post Ideas'}
+              </button>
+              {hasGscData && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); fetchGscData(blog); }}
+                  disabled={isLoadingGsc}
+                  className="px-3 py-1 rounded-apple-sm border border-apple-border text-apple-xs font-medium hover:bg-apple-fill-secondary transition-colors disabled:opacity-50"
+                >
+                  {isLoadingGsc ? 'Refreshing...' : 'Refresh GSC'}
+                </button>
+              )}
+            </div>
+
+            {/* Expanded: Full Post List */}
+            {isExpanded && (
+              <div className="border-t border-apple-divider">
+                {/* Overview section */}
+                {blog.overview && (
+                  <div className="px-5 py-4 bg-apple-fill-secondary/30 border-b border-apple-divider">
+                    <h4 className="text-sm font-semibold text-apple-text mb-2">Overview</h4>
+                    <p className="text-apple-sm text-apple-text-secondary">{blog.overview.summary}</p>
+                    {blog.overview.top5?.length > 0 && (
+                      <div className="mt-3">
+                        <h5 className="text-apple-xs font-semibold text-apple-text-secondary mb-1">Top 5 Posts by Clicks</h5>
+                        <div className="space-y-1">
+                          {blog.overview.top5.map((t, i) => (
+                            <div key={i} className="flex items-center gap-2 text-apple-xs">
+                              <span className="text-apple-text-tertiary w-4">{i + 1}.</span>
+                              <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-apple-blue hover:underline truncate flex-1">
+                                {t.title || new URL(t.url).pathname}
+                              </a>
+                              <span className="font-medium text-apple-text shrink-0">{t.clicks.toLocaleString()} clicks</span>
                             </div>
-                          </div>
-                        )}
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
-                ))
-              ) : savedAudits.filter((a) => a.audit_mode === 'single').length > 0 ? (
-                savedAudits.filter((a) => a.audit_mode === 'single').map((a, i) => (
-                  <div key={i} className="border border-apple-border rounded-apple-sm p-3">
-                    <div className="flex items-center gap-3">
-                      <span className={`text-lg font-bold ${getScoreColor(a.score)}`}>{a.score}</span>
-                      <a href={a.blog_url} target="_blank" rel="noopener noreferrer" className="text-apple-sm text-apple-blue hover:underline truncate flex-1">
-                        {a.blog_url}
-                      </a>
-                      <span className="text-apple-xs text-apple-text-tertiary">{new Date(a.audited_at).toLocaleDateString()}</span>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-apple-sm text-apple-text-tertiary py-4">Run a full blog audit to see individual post results.</p>
-              )}
-            </div>
-          )}
+                )}
 
-          {activeTab === 'recommendations' && (
-            <div className="space-y-2">
-              {allRecs.length === 0 ? (
-                <p className="text-apple-sm text-apple-text-tertiary py-4">No recommendations yet.</p>
-              ) : (
-                allRecs.map((rec, i) => {
-                  const key = `all-${i}`;
-                  return (
-                    <div key={i} className="border border-apple-border rounded-apple-sm">
-                      <button onClick={() => toggleRec(key)} className="w-full flex items-center gap-2 p-3 text-left hover:bg-apple-fill-secondary transition-colors">
-                        <span className={`text-apple-xs px-1.5 py-0.5 rounded ${getPriorityColor(rec.priority)}`}>{rec.priority}</span>
-                        <span className="text-apple-sm text-apple-text flex-1">{rec.issue}</span>
-                        <span className="text-apple-xs text-apple-text-tertiary truncate max-w-[200px]">{rec.source}</span>
-                        <svg className={`w-3.5 h-3.5 transition-transform ${expandedRecs.has(key) ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </button>
-                      {expandedRecs.has(key) && (
-                        <div className="border-t border-apple-divider p-4 space-y-2 bg-apple-fill-secondary">
-                          <p className="text-apple-sm text-apple-text"><strong>Fix:</strong> {rec.recommendation}</p>
-                          <p className="text-apple-sm text-apple-text-secondary"><strong>How:</strong> {rec.howToFix}</p>
-                          <p className="text-apple-sm text-apple-text-tertiary"><strong>Impact:</strong> {rec.impact}</p>
-                          <button
-                            onClick={() => addToTasklist(rec, rec.source)}
-                            className="mt-1 px-3 py-1 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors"
-                          >
-                            Add to Tasklist
-                          </button>
+                {/* Posts list */}
+                <div className="divide-y divide-apple-divider">
+                  {blog.posts.map(post => {
+                    const postExpanded = expandedPosts.has(post.url);
+                    const kwExpanded = expandedKeywords.has(post.url);
+                    const auditing = isPostAuditing(post.url);
+                    const rewriting = isPostRewriting(post.url);
+                    const postPath = (() => { try { return new URL(post.url).pathname; } catch { return post.url; } })();
+
+                    return (
+                      <div key={post.url}>
+                        <div
+                          className="flex items-center gap-3 px-5 py-3 hover:bg-apple-fill-secondary/50 transition-colors cursor-pointer"
+                          onClick={() => togglePost(post.url)}
+                        >
+                          {/* Score badge */}
+                          {post.auditResult && (
+                            <span className={`text-sm font-bold w-8 text-center ${getScoreColor(post.auditResult.score)}`}>
+                              {post.auditResult.score}
+                            </span>
+                          )}
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-apple-sm text-apple-text font-medium truncate">
+                                {post.title || postPath}
+                              </span>
+                              {post.rewrittenAt && (
+                                <span className="text-apple-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded shrink-0">Rewritten</span>
+                              )}
+                              {post.auditedAt && !post.rewrittenAt && (
+                                <span className="text-apple-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded shrink-0">Audited</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 text-apple-xs text-apple-text-tertiary mt-0.5">
+                              <a href={post.url} target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-apple-blue truncate" onClick={e => e.stopPropagation()}>
+                                {postPath}
+                              </a>
+                              {post.gscData && (
+                                <>
+                                  <span>{post.gscData.totalClicks.toLocaleString()} clicks</span>
+                                  <span>{post.gscData.totalImpressions.toLocaleString()} impressions</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Action buttons */}
+                          <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
+                            <button
+                              onClick={() => auditPost(blog, post.url)}
+                              disabled={auditing}
+                              className="px-2.5 py-1 rounded-apple-sm border border-apple-border text-apple-xs font-medium hover:bg-apple-fill-secondary transition-colors disabled:opacity-50"
+                            >
+                              {auditing ? 'Auditing...' : 'Audit Post'}
+                            </button>
+                            <button
+                              onClick={() => rewritePost(blog, post.url)}
+                              disabled={rewriting}
+                              className="px-2.5 py-1 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
+                            >
+                              {rewriting ? 'Rewriting...' : 'Rewrite'}
+                            </button>
+                          </div>
+
+                          <svg className={`w-4 h-4 text-apple-text-tertiary transition-transform shrink-0 ${postExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                          </svg>
                         </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-        </div>
-      )}
+
+                        {/* Post expanded details */}
+                        {postExpanded && (
+                          <div className="px-5 pb-4 pt-1 bg-apple-fill-secondary/30 space-y-3">
+                            {/* Meta info */}
+                            <div className="grid grid-cols-1 gap-2">
+                              {post.title && (
+                                <div>
+                                  <span className="text-apple-xs font-semibold text-apple-text-secondary">Meta Title</span>
+                                  <p className="text-apple-sm text-apple-text">{post.title}</p>
+                                </div>
+                              )}
+                              {post.metaDescription && (
+                                <div>
+                                  <span className="text-apple-xs font-semibold text-apple-text-secondary">Meta Description</span>
+                                  <p className="text-apple-sm text-apple-text">{post.metaDescription}</p>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* GSC Keyword data */}
+                            {post.gscData?.keywords && post.gscData.keywords.length > 0 && (
+                              <div>
+                                <button
+                                  onClick={() => toggleKeywords(post.url)}
+                                  className="flex items-center gap-1 text-apple-xs font-semibold text-apple-text-secondary hover:text-apple-text"
+                                >
+                                  Keywords ({post.gscData.keywords.length})
+                                  <svg className={`w-3 h-3 transition-transform ${kwExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                  </svg>
+                                </button>
+                                {kwExpanded && (
+                                  <div className="mt-2 overflow-x-auto">
+                                    <table className="w-full text-apple-xs">
+                                      <thead>
+                                        <tr className="text-left text-apple-text-tertiary border-b border-apple-divider">
+                                          <th className="pb-1 pr-4 font-medium">Keyword</th>
+                                          <th className="pb-1 pr-4 font-medium text-right">Clicks</th>
+                                          <th className="pb-1 pr-4 font-medium text-right">Impressions</th>
+                                          <th className="pb-1 font-medium text-right">Position</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {post.gscData.keywords.slice(0, 20).map((kw, i) => (
+                                          <tr key={i} className="border-b border-apple-divider/50">
+                                            <td className="py-1.5 pr-4 text-apple-text">{kw.keyword}</td>
+                                            <td className="py-1.5 pr-4 text-right font-medium">{kw.clicks}</td>
+                                            <td className="py-1.5 pr-4 text-right text-apple-text-secondary">{kw.impressions.toLocaleString()}</td>
+                                            <td className="py-1.5 text-right text-apple-text-secondary">{kw.position}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Audit results */}
+                            {post.auditResult && (
+                              <div className="space-y-2">
+                                <h5 className="text-apple-xs font-semibold text-apple-text-secondary">
+                                  Audit Score: <span className={getScoreColor(post.auditResult.score)}>{post.auditResult.score}/100</span>
+                                </h5>
+                                <p className="text-apple-xs text-apple-text-secondary">{post.auditResult.summary}</p>
+                                {post.auditResult.strengths?.length > 0 && (
+                                  <ul className="space-y-0.5">
+                                    {post.auditResult.strengths.map((s, i) => (
+                                      <li key={i} className="text-apple-xs text-apple-text-secondary flex gap-1.5">
+                                        <span className="text-green-500 shrink-0">✓</span> {s}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                                {post.auditResult.recommendations?.length > 0 && (
+                                  <div className="space-y-1.5 mt-2">
+                                    <h5 className="text-apple-xs font-semibold text-apple-text-secondary">Recommendations</h5>
+                                    {post.auditResult.recommendations.map((rec, ri) => (
+                                      <div key={ri} className="bg-white rounded-apple-sm p-2.5 border border-apple-border">
+                                        <div className="flex items-start gap-2">
+                                          <span className={`text-apple-xs px-1.5 py-0.5 rounded shrink-0 ${
+                                            rec.priority === 'high' ? 'bg-red-100 text-red-700' :
+                                            rec.priority === 'medium' ? 'bg-amber-100 text-amber-700' :
+                                            'bg-green-100 text-green-700'
+                                          }`}>{rec.priority}</span>
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-apple-xs text-apple-text font-medium">{rec.issue}</p>
+                                            <p className="text-apple-xs text-apple-text-secondary mt-0.5">{rec.recommendation}</p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -62,6 +62,8 @@ export const API_ENDPOINTS = {
   },
   blog: {
     detect: `${API_BASE_URL}/api/blog/detect`,
+    discoverPosts: `${API_BASE_URL}/api/blog/discover-posts`,
+    rewrite: `${API_BASE_URL}/api/blog/rewrite`,
     audit: `${API_BASE_URL}/api/blog/audit`,
     opportunities: `${API_BASE_URL}/api/blog/opportunities`,
     generate: `${API_BASE_URL}/api/blog/generate`,
@@ -111,6 +113,7 @@ export const API_ENDPOINTS = {
     pageAudits: `${API_BASE_URL}/api/db/page-audits`,
     adKeywords: `${API_BASE_URL}/api/db/ad-keywords`,
     blogUrls: `${API_BASE_URL}/api/db/blog-urls`,
+    blogDiscoveries: `${API_BASE_URL}/api/db/blog-discoveries`,
     blogAudits: `${API_BASE_URL}/api/db/blog-audits`,
     blogOpportunities: `${API_BASE_URL}/api/db/blog-opportunities`,
     blogArticles: `${API_BASE_URL}/api/db/blog-articles`,
