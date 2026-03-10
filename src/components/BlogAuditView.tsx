@@ -80,8 +80,10 @@ interface BlogAuditViewProps {
   projectId: string;
 }
 
-type SortColumn = 'title' | 'clicks' | 'impressions' | 'position' | 'keywords';
+type SortColumn = 'title' | 'clicks' | 'impressions';
 type SortDir = 'asc' | 'desc';
+
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -94,17 +96,18 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
   const [expandedBlogs, setExpandedBlogs] = useState<Set<string>>(new Set());
   const [expandedPost, setExpandedPost] = useState<string | null>(null);
 
-  // Sorting per blog
   const [sortColumn, setSortColumn] = useState<SortColumn>('clicks');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
-
-  // Filtering
   const [minClicks, setMinClicks] = useState<string>('');
   const [minImpressions, setMinImpressions] = useState<string>('');
 
-  // Monthly graph data for expanded post
+  // Post-level monthly graph
   const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([]);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
+
+  // Blog-level monthly graph
+  const [blogMonthlyData, setBlogMonthlyData] = useState<Record<string, MonthlyData[]>>({});
+  const [blogMonthlyLoading, setBlogMonthlyLoading] = useState<Set<string>>(new Set());
 
   const { startTask, getTask, clearTask } = useBackgroundTasks();
   const detectTaskId = `blog-detect-${projectId}`;
@@ -125,6 +128,19 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
   }, [siteUrl, projectId]);
 
   useEffect(() => { loadDiscoveries(); }, [loadDiscoveries]);
+
+  /* ----- Auto-refresh GSC data if older than 30 days ----- */
+  useEffect(() => {
+    if (blogs.length === 0 || isDetecting) return;
+    const staleBlogs = blogs.filter(b => {
+      const age = Date.now() - new Date(b.crawled_at).getTime();
+      return age > THIRTY_DAYS_MS;
+    });
+    if (staleBlogs.length > 0) {
+      handleFindAllPosts();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blogs.length]);
 
   /* ----- Handle background detect completion ----- */
   useEffect(() => {
@@ -158,6 +174,24 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
     })();
     return () => { cancelled = true; };
   }, [expandedPost, siteUrl]);
+
+  /* ----- Fetch blog-level monthly data when a blog is expanded ----- */
+  const fetchBlogMonthly = useCallback(async (rootPath: string) => {
+    if (blogMonthlyData[rootPath] || blogMonthlyLoading.has(rootPath)) return;
+    setBlogMonthlyLoading(prev => new Set(prev).add(rootPath));
+    try {
+      const resp = await authenticatedFetch(API_ENDPOINTS.blog.gscBlogMonthly, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl, rootPath }),
+      });
+      const data = await parseJsonOrThrow<{ months?: MonthlyData[] }>(resp);
+      setBlogMonthlyData(prev => ({ ...prev, [rootPath]: data.months || [] }));
+    } catch {
+      setBlogMonthlyData(prev => ({ ...prev, [rootPath]: [] }));
+    }
+    setBlogMonthlyLoading(prev => { const n = new Set(prev); n.delete(rootPath); return n; });
+  }, [siteUrl, blogMonthlyData, blogMonthlyLoading]);
 
   /* ----- Find All Posts ----- */
   const handleFindAllPosts = () => {
@@ -266,7 +300,12 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
   const toggleBlog = (rootPath: string) => {
     setExpandedBlogs(prev => {
       const n = new Set(prev);
-      n.has(rootPath) ? n.delete(rootPath) : n.add(rootPath);
+      if (n.has(rootPath)) {
+        n.delete(rootPath);
+      } else {
+        n.add(rootPath);
+        fetchBlogMonthly(rootPath);
+      }
       return n;
     });
   };
@@ -282,33 +321,23 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
 
   const sortPosts = useCallback((posts: BlogPost[]) => {
     return [...posts].sort((a, b) => {
-      let av: number | string = 0, bv: number | string = 0;
       switch (sortColumn) {
-        case 'title':
-          av = (a.title || a.url).toLowerCase();
-          bv = (b.title || b.url).toLowerCase();
+        case 'title': {
+          const av = (a.title || a.url).toLowerCase();
+          const bv = (b.title || b.url).toLowerCase();
           return sortDir === 'asc' ? (av < bv ? -1 : av > bv ? 1 : 0) : (bv < av ? -1 : bv > av ? 1 : 0);
-        case 'clicks':
-          av = a.gscData?.totalClicks || 0;
-          bv = b.gscData?.totalClicks || 0;
-          break;
-        case 'impressions':
-          av = a.gscData?.totalImpressions || 0;
-          bv = b.gscData?.totalImpressions || 0;
-          break;
-        case 'position': {
-          const aKw = a.gscData?.keywords?.[0];
-          const bKw = b.gscData?.keywords?.[0];
-          av = aKw ? aKw.position : 999;
-          bv = bKw ? bKw.position : 999;
-          break;
         }
-        case 'keywords':
-          av = a.gscData?.keywords?.length || 0;
-          bv = b.gscData?.keywords?.length || 0;
-          break;
+        case 'clicks': {
+          const av = a.gscData?.totalClicks || 0;
+          const bv = b.gscData?.totalClicks || 0;
+          return sortDir === 'asc' ? av - bv : bv - av;
+        }
+        case 'impressions': {
+          const av = a.gscData?.totalImpressions || 0;
+          const bv = b.gscData?.totalImpressions || 0;
+          return sortDir === 'asc' ? av - bv : bv - av;
+        }
       }
-      return sortDir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number);
     });
   }, [sortColumn, sortDir]);
 
@@ -320,7 +349,6 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
 
     return blogs.map(blog => {
       let posts = blog.posts;
-
       if (mc > 0) posts = posts.filter(p => (p.gscData?.totalClicks || 0) >= mc);
       if (mi > 0) posts = posts.filter(p => (p.gscData?.totalImpressions || 0) >= mi);
       if (q) {
@@ -329,11 +357,9 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
           posts = posts.filter(p => p.url.toLowerCase().includes(q) || p.title?.toLowerCase().includes(q));
         }
       }
-
       if (posts.length === 0 && q && !blog.blog_name?.toLowerCase().includes(q) && !blog.root_path.toLowerCase().includes(q)) {
         return null;
       }
-
       return { ...blog, posts: sortPosts(posts) };
     }).filter(Boolean) as BlogDiscovery[];
   }, [blogs, searchQuery, minClicks, minImpressions, sortPosts]);
@@ -375,6 +401,9 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
           {crawledAt && (
             <p className="text-apple-xs text-apple-text-tertiary mt-1">
               Last crawled: {new Date(crawledAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+              {Date.now() - crawledAt > THIRTY_DAYS_MS && (
+                <span className="text-amber-600 ml-2">GSC data may be stale</span>
+              )}
             </p>
           )}
         </div>
@@ -420,25 +449,11 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
           </div>
           <div className="flex items-center gap-1">
             <label className="text-apple-xs text-apple-text-tertiary whitespace-nowrap">Min Clicks:</label>
-            <input
-              type="number"
-              value={minClicks}
-              onChange={e => setMinClicks(e.target.value)}
-              placeholder="0"
-              className="input text-apple-sm w-20 text-center"
-              min={0}
-            />
+            <input type="number" value={minClicks} onChange={e => setMinClicks(e.target.value)} placeholder="0" className="input text-apple-sm w-20 text-center" min={0} />
           </div>
           <div className="flex items-center gap-1">
             <label className="text-apple-xs text-apple-text-tertiary whitespace-nowrap">Min Impr:</label>
-            <input
-              type="number"
-              value={minImpressions}
-              onChange={e => setMinImpressions(e.target.value)}
-              placeholder="0"
-              className="input text-apple-sm w-20 text-center"
-              min={0}
-            />
+            <input type="number" value={minImpressions} onChange={e => setMinImpressions(e.target.value)} placeholder="0" className="input text-apple-sm w-20 text-center" min={0} />
           </div>
         </div>
       )}
@@ -482,6 +497,8 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
         const totalImpressions = blog.posts.reduce((s, p) => s + (p.gscData?.totalImpressions || 0), 0);
         const auditedCount = blog.posts.filter(p => p.auditedAt).length;
         const rewrittenCount = blog.posts.filter(p => p.rewrittenAt).length;
+        const blogMonthly = blogMonthlyData[blog.root_path];
+        const isBlogMonthlyLoading = blogMonthlyLoading.has(blog.root_path);
 
         return (
           <div key={blog.root_path} className="bg-white rounded-apple border border-apple-border overflow-hidden">
@@ -499,8 +516,8 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
                 </div>
                 <div className="flex items-center gap-4 mt-1 text-apple-xs text-apple-text-secondary">
                   <span>{blog.posts.length} post{blog.posts.length !== 1 ? 's' : ''}</span>
-                  {totalClicks > 0 && <span className="font-medium">{totalClicks.toLocaleString()} clicks</span>}
-                  {totalImpressions > 0 && <span>{totalImpressions.toLocaleString()} impressions</span>}
+                  {totalClicks > 0 && <span className="font-medium">{totalClicks.toLocaleString()} clicks/mo</span>}
+                  {totalImpressions > 0 && <span>{totalImpressions.toLocaleString()} impressions/mo</span>}
                   {auditedCount > 0 && <span>{auditedCount} audited</span>}
                   {rewrittenCount > 0 && <span className="text-green-600">{rewrittenCount} rewritten</span>}
                 </div>
@@ -538,31 +555,48 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
               </button>
             </div>
 
-            {/* Expanded: Table of Posts */}
+            {/* Expanded Blog Content */}
             {isExpanded && (
               <div className="border-t border-apple-divider">
-                {/* Overview */}
-                {blog.overview && (
-                  <div className="px-5 py-4 bg-apple-fill-secondary/30 border-b border-apple-divider">
-                    <p className="text-apple-sm text-apple-text-secondary">{blog.overview.summary}</p>
-                    {blog.overview.top5?.length > 0 && (
-                      <div className="mt-2">
-                        <h5 className="text-apple-xs font-semibold text-apple-text-secondary mb-1">Top 5 Posts</h5>
-                        <div className="space-y-0.5">
-                          {blog.overview.top5.map((t, i) => (
-                            <div key={i} className="flex items-center gap-2 text-apple-xs">
-                              <span className="text-apple-text-tertiary w-3">{i + 1}.</span>
-                              <span className="truncate flex-1 text-apple-text">{t.title || postPath(t.url)}</span>
-                              <span className="font-medium text-apple-text shrink-0">{t.clicks.toLocaleString()} clicks</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                {/* Blog-Level Monthly Performance Chart */}
+                <div className="px-5 py-4 bg-apple-fill-secondary/30 border-b border-apple-divider">
+                  <h4 className="text-sm font-semibold text-apple-text mb-3">
+                    {blog.blog_name || 'Blog'} — Monthly Performance (Last 12 Months)
+                  </h4>
+                  {isBlogMonthlyLoading ? (
+                    <div className="flex items-center gap-2 py-6 text-apple-xs text-apple-text-tertiary">
+                      <div className="w-3 h-3 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
+                      Loading blog performance data...
+                    </div>
+                  ) : blogMonthly && blogMonthly.length > 0 ? (
+                    <MonthlyChart data={blogMonthly} height={240} />
+                  ) : blogMonthly ? (
+                    <p className="text-apple-xs text-apple-text-tertiary py-3">No monthly data available for this blog.</p>
+                  ) : null}
 
-                {/* Posts Table */}
+                  {/* Overview summary */}
+                  {blog.overview && (
+                    <div className="mt-3">
+                      <p className="text-apple-sm text-apple-text-secondary">{blog.overview.summary}</p>
+                      {blog.overview.top5?.length > 0 && (
+                        <div className="mt-2">
+                          <h5 className="text-apple-xs font-semibold text-apple-text-secondary mb-1">Top 5 Posts</h5>
+                          <div className="space-y-0.5">
+                            {blog.overview.top5.map((t, i) => (
+                              <div key={i} className="flex items-center gap-2 text-apple-xs">
+                                <span className="text-apple-text-tertiary w-3">{i + 1}.</span>
+                                <span className="truncate flex-1 text-apple-text">{t.title || postPath(t.url)}</span>
+                                <span className="font-medium text-apple-text shrink-0">{t.clicks.toLocaleString()} clicks</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Posts Table — simplified to just Clicks and Impressions */}
                 <div className="overflow-x-auto">
                   <table className="w-full text-apple-sm">
                     <thead>
@@ -582,47 +616,27 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
                             Impressions <SortIcon col="impressions" />
                           </button>
                         </th>
-                        <th className="py-2.5 px-3 font-medium text-right whitespace-nowrap">
-                          <button onClick={() => handleSort('keywords')} className="flex items-center justify-end hover:text-apple-text ml-auto">
-                            Keywords <SortIcon col="keywords" />
-                          </button>
-                        </th>
-                        <th className="py-2.5 px-3 font-medium text-right whitespace-nowrap">
-                          <button onClick={() => handleSort('position')} className="flex items-center justify-end hover:text-apple-text ml-auto">
-                            Avg Pos <SortIcon col="position" />
-                          </button>
-                        </th>
                         <th className="py-2.5 px-3 font-medium text-center">Status</th>
                         <th className="py-2.5 px-5 font-medium text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {blog.posts.map(post => {
-                        const isPostExpanded = expandedPost === post.url;
-                        const auditing = isPostAuditing(post.url);
-                        const rewriting = isPostRewriting(post.url);
-                        const avgPos = post.gscData?.keywords?.length
-                          ? Math.round(post.gscData.keywords.reduce((s, k) => s + k.position, 0) / post.gscData.keywords.length * 10) / 10
-                          : null;
-
-                        return (
-                          <PostRow
-                            key={post.url}
-                            post={post}
-                            isExpanded={isPostExpanded}
-                            auditing={auditing}
-                            rewriting={rewriting}
-                            avgPos={avgPos}
-                            monthlyData={isPostExpanded ? monthlyData : []}
-                            monthlyLoading={isPostExpanded ? monthlyLoading : false}
-                            getScoreColor={getScoreColor}
-                            postPath={postPath}
-                            onToggle={() => setExpandedPost(isPostExpanded ? null : post.url)}
-                            onAudit={() => auditPost(blog, post.url)}
-                            onRewrite={() => rewritePost(blog, post.url)}
-                          />
-                        );
-                      })}
+                      {blog.posts.map(post => (
+                        <PostRow
+                          key={post.url}
+                          post={post}
+                          isExpanded={expandedPost === post.url}
+                          auditing={isPostAuditing(post.url)}
+                          rewriting={isPostRewriting(post.url)}
+                          monthlyData={expandedPost === post.url ? monthlyData : []}
+                          monthlyLoading={expandedPost === post.url ? monthlyLoading : false}
+                          getScoreColor={getScoreColor}
+                          postPath={postPath}
+                          onToggle={() => setExpandedPost(expandedPost === post.url ? null : post.url)}
+                          onAudit={() => auditPost(blog, post.url)}
+                          onRewrite={() => rewritePost(blog, post.url)}
+                        />
+                      ))}
                     </tbody>
                   </table>
                 </div>
@@ -642,6 +656,62 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
 }
 
 /* ------------------------------------------------------------------ */
+/*  Monthly Chart (reusable for both blog-level and post-level)        */
+/* ------------------------------------------------------------------ */
+
+function MonthlyChart({ data, height = 220 }: { data: MonthlyData[]; height?: number }) {
+  return (
+    <div className="bg-white rounded-apple border border-apple-border p-4">
+      <ResponsiveContainer width="100%" height={height}>
+        <RechartsLineChart data={data.map(m => ({
+          month: formatMonth(m.month),
+          Clicks: m.clicks,
+          Impressions: m.impressions,
+        }))}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
+          <XAxis
+            dataKey="month"
+            tick={{ fill: '#86868B', fontSize: 11 }}
+            axisLine={{ stroke: '#E8E8ED' }}
+            tickLine={false}
+          />
+          <YAxis
+            yAxisId="clicks"
+            tick={{ fill: '#86868B', fontSize: 11 }}
+            axisLine={{ stroke: '#E8E8ED' }}
+            tickLine={false}
+          />
+          <YAxis
+            yAxisId="impressions"
+            orientation="right"
+            tick={{ fill: '#86868B', fontSize: 11 }}
+            axisLine={{ stroke: '#E8E8ED' }}
+            tickLine={false}
+          />
+          <Tooltip
+            contentStyle={{
+              backgroundColor: '#FFF', border: 'none',
+              borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+              fontSize: '12px',
+            }}
+          />
+          <Line yAxisId="clicks" type="monotone" dataKey="Clicks" stroke="#0071E3" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+          <Line yAxisId="impressions" type="monotone" dataKey="Impressions" stroke="#86868B" strokeWidth={1.5} strokeDasharray="4 4" dot={{ r: 2 }} />
+        </RechartsLineChart>
+      </ResponsiveContainer>
+      <div className="flex items-center justify-center gap-6 mt-2 text-apple-xs text-apple-text-secondary">
+        <span className="flex items-center gap-1.5">
+          <span className="w-3 h-0.5 bg-[#0071E3] rounded" /> Clicks
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-3 h-0.5 bg-[#86868B] rounded" style={{ borderTop: '2px dashed #86868B', height: 0 }} /> Impressions
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  PostRow Sub-Component                                              */
 /* ------------------------------------------------------------------ */
 
@@ -650,7 +720,6 @@ interface PostRowProps {
   isExpanded: boolean;
   auditing: boolean;
   rewriting: boolean;
-  avgPos: number | null;
   monthlyData: MonthlyData[];
   monthlyLoading: boolean;
   getScoreColor: (s: number) => string;
@@ -661,13 +730,12 @@ interface PostRowProps {
 }
 
 function PostRow({
-  post, isExpanded, auditing, rewriting, avgPos,
+  post, isExpanded, auditing, rewriting,
   monthlyData, monthlyLoading, getScoreColor, postPath,
   onToggle, onAudit, onRewrite,
 }: PostRowProps) {
   const clicks = post.gscData?.totalClicks || 0;
   const impressions = post.gscData?.totalImpressions || 0;
-  const kwCount = post.gscData?.keywords?.length || 0;
 
   return (
     <>
@@ -676,19 +744,15 @@ function PostRow({
         onClick={onToggle}
       >
         {/* Post title + URL */}
-        <td className="py-3 px-5 max-w-[350px]">
+        <td className="py-3 px-5 max-w-[400px]">
           <div className="flex items-center gap-2">
             <svg className={`w-3.5 h-3.5 text-apple-text-tertiary transition-transform shrink-0 ${isExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
             </svg>
             <div className="min-w-0">
-              <div className="text-apple-text font-medium truncate">
-                {post.title || postPath(post.url)}
-              </div>
+              <div className="text-apple-text font-medium truncate">{post.title || postPath(post.url)}</div>
               <a
-                href={post.url}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={post.url} target="_blank" rel="noopener noreferrer"
                 className="text-apple-xs text-apple-text-tertiary hover:text-apple-blue hover:underline truncate block"
                 onClick={e => e.stopPropagation()}
               >
@@ -708,16 +772,6 @@ function PostRow({
           {impressions > 0 ? impressions.toLocaleString() : <span className="text-apple-text-tertiary">—</span>}
         </td>
 
-        {/* Keywords count */}
-        <td className="py-3 px-3 text-right text-apple-text-secondary tabular-nums">
-          {kwCount > 0 ? kwCount : <span className="text-apple-text-tertiary">—</span>}
-        </td>
-
-        {/* Avg Position */}
-        <td className="py-3 px-3 text-right text-apple-text-secondary tabular-nums">
-          {avgPos !== null ? avgPos : <span className="text-apple-text-tertiary">—</span>}
-        </td>
-
         {/* Status */}
         <td className="py-3 px-3 text-center">
           {post.rewrittenAt ? (
@@ -734,18 +788,10 @@ function PostRow({
         {/* Actions */}
         <td className="py-3 px-5 text-right" onClick={e => e.stopPropagation()}>
           <div className="flex items-center gap-1.5 justify-end">
-            <button
-              onClick={onAudit}
-              disabled={auditing}
-              className="px-2.5 py-1 rounded-apple-sm border border-apple-border text-apple-xs font-medium hover:bg-apple-fill-secondary transition-colors disabled:opacity-50"
-            >
+            <button onClick={onAudit} disabled={auditing} className="px-2.5 py-1 rounded-apple-sm border border-apple-border text-apple-xs font-medium hover:bg-apple-fill-secondary transition-colors disabled:opacity-50">
               {auditing ? '...' : 'Audit'}
             </button>
-            <button
-              onClick={onRewrite}
-              disabled={rewriting}
-              className="px-2.5 py-1 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50"
-            >
+            <button onClick={onRewrite} disabled={rewriting} className="px-2.5 py-1 rounded-apple-sm bg-apple-blue text-white text-apple-xs font-medium hover:bg-apple-blue-hover transition-colors disabled:opacity-50">
               {rewriting ? '...' : 'Rewrite'}
             </button>
           </div>
@@ -755,7 +801,7 @@ function PostRow({
       {/* Expanded Row */}
       {isExpanded && (
         <tr>
-          <td colSpan={7} className="p-0">
+          <td colSpan={5} className="p-0">
             <div className="bg-apple-fill-secondary/30 px-5 py-4 space-y-4 border-b border-apple-divider">
               {/* Meta info */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -773,7 +819,7 @@ function PostRow({
                 )}
               </div>
 
-              {/* Monthly Performance Graph */}
+              {/* Post Monthly Performance Graph */}
               <div>
                 <h5 className="text-apple-xs font-semibold text-apple-text-secondary mb-2">Monthly Performance (Last 12 Months)</h5>
                 {monthlyLoading ? (
@@ -782,63 +828,17 @@ function PostRow({
                     Loading monthly data...
                   </div>
                 ) : monthlyData.length > 0 ? (
-                  <div className="bg-white rounded-apple border border-apple-border p-4">
-                    <ResponsiveContainer width="100%" height={220}>
-                      <RechartsLineChart data={monthlyData.map(m => ({
-                        month: formatMonth(m.month),
-                        Clicks: m.clicks,
-                        Impressions: m.impressions,
-                      }))}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
-                        <XAxis
-                          dataKey="month"
-                          tick={{ fill: '#86868B', fontSize: 11 }}
-                          axisLine={{ stroke: '#E8E8ED' }}
-                          tickLine={false}
-                        />
-                        <YAxis
-                          yAxisId="clicks"
-                          tick={{ fill: '#86868B', fontSize: 11 }}
-                          axisLine={{ stroke: '#E8E8ED' }}
-                          tickLine={false}
-                        />
-                        <YAxis
-                          yAxisId="impressions"
-                          orientation="right"
-                          tick={{ fill: '#86868B', fontSize: 11 }}
-                          axisLine={{ stroke: '#E8E8ED' }}
-                          tickLine={false}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: '#FFF', border: 'none',
-                            borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-                            fontSize: '12px',
-                          }}
-                        />
-                        <Line yAxisId="clicks" type="monotone" dataKey="Clicks" stroke="#0071E3" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                        <Line yAxisId="impressions" type="monotone" dataKey="Impressions" stroke="#86868B" strokeWidth={1.5} strokeDasharray="4 4" dot={{ r: 2 }} />
-                      </RechartsLineChart>
-                    </ResponsiveContainer>
-                    <div className="flex items-center justify-center gap-6 mt-2 text-apple-xs text-apple-text-secondary">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-3 h-0.5 bg-[#0071E3] rounded" /> Clicks
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-3 h-0.5 bg-[#86868B] rounded border-dashed" style={{ borderTop: '2px dashed #86868B', height: 0 }} /> Impressions
-                      </span>
-                    </div>
-                  </div>
+                  <MonthlyChart data={monthlyData} />
                 ) : (
                   <p className="text-apple-xs text-apple-text-tertiary py-2">No monthly data available for this post.</p>
                 )}
               </div>
 
-              {/* Keywords Table */}
+              {/* Keywords this page ranks for */}
               {post.gscData?.keywords && post.gscData.keywords.length > 0 && (
                 <div>
                   <h5 className="text-apple-xs font-semibold text-apple-text-secondary mb-2">
-                    Ranking Keywords ({post.gscData.keywords.length})
+                    Keywords Indexing For ({post.gscData.keywords.length})
                   </h5>
                   <div className="bg-white rounded-apple border border-apple-border overflow-x-auto">
                     <table className="w-full text-apple-xs">
@@ -851,7 +851,7 @@ function PostRow({
                         </tr>
                       </thead>
                       <tbody>
-                        {post.gscData.keywords.slice(0, 25).map((kw, i) => (
+                        {post.gscData.keywords.map((kw, i) => (
                           <tr key={i} className="border-b border-apple-divider/50">
                             <td className="py-1.5 px-3 text-apple-text">{kw.keyword}</td>
                             <td className="py-1.5 px-3 text-right font-medium tabular-nums">{kw.clicks}</td>
