@@ -1,3 +1,4 @@
+import { authenticateRequest } from '../_config.js';
 import { getSupabase } from '../db.js';
 
 export const config = { maxDuration: 120 };
@@ -108,39 +109,63 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { siteUrl, blogUrl, mode = 'single', projectId } = req.body || {};
-  if (!siteUrl || !blogUrl) {
-    return res.status(400).json({ error: 'siteUrl and blogUrl are required' });
-  }
+  try {
+    const auth = await authenticateRequest(req);
+    if (!auth) return res.status(401).json({ error: 'Authentication required' });
 
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) {
-    return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
-  }
+    const { siteUrl, blogUrl, mode = 'single', projectId } = req.body || {};
+    if (!siteUrl || !blogUrl) {
+      return res.status(400).json({ error: 'siteUrl and blogUrl are required' });
+    }
 
-  if (mode === 'single') {
-    return await auditSinglePost(req, res, siteUrl, blogUrl, openaiKey);
-  }
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (!openaiKey) {
+      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+    }
 
-  return await auditFullBlog(req, res, siteUrl, blogUrl, openaiKey);
+    if (mode === 'single') {
+      return await auditSinglePost(req, res, siteUrl, blogUrl, openaiKey, projectId);
+    }
+
+    return await auditFullBlog(req, res, siteUrl, blogUrl, openaiKey, projectId);
+  } catch (error) {
+    console.error('[BlogAudit] Unhandled error:', error);
+    return res.status(500).json({
+      error: error.message || 'Blog audit failed',
+      score: 0, summary: '', strengths: [], recommendations: [],
+    });
+  }
 }
 
-async function auditSinglePost(req, res, siteUrl, blogUrl, apiKey) {
+async function auditSinglePost(req, res, siteUrl, blogUrl, apiKey, projectId) {
   let content;
   try {
     content = await fetchBlogContent(blogUrl);
   } catch (err) {
     return res.status(200).json({
-      blogUrl, mode: 'single', score: 0, recommendations: [],
+      blogUrl, mode: 'single', score: 0, summary: '', strengths: [], recommendations: [],
       error: `Failed to fetch: ${err.message}`,
     });
   }
 
-  const result = await runBlogAudit(apiKey, blogUrl, content, BLOG_AUDIT_PROMPT);
+  let result;
+  try {
+    result = await runBlogAudit(apiKey, blogUrl, content, BLOG_AUDIT_PROMPT);
+  } catch (err) {
+    console.error('[BlogAudit] OpenAI audit failed:', err.message);
+    return res.status(200).json({
+      blogUrl, mode: 'single', score: 0, summary: `Audit failed: ${err.message}`,
+      strengths: [], recommendations: [],
+    });
+  }
 
-  const supabase = getSupabase();
-  if (supabase) {
-    await saveBlogAudit(supabase, siteUrl, blogUrl, 'single', result, projectId);
+  try {
+    const supabase = getSupabase();
+    if (supabase) {
+      await saveBlogAudit(supabase, siteUrl, blogUrl, 'single', result, projectId);
+    }
+  } catch (dbErr) {
+    console.error('[BlogAudit] DB save failed (non-fatal):', dbErr.message);
   }
 
   return res.status(200).json({
@@ -148,7 +173,7 @@ async function auditSinglePost(req, res, siteUrl, blogUrl, apiKey) {
   });
 }
 
-async function auditFullBlog(req, res, siteUrl, blogRootUrl, apiKey) {
+async function auditFullBlog(req, res, siteUrl, blogRootUrl, apiKey, projectId) {
   let blogPostUrls = [];
   try {
     blogPostUrls = await discoverBlogPosts(siteUrl, blogRootUrl);
@@ -273,21 +298,37 @@ function buildOverviewContext(blogRootUrl, postResults) {
 
 async function fetchBlogContent(url) {
   const resp = await fetch(url, {
-    headers: { 'User-Agent': 'SEAUTO-BlogBot/1.0', Accept: 'text/html' },
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      Accept: 'text/html',
+    },
     signal: AbortSignal.timeout(15000),
+    redirect: 'follow',
   });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  const html = await resp.text();
+
+  // Limit to 500KB to avoid memory issues on large pages
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let html = '';
+  while (html.length < 500000) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    html += decoder.decode(value, { stream: true });
+  }
+  reader.cancel().catch(() => {});
+
+  const bodyText = extractBodyText(html);
 
   return {
     url,
     title: extractTag(html, 'title'),
     metaDescription: extractMeta(html, 'description'),
     headings: extractHeadings(html),
-    bodyText: extractBodyText(html).substring(0, 4000),
+    bodyText: bodyText.substring(0, 4000),
     imageCount: (html.match(/<img[\s>]/gi) || []).length,
     imagesWithoutAlt: (html.match(/<img(?![^>]*alt=)[^>]*>/gi) || []).length,
-    wordCount: extractBodyText(html).split(/\s+/).filter(Boolean).length,
+    wordCount: bodyText.split(/\s+/).filter(Boolean).length,
     internalLinkCount: extractInternalLinks(html, url).length,
     externalLinkCount: extractExternalLinks(html, url).length,
     hasSchema: html.includes('BlogPosting') || html.includes('Article'),
