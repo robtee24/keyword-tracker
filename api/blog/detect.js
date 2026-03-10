@@ -20,6 +20,23 @@ const EXCLUDED_PREFIXES = [
 const BLOG_LIKE_SIGNALS_THRESHOLD = 3;
 
 /**
+ * Convert GSC property formats into crawlable URLs.
+ * sc-domain:example.com → tries https://www.example.com/ then https://example.com/
+ * https://example.com  → https://example.com/
+ */
+function normalizeSiteUrl(siteUrl) {
+  if (siteUrl.startsWith('sc-domain:')) {
+    const domain = siteUrl.replace('sc-domain:', '').replace(/\/+$/, '');
+    return `https://www.${domain.replace(/^www\./, '')}/`;
+  }
+  if (!siteUrl.startsWith('http')) {
+    siteUrl = `https://${siteUrl}`;
+  }
+  if (!siteUrl.endsWith('/')) siteUrl += '/';
+  return siteUrl;
+}
+
+/**
  * POST /api/blog/detect
  * Deep-crawls sitemaps, groups URLs into blog sections using path frequency
  * analysis, and sample-crawls ambiguous paths to verify they are blogs.
@@ -36,23 +53,28 @@ export default async function handler(req, res) {
 
   let { siteUrl, projectId } = req.body || {};
   if (!siteUrl) return res.status(400).json({ error: 'siteUrl is required' });
-  if (!siteUrl.endsWith('/')) siteUrl += '/';
+
+  // Normalize sc-domain: GSC properties into crawlable HTTPS URLs
+  const crawlUrl = normalizeSiteUrl(siteUrl);
+  if (!crawlUrl) return res.status(400).json({ error: 'Invalid siteUrl format' });
 
   try {
     // 1. Collect ALL URLs from sitemaps (recursive)
-    const allUrls = await collectAllSitemapUrls(siteUrl);
+    const allUrls = await collectAllSitemapUrls(crawlUrl);
     if (allUrls.length === 0) {
       return res.status(200).json({ blogs: [], totalUrls: 0 });
     }
 
-    const baseHostname = new URL(siteUrl).hostname;
+    const baseHostname = new URL(crawlUrl).hostname;
+    const bareHostname = baseHostname.replace(/^www\./, '');
+    const acceptedHostnames = new Set([bareHostname, `www.${bareHostname}`]);
 
     // 2. Parse all URLs into path segments
     const parsedUrls = [];
     for (const url of allUrls) {
       try {
         const parsed = new URL(url);
-        if (parsed.hostname !== baseHostname) continue;
+        if (!acceptedHostnames.has(parsed.hostname)) continue;
         const path = parsed.pathname;
         if (EXCLUDED_PREFIXES.some(p => path.toLowerCase().startsWith(p))) continue;
         parsedUrls.push({ url, path });
@@ -143,26 +165,35 @@ export default async function handler(req, res) {
 /* ------------------------------------------------------------------ */
 
 async function collectAllSitemapUrls(siteUrl) {
-  const candidates = [
-    `${siteUrl}sitemap.xml`,
-    `${siteUrl}sitemap_index.xml`,
-    `${siteUrl}sitemap-index.xml`,
-    `${siteUrl}wp-sitemap.xml`,
-  ];
+  // Build candidate list — also try without www if www fails (and vice versa)
+  const bases = [siteUrl];
+  try {
+    const u = new URL(siteUrl);
+    if (u.hostname.startsWith('www.')) {
+      bases.push(siteUrl.replace('://www.', '://'));
+    } else {
+      bases.push(siteUrl.replace('://', '://www.'));
+    }
+  } catch { /* ignore */ }
 
-  for (const candidate of candidates) {
-    try {
-      const resp = await fetch(candidate, {
-        headers: { 'User-Agent': 'SEAUTO-BlogBot/1.0' },
-        signal: AbortSignal.timeout(45000),
-      });
-      if (!resp.ok) continue;
-      const xml = await resp.text();
-      if (!xml.includes('<urlset') && !xml.includes('<sitemapindex')) continue;
+  const suffixes = ['sitemap.xml', 'sitemap_index.xml', 'sitemap-index.xml', 'wp-sitemap.xml'];
 
-      const urls = await resolveAllUrls(xml);
-      if (urls.length > 0) return [...new Set(urls)];
-    } catch { continue; }
+  for (const base of bases) {
+    for (const suffix of suffixes) {
+      const candidate = base + suffix;
+      try {
+        const resp = await fetch(candidate, {
+          headers: { 'User-Agent': 'SEAUTO-BlogBot/1.0' },
+          signal: AbortSignal.timeout(45000),
+        });
+        if (!resp.ok) continue;
+        const xml = await resp.text();
+        if (!xml.includes('<urlset') && !xml.includes('<sitemapindex')) continue;
+
+        const urls = await resolveAllUrls(xml);
+        if (urls.length > 0) return [...new Set(urls)];
+      } catch { continue; }
+    }
   }
   return [];
 }
