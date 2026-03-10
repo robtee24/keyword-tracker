@@ -9,6 +9,8 @@ const KNOWN_BLOG_PATTERNS = [
   '/resources/blog', '/resources/articles', '/insights',
   '/learn', '/journal', '/stories', '/updates',
   '/press', '/media', '/content', '/tips',
+  '/reviews', '/guides', '/tutorials', '/case-studies',
+  '/knowledge-base', '/kb', '/help', '/docs',
 ];
 
 const EXCLUDED_PREFIXES = [
@@ -164,12 +166,63 @@ export default async function handler(req, res) {
             console.log(`[BlogDetect] GSC for ${blogs[bi].rootPath}: ${gscUrlCount} URLs with data`);
             Object.assign(gscData, blogGsc);
 
+            // Map GSC data onto existing posts
             blogs[bi].posts = blogs[bi].posts.map(p => {
               const normalized = normalizeUrlForMatch(p.url);
               const match = blogGsc[p.url] || blogGsc[normalized];
               const byPath = !match ? findByPath(blogGsc, p.url) : null;
               return { ...p, gscData: match || byPath || { totalClicks: 0, totalImpressions: 0, keywords: [] } };
             });
+
+            // Discover NEW posts from GSC that aren't in the sitemap
+            const existingUrls = new Set(blogs[bi].posts.map(p => {
+              try { return new URL(p.url).pathname.replace(/\/+$/, ''); } catch { return p.url; }
+            }));
+            const rootPrefix = blogs[bi].rootPath.replace(/\/+$/, '') + '/';
+            let discoveredCount = 0;
+            for (const [gscUrl, data] of Object.entries(blogGsc)) {
+              try {
+                const gscPath = new URL(gscUrl).pathname.replace(/\/+$/, '');
+                // Must be under the root path (prevents false positives from 'contains')
+                if (!gscPath.startsWith(rootPrefix)) continue;
+                // Skip exact root match
+                if (gscPath === blogs[bi].rootPath.replace(/\/+$/, '')) continue;
+                if (!existingUrls.has(gscPath)) {
+                  existingUrls.add(gscPath);
+                  blogs[bi].posts.push({
+                    url: gscUrl,
+                    title: '',
+                    metaDescription: '',
+                    gscData: data,
+                  });
+                  discoveredCount++;
+                }
+              } catch { continue; }
+            }
+            if (discoveredCount > 0) {
+              console.log(`[BlogDetect] Discovered ${discoveredCount} additional posts from GSC for ${blogs[bi].rootPath}`);
+            }
+          }
+
+          // Fetch meta for GSC-discovered posts (top by clicks, up to 30 per blog)
+          if (timeLeft() > 15000) {
+            for (const blog of blogs) {
+              const noTitle = blog.posts.filter(p => !p.title);
+              if (noTitle.length === 0) continue;
+              const sorted = [...noTitle].sort((a, b) => (b.gscData?.totalClicks || 0) - (a.gscData?.totalClicks || 0));
+              const toFetch = sorted.slice(0, 30);
+              const metaResults = await Promise.allSettled(toFetch.map(p => fetchMetaData(p.url)));
+              for (let i = 0; i < toFetch.length; i++) {
+                if (metaResults[i].status === 'fulfilled' && metaResults[i].value) {
+                  const idx = blog.posts.findIndex(p => p.url === toFetch[i].url);
+                  if (idx !== -1) {
+                    blog.posts[idx].title = metaResults[i].value.title || '';
+                    blog.posts[idx].metaDescription = metaResults[i].value.metaDescription || '';
+                  }
+                }
+              }
+              if (timeLeft() < 10000) break;
+            }
           }
 
           // Build overviews
@@ -519,17 +572,20 @@ function identifyBlogClusters(parsedUrls) {
   const clusters = [];
   const usedUrls = new Set();
 
-  // Pass 1: known blog patterns
+  // Also check which known patterns exist as URLs (even without children in sitemap)
+  const allPaths = new Set(parsedUrls.map(p => p.path));
+
+  // Pass 1: known blog patterns — create cluster even with 0 children (GSC will discover posts)
   for (const pattern of KNOWN_BLOG_PATTERNS) {
-    if (prefixGroups.has(pattern)) {
-      const posts = prefixGroups.get(pattern)
+    const hasPrefix = prefixGroups.has(pattern);
+    const hasExactUrl = allPaths.has(pattern) || allPaths.has(pattern + '/');
+    if (hasPrefix || hasExactUrl) {
+      const posts = (prefixGroups.get(pattern) || [])
         .filter(p => p.path !== pattern && p.path !== pattern + '/')
         .filter(p => !usedUrls.has(p.url));
-      if (posts.length >= 2) {
-        posts.forEach(p => usedUrls.add(p.url));
-        const name = pattern.split('/').filter(Boolean).pop();
-        clusters.push({ rootPath: pattern, name: name.charAt(0).toUpperCase() + name.slice(1), posts, sampleUrl: posts[0]?.url, isKnownBlog: true });
-      }
+      posts.forEach(p => usedUrls.add(p.url));
+      const name = pattern.split('/').filter(Boolean).pop();
+      clusters.push({ rootPath: pattern, name: name.charAt(0).toUpperCase() + name.slice(1), posts, sampleUrl: posts[0]?.url, isKnownBlog: true });
     }
   }
 
