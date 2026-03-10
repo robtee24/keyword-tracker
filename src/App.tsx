@@ -73,7 +73,7 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   'schema-audit': 'Site Audit › Schema Markup',
   'compliance-audit': 'Site Audit › Compliance',
   'speed-audit': 'Site Audit › Page Speed',
-  'blog-audit': 'Find All Posts',
+  'blog-audit': 'Blog Audit',
   'ad-audit': 'Ad Audit › Full Audit',
   'ad-audit-google': 'Ad Audit › Google Ads',
   'ad-audit-meta': 'Ad Audit › Meta',

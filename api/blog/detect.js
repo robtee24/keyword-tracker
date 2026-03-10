@@ -1,7 +1,7 @@
 import { authenticateRequest } from '../_config.js';
 import { getSupabase } from '../db.js';
 
-export const config = { maxDuration: 120 };
+export const config = { maxDuration: 300 };
 
 const KNOWN_BLOG_PATTERNS = [
   '/blog', '/blogs', '/articles', '/news', '/posts',
@@ -79,20 +79,26 @@ export default async function handler(req, res) {
     const blogs = [];
     for (const blog of verifiedBlogs) {
       const postsWithMeta = [];
-      const metaBatch = blog.posts.slice(0, 100);
-      const metaResults = await Promise.allSettled(
-        metaBatch.map(p => fetchMetaData(p.url))
-      );
-      for (let i = 0; i < metaBatch.length; i++) {
-        const r = metaResults[i];
-        if (r.status === 'fulfilled' && r.value) {
-          postsWithMeta.push({ url: metaBatch[i].url, ...r.value });
-        } else {
-          postsWithMeta.push({ url: metaBatch[i].url, title: '', metaDescription: '' });
+      const metaBatch = blog.posts.slice(0, 50);
+
+      // Fetch meta in smaller concurrent batches to avoid overwhelming the server
+      const META_BATCH = 10;
+      for (let mi = 0; mi < metaBatch.length; mi += META_BATCH) {
+        const slice = metaBatch.slice(mi, mi + META_BATCH);
+        const metaResults = await Promise.allSettled(
+          slice.map(p => fetchMetaData(p.url))
+        );
+        for (let i = 0; i < slice.length; i++) {
+          const r = metaResults[i];
+          if (r.status === 'fulfilled' && r.value) {
+            postsWithMeta.push({ url: slice[i].url, ...r.value });
+          } else {
+            postsWithMeta.push({ url: slice[i].url, title: '', metaDescription: '' });
+          }
         }
       }
       // Add remaining posts without meta (they'll be fetched lazily)
-      for (let i = 100; i < blog.posts.length; i++) {
+      for (let i = 50; i < blog.posts.length; i++) {
         postsWithMeta.push({ url: blog.posts[i].url, title: '', metaDescription: '' });
       }
 
@@ -148,7 +154,7 @@ async function collectAllSitemapUrls(siteUrl) {
     try {
       const resp = await fetch(candidate, {
         headers: { 'User-Agent': 'SEAUTO-BlogBot/1.0' },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(45000),
       });
       if (!resp.ok) continue;
       const xml = await resp.text();
@@ -166,7 +172,7 @@ async function resolveAllUrls(xml) {
     const childSitemapUrls = extractLocs(xml, true);
     const allPageUrls = [];
 
-    const batchSize = 10;
+    const batchSize = 5;
     for (let i = 0; i < childSitemapUrls.length; i += batchSize) {
       const batch = childSitemapUrls.slice(i, i + batchSize);
       const results = await Promise.allSettled(
@@ -174,7 +180,7 @@ async function resolveAllUrls(xml) {
           try {
             const resp = await fetch(url, {
               headers: { 'User-Agent': 'SEAUTO-BlogBot/1.0' },
-              signal: AbortSignal.timeout(15000),
+              signal: AbortSignal.timeout(45000),
             });
             if (!resp.ok) return [];
             const childXml = await resp.text();
@@ -301,7 +307,7 @@ async function verifySampleIsBlog(url) {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         Accept: 'text/html',
       },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(15000),
       redirect: 'follow',
     });
     if (!resp.ok) return false;
@@ -350,7 +356,7 @@ async function fetchMetaData(url) {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         Accept: 'text/html',
       },
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(10000),
       redirect: 'follow',
     });
     if (!resp.ok) return null;
