@@ -40,6 +40,12 @@ interface Recommendation {
   impact: string;
 }
 
+interface GscPostData {
+  totalClicks: number;
+  totalImpressions: number;
+  keywords: { keyword: string; clicks: number; impressions: number; position: number }[];
+}
+
 interface BlogDiscovery {
   id: string;
   project_id: string;
@@ -48,7 +54,7 @@ interface BlogDiscovery {
   blog_name: string;
   posts: BlogPost[];
   overview: BlogOverview | null;
-  gsc_data: Record<string, unknown>;
+  gsc_data: { [url: string]: GscPostData };
   crawled_at: string;
 }
 
@@ -88,7 +94,7 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
       const resp = await authenticatedFetch(
         `${API_ENDPOINTS.db.blogDiscoveries}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`
       );
-      const data = await parseJsonOrThrow(resp);
+      const data = await parseJsonOrThrow<{ discoveries?: BlogDiscovery[] }>(resp);
       setBlogs(data.discoveries || []);
     } catch { /* ignore */ }
     setLoading(false);
@@ -117,7 +123,7 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ siteUrl, projectId }),
       });
-      const data = await parseJsonOrThrow(resp);
+      const data = await parseJsonOrThrow<{ blogs?: BlogDiscovery[] }>(resp);
       logActivity(siteUrl, 'blog', 'detect', `Found ${data.blogs?.length || 0} blog section(s)`);
       return data;
     });
@@ -134,10 +140,10 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ siteUrl, urls }),
       });
-      const data = await parseJsonOrThrow(resp);
-      const gscMap = data.data || {};
+      const data = await parseJsonOrThrow<{ data?: { [url: string]: GscPostData } }>(resp);
+      const gscMap: { [url: string]: GscPostData } = data.data || {};
 
-      const updatedPosts = blog.posts.map(p => ({
+      const updatedPosts: BlogPost[] = blog.posts.map(p => ({
         ...p,
         gscData: gscMap[p.url] || p.gscData || { totalClicks: 0, totalImpressions: 0, keywords: [] },
       }));
@@ -165,7 +171,7 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
       });
 
       setBlogs(prev => prev.map(b =>
-        b.root_path === blog.root_path ? { ...b, posts: updatedPosts, overview, gsc_data: gscMap } : b
+        b.root_path === blog.root_path ? { ...b, posts: updatedPosts, overview, gsc_data: gscMap } as BlogDiscovery : b
       ));
     } catch (err) {
       console.error('Failed to fetch GSC data:', err);
@@ -182,7 +188,9 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ siteUrl, projectId, blogUrl: postUrl, mode: 'single' }),
       });
-      const data = await parseJsonOrThrow(resp);
+      const data = await parseJsonOrThrow<{
+        score?: number; summary?: string; strengths?: string[]; recommendations?: Recommendation[];
+      }>(resp);
 
       const auditResult: AuditResult = {
         score: data.score || 0,
@@ -229,7 +237,7 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ siteUrl, projectId, postUrl, blogRootPath: blog.root_path, otherPostUrls }),
       });
-      const data = await parseJsonOrThrow(resp);
+      const data = await parseJsonOrThrow<{ blog?: { articleId?: string } }>(resp);
 
       // Mark as rewritten in local state
       setBlogs(prev => prev.map(b => {
@@ -272,7 +280,7 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
           context: `Blog section: ${blog.blog_name || blog.root_path}. Existing posts: ${existingTitles.join(', ')}. Generate ideas that complement existing content and fill gaps.`,
         }),
       });
-      const data = await parseJsonOrThrow(resp);
+      const data = await parseJsonOrThrow<{ topics?: unknown[] }>(resp);
       logActivity(siteUrl, 'blog', 'ideas', `Generated ${data.topics?.length || 0} post ideas for ${blog.blog_name || blog.root_path}`);
       return data;
     });
