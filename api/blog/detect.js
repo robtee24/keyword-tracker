@@ -1,7 +1,7 @@
 import { authenticateRequest } from '../_config.js';
 import { getSupabase } from '../db.js';
 
-export const config = { maxDuration: 300 };
+export const config = { maxDuration: 120 };
 
 const KNOWN_BLOG_PATTERNS = [
   '/blog', '/blogs', '/articles', '/news', '/posts',
@@ -165,16 +165,15 @@ export default async function handler(req, res) {
 /* ------------------------------------------------------------------ */
 
 async function collectAllSitemapUrls(siteUrl) {
+  const mainHost = new URL(siteUrl).hostname;
+
   // Build candidate list — also try without www if www fails (and vice versa)
   const bases = [siteUrl];
-  try {
-    const u = new URL(siteUrl);
-    if (u.hostname.startsWith('www.')) {
-      bases.push(siteUrl.replace('://www.', '://'));
-    } else {
-      bases.push(siteUrl.replace('://', '://www.'));
-    }
-  } catch { /* ignore */ }
+  if (mainHost.startsWith('www.')) {
+    bases.push(siteUrl.replace('://www.', '://'));
+  } else {
+    bases.push(siteUrl.replace('://', '://www.'));
+  }
 
   const suffixes = ['sitemap.xml', 'sitemap_index.xml', 'sitemap-index.xml', 'wp-sitemap.xml'];
 
@@ -184,13 +183,13 @@ async function collectAllSitemapUrls(siteUrl) {
       try {
         const resp = await fetch(candidate, {
           headers: { 'User-Agent': 'SEAUTO-BlogBot/1.0' },
-          signal: AbortSignal.timeout(45000),
+          signal: AbortSignal.timeout(20000),
         });
         if (!resp.ok) continue;
         const xml = await resp.text();
         if (!xml.includes('<urlset') && !xml.includes('<sitemapindex')) continue;
 
-        const urls = await resolveAllUrls(xml);
+        const urls = await resolveAllUrls(xml, mainHost);
         if (urls.length > 0) return [...new Set(urls)];
       } catch { continue; }
     }
@@ -198,34 +197,63 @@ async function collectAllSitemapUrls(siteUrl) {
   return [];
 }
 
-async function resolveAllUrls(xml) {
+async function resolveAllUrls(xml, mainHost) {
   if (xml.includes('<sitemapindex')) {
     const childSitemapUrls = extractLocs(xml, true);
     const allPageUrls = [];
 
-    const batchSize = 5;
-    for (let i = 0; i < childSitemapUrls.length; i += batchSize) {
-      const batch = childSitemapUrls.slice(i, i + batchSize);
-      const results = await Promise.allSettled(
-        batch.map(async (url) => {
-          try {
-            const resp = await fetch(url, {
-              headers: { 'User-Agent': 'SEAUTO-BlogBot/1.0' },
-              signal: AbortSignal.timeout(45000),
-            });
-            if (!resp.ok) return [];
-            const childXml = await resp.text();
-            if (childXml.includes('<sitemapindex')) {
-              return await resolveAllUrls(childXml);
-            }
-            return extractLocs(childXml, false);
-          } catch { return []; }
-        })
-      );
-      for (const r of results) {
-        if (r.status === 'fulfilled') allPageUrls.push(...r.value);
-      }
+    // Separate same-domain vs cross-domain child sitemaps.
+    // Cross-domain sitemaps rarely contain blog content; fetch them
+    // only after same-domain sitemaps and only if time allows.
+    const sameDomain = [];
+    const crossDomain = [];
+    for (const url of childSitemapUrls) {
+      try {
+        const h = new URL(url).hostname;
+        if (h === mainHost || h === mainHost.replace(/^www\./, '') || h === `www.${mainHost.replace(/^www\./, '')}`) {
+          sameDomain.push(url);
+        } else {
+          crossDomain.push(url);
+        }
+      } catch { sameDomain.push(url); }
     }
+
+    // Fetch same-domain sitemaps first (these are fast and contain the blog content)
+    const fetchBatch = async (urls, timeout) => {
+      const batchSize = 5;
+      for (let i = 0; i < urls.length; i += batchSize) {
+        const batch = urls.slice(i, i + batchSize);
+        const results = await Promise.allSettled(
+          batch.map(async (url) => {
+            try {
+              const resp = await fetch(url, {
+                headers: { 'User-Agent': 'SEAUTO-BlogBot/1.0' },
+                signal: AbortSignal.timeout(timeout),
+              });
+              if (!resp.ok) return [];
+              const childXml = await resp.text();
+              if (childXml.includes('<sitemapindex')) {
+                return await resolveAllUrls(childXml, mainHost);
+              }
+              return extractLocs(childXml, false);
+            } catch { return []; }
+          })
+        );
+        for (const r of results) {
+          if (r.status === 'fulfilled') allPageUrls.push(...r.value);
+        }
+      }
+    };
+
+    // Same-domain sitemaps: short timeout, always fetch
+    await fetchBatch(sameDomain, 15000);
+
+    // Cross-domain sitemaps: only fetch if we haven't found much yet,
+    // with a short timeout to avoid blocking the function
+    if (allPageUrls.length < 100 && crossDomain.length > 0) {
+      await fetchBatch(crossDomain, 10000);
+    }
+
     return allPageUrls;
   }
   return extractLocs(xml, false);
