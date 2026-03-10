@@ -53,8 +53,12 @@ export default async function handler(req, res) {
   if (!crawlUrl) return res.status(400).json({ error: 'Invalid siteUrl format' });
 
   try {
+    const functionStart = Date.now();
+    const timeLeft = () => 110000 - (Date.now() - functionStart);
+
     // 1. Collect URLs from sitemaps
     const allUrls = await collectAllSitemapUrls(crawlUrl);
+    console.log(`[BlogDetect] Sitemap crawl done in ${Date.now() - functionStart}ms, found ${allUrls.length} URLs`);
     if (allUrls.length === 0) {
       return res.status(200).json({ blogs: [], totalUrls: 0 });
     }
@@ -75,11 +79,9 @@ export default async function handler(req, res) {
       } catch { continue; }
     }
 
-    const functionStart = Date.now();
-    const timeLeft = () => 110000 - (Date.now() - functionStart); // 110s safety margin
-
     // 3. Identify blog clusters
     const clusters = identifyBlogClusters(parsedUrls);
+    console.log(`[BlogDetect] Found ${clusters.length} clusters: ${clusters.map(c => `${c.rootPath}(${c.posts.length},known=${c.isKnownBlog})`).join(', ')}`);
 
     // 4. Sample-crawl unknown clusters IN PARALLEL
     const verifiedBlogs = clusters.filter(c => c.isKnownBlog);
@@ -89,6 +91,7 @@ export default async function handler(req, res) {
       const verifyResults = await Promise.allSettled(
         unknownClusters.map(async (cluster) => {
           const isBlog = await verifySampleIsBlog(cluster.sampleUrl);
+          console.log(`[BlogDetect] Verify ${cluster.rootPath}: ${isBlog ? 'IS blog' : 'NOT blog'} (sample: ${cluster.sampleUrl})`);
           return { cluster, isBlog };
         })
       );
@@ -98,6 +101,7 @@ export default async function handler(req, res) {
         }
       }
     }
+    console.log(`[BlogDetect] Verified blogs: ${verifiedBlogs.map(b => b.rootPath).join(', ')} | timeLeft=${timeLeft()}ms`);
 
     // 5. Build blog objects — fetch meta data for ALL blogs in PARALLEL
     const metaLimit = (postCount) => postCount > 100 ? 15 : postCount > 50 ? 25 : 40;
@@ -131,7 +135,7 @@ export default async function handler(req, res) {
 
     const blogs = blogResults
       .filter(r => r.status === 'fulfilled')
-      .map(r => (r as PromiseFulfilledResult<any>).value);
+      .map(r => r.value);
 
     // 6. Fetch GSC data for ALL blogs in PARALLEL (bulk per blog)
     let gscData = {};
