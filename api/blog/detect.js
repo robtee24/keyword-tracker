@@ -75,6 +75,9 @@ export default async function handler(req, res) {
       } catch { continue; }
     }
 
+    const functionStart = Date.now();
+    const timeLeft = () => 110000 - (Date.now() - functionStart); // 110s safety margin
+
     // 3. Identify blog clusters
     const clusters = identifyBlogClusters(parsedUrls);
 
@@ -82,7 +85,7 @@ export default async function handler(req, res) {
     const verifiedBlogs = clusters.filter(c => c.isKnownBlog);
     const unknownClusters = clusters.filter(c => !c.isKnownBlog);
 
-    if (unknownClusters.length > 0) {
+    if (unknownClusters.length > 0 && timeLeft() > 15000) {
       const verifyResults = await Promise.allSettled(
         unknownClusters.map(async (cluster) => {
           const isBlog = await verifySampleIsBlog(cluster.sampleUrl);
@@ -96,80 +99,102 @@ export default async function handler(req, res) {
       }
     }
 
-    // 5. Build blog objects with meta data (limit meta fetches for speed)
-    const blogs = [];
-    for (const blog of verifiedBlogs) {
-      const postsWithMeta = [];
-      const metaBatch = blog.posts.slice(0, 50);
-      const META_BATCH = 10;
-      for (let mi = 0; mi < metaBatch.length; mi += META_BATCH) {
-        const slice = metaBatch.slice(mi, mi + META_BATCH);
-        const metaResults = await Promise.allSettled(
-          slice.map(p => fetchMetaData(p.url))
-        );
-        for (let i = 0; i < slice.length; i++) {
-          const r = metaResults[i];
-          postsWithMeta.push(r.status === 'fulfilled' && r.value
-            ? { url: slice[i].url, ...r.value }
-            : { url: slice[i].url, title: '', metaDescription: '' });
-        }
-      }
-      for (let i = 50; i < blog.posts.length; i++) {
-        postsWithMeta.push({ url: blog.posts[i].url, title: '', metaDescription: '' });
-      }
-      blogs.push({ rootPath: blog.rootPath, name: blog.name, postCount: blog.posts.length, posts: postsWithMeta });
-    }
+    // 5. Build blog objects — fetch meta data for ALL blogs in PARALLEL
+    const metaLimit = (postCount) => postCount > 100 ? 15 : postCount > 50 ? 25 : 40;
+    const blogResults = await Promise.allSettled(
+      verifiedBlogs.map(async (blog) => {
+        const limit = metaLimit(blog.posts.length);
+        const postsWithMeta = [];
+        const metaBatch = blog.posts.slice(0, limit);
 
-    // 6. Fetch GSC data for discovered blog posts
+        // Fetch meta in concurrent batches of 10
+        for (let mi = 0; mi < metaBatch.length; mi += 10) {
+          if (timeLeft() < 20000) break; // stop fetching meta if running low on time
+          const slice = metaBatch.slice(mi, mi + 10);
+          const metaResults = await Promise.allSettled(
+            slice.map(p => fetchMetaData(p.url))
+          );
+          for (let i = 0; i < slice.length; i++) {
+            const r = metaResults[i];
+            postsWithMeta.push(r.status === 'fulfilled' && r.value
+              ? { url: slice[i].url, ...r.value }
+              : { url: slice[i].url, title: '', metaDescription: '' });
+          }
+        }
+        // Add remaining posts without meta
+        for (let i = postsWithMeta.length; i < blog.posts.length; i++) {
+          postsWithMeta.push({ url: blog.posts[i].url, title: '', metaDescription: '' });
+        }
+        return { rootPath: blog.rootPath, name: blog.name, postCount: blog.posts.length, posts: postsWithMeta };
+      })
+    );
+
+    const blogs = blogResults
+      .filter(r => r.status === 'fulfilled')
+      .map(r => (r as PromiseFulfilledResult<any>).value);
+
+    // 6. Fetch GSC data for ALL blogs in PARALLEL (bulk per blog)
     let gscData = {};
-    try {
-      const accessToken = await getServiceToken(auth.user.id, siteUrl, 'google_search_console');
-      if (accessToken) {
-        const endDate = new Date().toISOString().slice(0, 10);
-        const startDate = new Date(Date.now() - 28 * 86400000).toISOString().slice(0, 10);
-        for (const blog of blogs) {
-          const urls = blog.posts.slice(0, 100).map(p => p.url);
-          const batchGsc = await fetchBatchGscData(accessToken, siteUrl, urls, startDate, endDate);
-          Object.assign(gscData, batchGsc);
-          // Merge GSC data into posts
-          blog.posts = blog.posts.map(p => ({
-            ...p,
-            gscData: batchGsc[p.url] || { totalClicks: 0, totalImpressions: 0, keywords: [] },
-          }));
-        }
+    if (timeLeft() > 10000) {
+      try {
+        const accessToken = await getServiceToken(auth.user.id, siteUrl, 'google_search_console');
+        if (accessToken) {
+          const endDate = new Date().toISOString().slice(0, 10);
+          const startDate = new Date(Date.now() - 28 * 86400000).toISOString().slice(0, 10);
 
-        // Build overviews
-        for (const blog of blogs) {
-          const totalClicks = blog.posts.reduce((s, p) => s + (p.gscData?.totalClicks || 0), 0);
-          const sorted = [...blog.posts].sort((a, b) => (b.gscData?.totalClicks || 0) - (a.gscData?.totalClicks || 0));
-          blog.overview = {
-            summary: `${blog.name} contains ${blog.posts.length} posts with ${totalClicks.toLocaleString()} total monthly clicks.`,
-            totalClicks,
-            top5: sorted.slice(0, 5).map(p => ({ url: p.url, title: p.title, clicks: p.gscData?.totalClicks || 0 })),
-          };
+          const gscResults = await Promise.allSettled(
+            blogs.map(blog => fetchBlogGscBulk(accessToken, siteUrl, blog.rootPath, startDate, endDate))
+          );
+
+          for (let bi = 0; bi < blogs.length; bi++) {
+            const r = gscResults[bi];
+            if (r.status !== 'fulfilled') continue;
+            const blogGsc = r.value;
+            Object.assign(gscData, blogGsc);
+
+            blogs[bi].posts = blogs[bi].posts.map(p => {
+              const normalized = normalizeUrlForMatch(p.url);
+              const match = blogGsc[p.url] || blogGsc[normalized];
+              const byPath = !match ? findByPath(blogGsc, p.url) : null;
+              return { ...p, gscData: match || byPath || { totalClicks: 0, totalImpressions: 0, keywords: [] } };
+            });
+          }
+
+          // Build overviews
+          for (const blog of blogs) {
+            const totalClicks = blog.posts.reduce((s, p) => s + (p.gscData?.totalClicks || 0), 0);
+            const sorted = [...blog.posts].sort((a, b) => (b.gscData?.totalClicks || 0) - (a.gscData?.totalClicks || 0));
+            blog.overview = {
+              summary: `${blog.name} contains ${blog.posts.length} posts with ${totalClicks.toLocaleString()} total monthly clicks.`,
+              totalClicks,
+              top5: sorted.slice(0, 5).map(p => ({ url: p.url, title: p.title, clicks: p.gscData?.totalClicks || 0 })),
+            };
+          }
         }
+      } catch (gscErr) {
+        console.error('[BlogDetect] GSC fetch failed (non-fatal):', gscErr.message);
       }
-    } catch (gscErr) {
-      console.error('[BlogDetect] GSC fetch failed (non-fatal):', gscErr.message);
     }
 
     // 7. Save to database
     const supabase = getSupabase();
     if (supabase && projectId) {
-      for (const blog of blogs) {
-        await supabase
-          .from('blog_discoveries')
-          .upsert({
-            project_id: projectId,
-            site_url: siteUrl,
-            root_path: blog.rootPath,
-            blog_name: blog.name,
-            posts: blog.posts,
-            overview: blog.overview || null,
-            gsc_data: gscData,
-            crawled_at: new Date().toISOString(),
-          }, { onConflict: 'project_id,site_url,root_path' });
-      }
+      await Promise.allSettled(
+        blogs.map(blog =>
+          supabase
+            .from('blog_discoveries')
+            .upsert({
+              project_id: projectId,
+              site_url: siteUrl,
+              root_path: blog.rootPath,
+              blog_name: blog.name,
+              posts: blog.posts,
+              overview: blog.overview || null,
+              gsc_data: gscData,
+              crawled_at: new Date().toISOString(),
+            }, { onConflict: 'project_id,site_url,root_path' })
+        )
+      );
     }
 
     return res.status(200).json({ blogs, totalUrls: parsedUrls.length, crawledAt: new Date().toISOString() });
@@ -180,48 +205,103 @@ export default async function handler(req, res) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  GSC Batch Fetch                                                    */
+/*  GSC Bulk Fetch (single call per blog using page+query dimensions)  */
 /* ------------------------------------------------------------------ */
 
-async function fetchBatchGscData(accessToken, siteUrl, urls, startDate, endDate) {
-  const result = {};
-  const BATCH = 10;
-  for (let i = 0; i < urls.length; i += BATCH) {
-    const batch = urls.slice(i, i + BATCH);
-    const results = await Promise.allSettled(
-      batch.map(async (url) => {
-        const response = await fetch(
-          `${API_CONFIG.googleSearchConsole.baseUrl}/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
-          {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              startDate, endDate, dimensions: ['query'],
-              dimensionFilterGroups: [{ filters: [{ dimension: 'page', operator: 'equals', expression: url }] }],
-              rowLimit: 25,
-            }),
-          }
-        );
-        if (!response.ok) return { url, data: { totalClicks: 0, totalImpressions: 0, keywords: [] } };
-        const data = await response.json();
-        let totalClicks = 0, totalImpressions = 0;
-        const keywords = [];
-        for (const row of (data.rows || [])) {
-          const clicks = row.clicks || 0;
-          const impressions = row.impressions || 0;
-          totalClicks += clicks;
-          totalImpressions += impressions;
-          keywords.push({ keyword: row.keys?.[0] || '', clicks, impressions, position: Math.round((row.position || 0) * 10) / 10 });
+async function fetchBlogGscBulk(accessToken, siteUrl, rootPath, startDate, endDate) {
+  let domain = siteUrl;
+  if (domain.startsWith('sc-domain:')) domain = domain.replace('sc-domain:', '');
+  domain = domain.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const bare = domain.replace(/^www\./, '');
+
+  const regex = `^https?://(www\\.)?${bare.replace(/\./g, '\\.')}${rootPath.replace(/\//g, '\\/')}`;
+  const pageData = {};
+  const fetchStart = Date.now();
+  const MAX_GSC_TIME = 25000; // 25s max per blog
+
+  let startRow = 0;
+  let hasMore = true;
+  while (hasMore && (Date.now() - fetchStart) < MAX_GSC_TIME) {
+    try {
+      const response = await fetch(
+        `${API_CONFIG.googleSearchConsole.baseUrl}/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            startDate, endDate,
+            dimensions: ['page', 'query'],
+            dimensionFilterGroups: [{
+              filters: [{ dimension: 'page', operator: 'includingRegex', expression: regex }],
+            }],
+            rowLimit: 25000,
+            startRow,
+          }),
+          signal: AbortSignal.timeout(20000),
         }
-        keywords.sort((a, b) => b.clicks - a.clicks);
-        return { url, data: { totalClicks, totalImpressions, keywords } };
-      })
-    );
-    for (const r of results) {
-      if (r.status === 'fulfilled') result[r.value.url] = r.value.data;
+      );
+
+      if (!response.ok) {
+        console.error('[GSC Bulk] API error:', response.status);
+        break;
+      }
+
+      const data = await response.json();
+      const rows = data.rows || [];
+
+      for (const row of rows) {
+        const pageUrl = row.keys?.[0] || '';
+        const keyword = row.keys?.[1] || '';
+        if (!pageUrl) continue;
+
+        if (!pageData[pageUrl]) {
+          pageData[pageUrl] = { totalClicks: 0, totalImpressions: 0, keywords: [] };
+        }
+        pageData[pageUrl].totalClicks += row.clicks || 0;
+        pageData[pageUrl].totalImpressions += row.impressions || 0;
+        pageData[pageUrl].keywords.push({
+          keyword, clicks: row.clicks || 0, impressions: row.impressions || 0,
+          position: Math.round((row.position || 0) * 10) / 10,
+        });
+      }
+
+      hasMore = rows.length === 25000;
+      startRow += rows.length;
+    } catch (err) {
+      console.error('[GSC Bulk] Fetch error:', err.message);
+      break;
     }
   }
-  return result;
+
+  for (const url of Object.keys(pageData)) {
+    pageData[url].keywords.sort((a, b) => b.clicks - a.clicks);
+  }
+
+  return pageData;
+}
+
+function normalizeUrlForMatch(url) {
+  try {
+    const u = new URL(url);
+    // Toggle www
+    if (u.hostname.startsWith('www.')) {
+      u.hostname = u.hostname.replace(/^www\./, '');
+    } else {
+      u.hostname = 'www.' + u.hostname;
+    }
+    return u.href;
+  } catch { return url; }
+}
+
+function findByPath(gscData, postUrl) {
+  try {
+    const targetPath = new URL(postUrl).pathname.replace(/\/+$/, '');
+    for (const [gscUrl, data] of Object.entries(gscData)) {
+      const gscPath = new URL(gscUrl).pathname.replace(/\/+$/, '');
+      if (gscPath === targetPath) return data;
+    }
+  } catch { /* ignore */ }
+  return null;
 }
 
 /* ------------------------------------------------------------------ */
