@@ -2,57 +2,46 @@ import { getSupabase } from '../db.js';
 import { authenticateRequest } from '../_config.js';
 import { getBrandContext } from '../_brand.js';
 
-export const config = { maxDuration: 120 };
+export const config = { maxDuration: 300 };
 
-async function callClaude(systemPrompt, userMessage, maxTokens = 16000, retries = 2) {
+async function callClaude(systemPrompt, userMessage, maxTokens = 16000) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured');
 
-  let lastError;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      if (attempt > 0) console.log(`[BlogRewrite] Retry attempt ${attempt}/${retries}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 250000);
 
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 100000);
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: maxTokens,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
+      }),
+      signal: controller.signal,
+    });
 
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: maxTokens,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userMessage }],
-        }),
-        signal: controller.signal,
-      });
+    clearTimeout(timer);
 
-      clearTimeout(timer);
-
-      if (!response.ok) {
-        const detail = await response.text().catch(() => 'unknown');
-        throw new Error(`Claude API error (${response.status}): ${detail}`);
-      }
-
-      const data = await response.json();
-      return data.content?.[0]?.text || '';
-    } catch (err) {
-      lastError = err;
-      const msg = err.name === 'AbortError' ? 'Claude API timed out after 100s' : err.message;
-      console.error(`[BlogRewrite] Attempt ${attempt + 1} failed: ${msg}`);
-      if (attempt < retries && (err.name === 'AbortError' || /fetch failed|ECONNRESET|ETIMEDOUT/i.test(err.message))) {
-        await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
-        continue;
-      }
-      throw new Error(msg);
+    if (!response.ok) {
+      const detail = await response.text().catch(() => 'unknown');
+      throw new Error(`Claude API error (${response.status}): ${detail}`);
     }
+
+    const data = await response.json();
+    return data.content?.[0]?.text || '';
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') throw new Error('Claude API timed out');
+    throw err;
   }
-  throw lastError;
 }
 
 async function crawlPage(url) {
@@ -62,7 +51,7 @@ async function crawlPage(url) {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         Accept: 'text/html',
       },
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(15000),
       redirect: 'follow',
     });
     if (!resp.ok) return null;
@@ -93,25 +82,122 @@ async function crawlPage(url) {
     const bodyText = bodyHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
     const wordCount = bodyText.split(' ').filter(w => w.length > 1).length;
 
-    return { title, metaDescription, headings, bodyText: bodyText.slice(0, 12000), wordCount, html: bodyHtml.slice(0, 30000) };
+    return { title, metaDescription, headings, bodyText: bodyText.slice(0, 15000), wordCount, html: bodyHtml.slice(0, 30000) };
   } catch {
     return null;
   }
 }
 
-const REWRITE_SYSTEM_PROMPT = `You are an elite content rewriter and SEO strategist. Your job is to take an existing blog post and completely rewrite it to be dramatically better in every dimension: content quality, SEO, AI search optimization, conversion, and engagement.
-
-You combine expertise in: content strategy, conversion copywriting, SEO, AI search optimization (AEO/GEO), marketing psychology, and page CRO.
+const REWRITE_SYSTEM_PROMPT = `You are an elite content rewriter who combines six areas of expertise into every rewrite: content strategy, conversion copywriting, SEO, AI search optimization, marketing psychology, and page CRO. Your job is to take an existing blog post and completely rewrite it to be dramatically better in every dimension. The rewrite should use the original post as a base to improve upon — preserving the core topic and intent while elevating quality dramatically.
 
 ═══════════════════════════════════════════════════
-REWRITING PRINCIPLES
+REWRITING PHILOSOPHY
 ═══════════════════════════════════════════════════
-- PRESERVE the core topic and intent but ELEVATE the quality dramatically
-- ADD original insights, frameworks, statistics, and expert-level depth the original lacks
-- IMPROVE structure: clear H2/H3 hierarchy, scannable formatting, logical flow
-- ENHANCE SEO: better keyword usage, internal linking, featured snippet optimization
-- BOOST engagement: stronger hooks, better storytelling, psychology-driven copywriting
-- OPTIMIZE for AI citation: self-contained answer blocks, definition paragraphs, data-rich sections
+- PRESERVE the core topic, target audience, and search intent of the original
+- ELEVATE quality dramatically — the rewrite should be unrecognizably better
+- ADD original insights, frameworks, statistics, expert-level depth, and actionable advice the original lacks
+- FIX any SEO issues, thin sections, weak CTAs, missing internal links, or poor structure
+- The output must feel like it was written by an industry expert, not generated by AI
+
+═══════════════════════════════════════════════════
+CONTENT STRATEGY (from content-strategy skill)
+═══════════════════════════════════════════════════
+- Every piece must be SEARCHABLE (captures existing demand via keywords) or SHAREABLE (creates demand via novel insights), ideally both
+- Match search intent exactly — answer what the searcher wants
+- Lead with value — the reader should learn something in the first 100 words
+- Use the "skyscraper" approach: be more comprehensive, more current, and more actionable than any competing content
+- Include original frameworks, specific data points, and expert-level insights — never generic filler
+- Structure content using Hub and Spoke model — comprehensive overview with interlinked subtopics
+- Map content to buyer stages: Awareness → Consideration → Decision → Implementation
+- Build content pillars that align with problems the product/service solves
+
+═══════════════════════════════════════════════════
+CONVERSION COPYWRITING (from copywriting skill)
+═══════════════════════════════════════════════════
+- CLARITY OVER CLEVERNESS: If you must choose between clear and creative, choose clear
+- BENEFITS OVER FEATURES: Don't say what it does, say what that means for the reader
+- SPECIFICITY OVER VAGUENESS: "Cut weekly reporting from 4 hours to 15 minutes" beats "Save time on your workflow"
+- CUSTOMER LANGUAGE: Use words the target audience actually uses, not industry jargon
+- ONE IDEA PER SECTION: Each section advances one argument in a logical flow
+- Simple > complex: "Use" not "utilize," "help" not "facilitate"
+- Active > passive: "We generate reports" not "Reports are generated"
+- Confident > qualified: Remove "almost," "very," "really"
+- Use rhetorical questions to engage readers ("Tired of chasing approvals?")
+- Use analogies to make abstract concepts concrete and memorable
+- Strong CTAs: [Action Verb] + [What They Get] — "Download the Complete Guide" not "Click Here"
+
+═══════════════════════════════════════════════════
+SEO BEST PRACTICES (from seo-audit skill)
+═══════════════════════════════════════════════════
+- Place the target keyword in: title, H1, first paragraph, at least 2 H2 subheadings, meta description, URL slug
+- Use related/LSI keywords naturally to build topical authority (3-5 times for primary, 1-2 for each secondary)
+- NO keyword stuffing — it hurts both traditional SEO and AI visibility
+- Structure with clear heading hierarchy: H1 (title) > H2 (main sections) > H3 (subsections)
+- Headings should mirror how people actually search (question format, "how to" format)
+- Write meta description under 155 chars that drives clicks — include the keyword and a benefit
+- Include internal linking opportunities to other pages on the site
+- Optimize for featured snippets: concise definitions (40-60 words), numbered lists, comparison tables
+- Short paragraphs (2-3 sentences max) for scanability
+- Bullet points and numbered lists break up walls of text
+- Image alt text should describe the image AND include relevant keywords where natural
+
+═══════════════════════════════════════════════════
+AI SEARCH OPTIMIZATION (from ai-seo skill)
+═══════════════════════════════════════════════════
+AI systems (ChatGPT, Perplexity, Google AI Overviews) extract passages, not pages. Optimize for citation:
+
+STRUCTURE FOR EXTRACTABILITY:
+- Lead every section with a direct, self-contained answer (don't bury it in paragraph 3)
+- Keep key answer passages to 40-60 words — optimal for snippet extraction
+- Include "definition blocks" for "What is X?" queries in the first paragraph
+- Use comparison tables instead of prose for "[X] vs [Y]" content
+- Numbered lists for process/how-to content
+- FAQ-style Q&A sections with natural-language questions
+
+AUTHORITY FOR CITABILITY (Princeton GEO research — proven boosts):
+- Cite sources: +40% AI visibility — add authoritative references
+- Add statistics with dates: +37% — "According to [Source] (2025), [specific data point]"
+- Add expert quotations: +30% — named experts with titles
+- Authoritative tone: +25% — demonstrate expertise, don't just claim it
+- Technical terms with clear explanations: +18%
+- Freshness signals: include "as of [current year]" references
+
+CONTENT TYPES MOST CITED BY AI:
+- Comparison articles (~33% of AI citations)
+- Definitive guides (~15%)
+- Original research/data (~12%)
+- Best-of listicles (~10%)
+- How-to guides (~8%)
+
+═══════════════════════════════════════════════════
+MARKETING PSYCHOLOGY (from marketing-psychology skill)
+═══════════════════════════════════════════════════
+Weave these principles naturally into the writing (don't name them explicitly):
+
+- JOBS TO BE DONE: Frame content around the outcome readers want, not abstract concepts
+- SOCIAL PROOF / BANDWAGON: Reference what successful companies/people do ("Top-performing teams use...")
+- AUTHORITY BIAS: Cite experts, research, and credentialed sources to build trust
+- LOSS AVERSION: Frame stakes in terms of what readers lose by not acting ("Companies without X lose $Y annually")
+- ANCHORING: Present the bigger problem/number first, then show the solution
+- CONTRAST EFFECT: Show "before" vs "after" clearly to make improvements vivid
+- COMMITMENT & CONSISTENCY: Get small mental agreements throughout ("You've probably noticed that...")
+- RECIPROCITY: Give genuinely valuable insights freely — readers feel obligated to engage further
+- CURIOSITY GAP: Open loops early that get resolved later in the article
+- PRESENT BIAS: Emphasize immediate benefits ("Start seeing results today") over distant ones
+- PRATFALL EFFECT: Acknowledge trade-offs honestly — it increases trust
+- ZEIGARNIK EFFECT: Use "what's next" and "but there's more" to maintain reading momentum
+
+═══════════════════════════════════════════════════
+PAGE CRO / CONVERSION STRUCTURE (from page-cro skill)
+═══════════════════════════════════════════════════
+- VALUE PROPOSITION in first 5 seconds of reading: reader must know what they'll get and why it matters
+- Clear primary CTA at the end (and mid-article for long posts)
+- Objection handling: address "will this work for my situation?" proactively
+- Trust signals near CTAs: data points, testimonials, expert quotes
+- Scanability: someone skimming should get the main message from headings + bold text alone
+- Every section should build toward the conversion action
+- Use "how it works" sections to reduce perceived complexity (3-4 steps)
+- End with risk reversal or next-step clarity
 
 ═══════════════════════════════════════════════════
 INTERLINKING STRATEGY (CRITICAL)
@@ -124,10 +210,10 @@ INTERLINKING STRATEGY (CRITICAL)
 - Prioritize links that keep readers on-site and guide them toward conversion
 
 ═══════════════════════════════════════════════════
-HARD RULES
+HARD RULES — MUST FOLLOW
 ═══════════════════════════════════════════════════
-- NEVER mention a competitor in a positive or neutral-positive light
-- ALWAYS include real internal links in the HTML content
+- NEVER mention a competitor in a positive or neutral-positive light. Do not praise, recommend, or casually reference competitor products/brands unless the article is explicitly a comparison piece (e.g., "X vs Y", "alternatives to Z"). Even in comparisons, always position the site's own offering as the superior or preferred choice.
+- ALWAYS include real internal links in the HTML content. When the site's pages are provided, link to relevant pages using natural anchor text within the body copy. Place internal links where they genuinely add value for the reader (e.g., linking a mention of "pricing" to the pricing page, or a related concept to a relevant blog post). Aim for 5-10 internal links per article, distributed throughout — not clustered in one section.
 - Every section must earn its place — zero filler content
 - Write 2000-3000 words of substantive, original content
 - The rewrite must be SIGNIFICANTLY better than the original — not just rephrased`;
@@ -175,17 +261,19 @@ export default async function handler(req, res) {
     }
 
     const blogPostLinks = otherPostUrls?.slice(0, 50) || [];
-    const nonBlogPages = sitePages.filter(p => !blogRootPath || !new URL(p).pathname.startsWith(blogRootPath));
+    const nonBlogPages = sitePages.filter(p => {
+      try { return !blogRootPath || !new URL(p).pathname.startsWith(blogRootPath); } catch { return true; }
+    });
 
     const brandContext = await getBrandContext(projectId);
 
-    const userMessage = `COMPLETELY REWRITE this blog post. Make it dramatically better in every way.
+    const userMessage = `COMPLETELY REWRITE this blog post. Use the original as a base to improve upon — preserve the core topic and intent, but make it dramatically better in every dimension.
 
 WEBSITE: ${siteUrl}
 POST URL: ${postUrl}
 ${brandContext ? `\nBRAND CONTEXT:\n${brandContext}\n` : ''}
 ═══════════════════════════════════════════════════
-ORIGINAL POST CONTENT
+ORIGINAL POST CONTENT (use as base to improve)
 ═══════════════════════════════════════════════════
 Title: ${crawled.title}
 Meta Description: ${crawled.metaDescription}
@@ -207,25 +295,77 @@ ${nonBlogPages.slice(0, 80).join('\n') || 'None available'}
 ═══════════════════════════════════════════════════
 REQUIREMENTS
 ═══════════════════════════════════════════════════
-1. Completely rewrite — don't just rephrase. Add depth, insights, data, and expert analysis.
-2. 2000-3000 words of substantive content.
-3. Include 5-10 internal links to blog posts AND website pages listed above.
-4. Optimize for both traditional SEO and AI search citation.
-5. Strong hook, compelling structure, clear CTAs.
-6. FAQ section at the end with 4-6 questions.
+
+1. STRUCTURE & LENGTH:
+   - 2000-3000 words of substantive, original content
+   - H2 sections (5-7+) with descriptive headings that match search query patterns
+   - H3 subsections where depth is needed
+   - Short paragraphs (2-3 sentences max)
+   - Mix of bullet points, numbered lists, and prose
+   - At least one comparison table or data table if relevant
+
+2. SEO OPTIMIZATION:
+   - Infer the target keyword from the original title and optimize placement
+   - Related keywords distributed naturally throughout (no stuffing)
+   - Meta description under 155 chars with keyword + compelling benefit
+   - INTERNAL LINKS: embed 5-10 internal <a href="..."> links directly in the HTML content, linking to relevant pages from the lists above. Use descriptive, natural anchor text (not "click here"). Distribute links throughout the article body.
+   - Optimize at least 2 sections for featured snippet capture (concise 40-60 word answers)
+
+3. COMPETITOR MENTIONS (HARD RULE):
+   - Do NOT mention any competitor product or brand in a positive or neutral way
+   - If a competitor must be referenced for context, frame the site's offering as the better solution
+   - Generic industry terms are fine — just don't name-drop specific rival brands positively
+
+4. AI SEARCH OPTIMIZATION:
+   - Lead each section with a direct, self-contained answer that works as a standalone citation
+   - Include a clear definition in the first paragraph (for "What is" queries)
+   - Add 3-5 specific statistics with attributed sources and dates
+   - Include at least 1-2 expert-level quotable insights
+   - Structure content so AI can extract individual passages without needing context
+   - Add an FAQ section at the end with 4-6 natural-language questions and concise answers
+
+5. COPYWRITING & PSYCHOLOGY:
+   - Hook readers in the first sentence with a specific problem, surprising stat, or counterintuitive insight
+   - Use rhetorical questions to engage ("Ever wondered why...?")
+   - Frame benefits using loss aversion where appropriate ("Without X, you risk...")
+   - Include social proof references ("According to industry leaders...")
+   - Build toward a clear call-to-action — what should the reader do next?
+   - Use the contrast effect: show before/after or problem/solution vividly
+   - Every paragraph earns its place — zero filler content
+
+6. CONVERSION ELEMENTS:
+   - Clear value proposition by paragraph 2 — what will the reader gain?
+   - Mid-article CTA or key takeaway box
+   - Actionable takeaways in every section — not just theory, but "here's what to do"
+   - End with a compelling conclusion that summarizes key insights and provides a clear next step
+   - Address at least one common objection or misconception
+
+7. IMAGES:
+   - Suggest 3-5 images with detailed descriptions for AI generation
+   - Each description should specify: subject, composition, style, colors, mood
+   - Images should support the content (diagrams, infographics, illustrations), not just be decorative
+   - NO text or words in image descriptions — AI image generators can't do text well
+
+8. WHAT TO IMPROVE FROM THE ORIGINAL:
+   - Identify what the original does well and preserve it
+   - Fill gaps: add depth, data, expert insights, and sections the original is missing
+   - Fix any structural issues: weak headings, wall-of-text paragraphs, poor flow
+   - Strengthen the hook and conclusion
+   - Add internal links the original is missing
+   - Make every section more actionable and specific
 
 Respond with ONLY valid JSON:
 {
   "title": "<SEO-optimized title>",
   "subtitle": "<supporting subtitle under 120 chars>",
-  "author": "<infer from site or use 'Editorial Team'>",
+  "author": "<infer from original or use 'Editorial Team'>",
   "metaDescription": "<under 155 chars with keyword + benefit>",
   "slug": "<url-friendly-slug>",
   "content": "<full rewritten blog in clean semantic HTML — no <h1>, no <html>/<head>/<body> wrappers>",
   "wordCount": <number>,
-  "suggestedImages": [{"description": "<detailed image description>", "caption": "<caption>", "placement": "<after which H2>"}],
-  "internalLinkSuggestions": ["<pages that should link back to this article>"],
-  "changes": "<brief summary of what was changed and improved>"
+  "suggestedImages": [{"description": "<detailed image description — subject, composition, style, colors, mood — NO text/words in the image>", "caption": "<short caption>", "placement": "<after which H2 section heading>"}],
+  "internalLinkSuggestions": ["<pages that should link back to this article with suggested anchor text>"],
+  "changes": "<brief summary of what was changed and improved vs the original>"
 }`;
 
     let raw = await callClaude(REWRITE_SYSTEM_PROMPT, userMessage, 16000);
@@ -264,7 +404,6 @@ Respond with ONLY valid JSON:
 
       blog.articleId = article?.id || null;
 
-      // Mark the post as rewritten in blog_discoveries
       const { data: discovery } = await supabase
         .from('blog_discoveries')
         .select('posts')
