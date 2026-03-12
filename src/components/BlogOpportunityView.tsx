@@ -141,6 +141,11 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
   const localStorageKey = `blog_opps_backup_${projectId}`;
   const [retrySaving, setRetrySaving] = useState(false);
 
+  const dismissWarning = () => {
+    localStorage.removeItem(localStorageKey);
+    setWarning(null);
+  };
+
   const retrySaveToDb = async () => {
     if (opportunities.length === 0) return;
     setRetrySaving(true);
@@ -150,14 +155,23 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ opportunities, projectId, siteUrl }),
       });
-      const data = await parseJsonOrThrow<{ opportunities?: Record<string, unknown>[]; saved?: number; total?: number; error?: string }>(resp);
+      const text = await resp.text();
+      let data: { opportunities?: Record<string, unknown>[]; saved?: number; total?: number; error?: string; warning?: string };
+      try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text.slice(0, 300) }; }
+
+      if (!resp.ok) {
+        setWarning(`Retry failed (${resp.status}): ${data.error || 'Unknown server error'}`);
+        setRetrySaving(false);
+        return;
+      }
+
       if (data.opportunities && data.opportunities.length > 0) {
         const normalized = data.opportunities.map((o: Record<string, unknown>) => normalizeOpp(o));
         setOpportunities(normalized);
         localStorage.removeItem(localStorageKey);
         setWarning(null);
       } else {
-        setWarning(`Retry failed: ${data.error || 'Could not save to database.'}`);
+        setWarning(`Retry failed: ${data.error || 'Server returned no saved ideas.'}`);
       }
     } catch (err) {
       setWarning(`Retry failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -169,7 +183,7 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
     setLoading(true);
     try {
       const resp = await authenticatedFetch(`${API_ENDPOINTS.db.blogOpportunities}?siteUrl=${encodeURIComponent(siteUrl)}&projectId=${projectId}`);
-      const data = await parseJsonOrThrow<{ opportunities?: Record<string, unknown>[] }>(resp);
+      const data = await parseJsonOrThrow<{ opportunities?: Record<string, unknown>[]; dbError?: string }>(resp);
       const dbOpps = (data.opportunities || []).map((o: Record<string, unknown>) => normalizeOpp(o));
 
       if (dbOpps.length > 0) {
@@ -183,7 +197,8 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
             const backup: Opportunity[] = JSON.parse(backupRaw);
             if (backup.length > 0) {
               setOpportunities(backup);
-              setWarning('Loaded ideas from local backup. Database may not have saved them.');
+              const dbMsg = data.dbError ? ` (DB error: ${data.dbError})` : '';
+              setWarning(`Loaded ideas from local backup. Database may not have saved them.${dbMsg}`);
             }
           } catch {
             localStorage.removeItem(localStorageKey);
@@ -415,7 +430,7 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
               ) : 'Retry Save'}
             </button>
           </div>
-          <button onClick={() => setWarning(null)} className="text-amber-400 hover:text-amber-600 shrink-0 ml-4">
+          <button onClick={dismissWarning} className="text-amber-400 hover:text-amber-600 shrink-0 ml-4">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>

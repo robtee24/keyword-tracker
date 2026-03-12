@@ -26,7 +26,7 @@ export default async function handler(req, res) {
 
     if (error) {
       console.error('[BlogOpps] Fetch error:', error.message);
-      return res.status(200).json({ opportunities: [] });
+      return res.status(200).json({ opportunities: [], dbError: error.message });
     }
     return res.status(200).json({ opportunities: data || [] });
   }
@@ -37,17 +37,25 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'opportunities, projectId, and siteUrl are required' });
     }
 
+    // Quick table check
+    const { error: tableErr } = await supabase.from('blog_opportunities').select('id').limit(1);
+    if (tableErr) {
+      console.error('[BlogOpps] Table check failed:', tableErr.message);
+      return res.status(500).json({
+        error: `Database table "blog_opportunities" is not accessible: ${tableErr.message}. Run migration 007_blog_opportunities.sql in your Supabase SQL Editor.`,
+      });
+    }
+
     const now = new Date().toISOString();
-    const batchId = crypto.randomUUID();
+    let batchId;
+    try { batchId = crypto.randomUUID(); } catch { batchId = `batch_${Date.now()}`; }
     const inserted = [];
+    const errors = [];
 
     for (const opp of opportunities) {
-      const row = {
-        site_url: siteUrl,
-        project_id: projectId,
-        batch_id: batchId,
-        title: opp.title || '',
-        target_keyword: opp.targetKeyword || opp.target_keyword || '',
+      const fullRow = {
+        site_url: siteUrl, project_id: projectId, batch_id: batchId,
+        title: opp.title || '', target_keyword: opp.targetKeyword || opp.target_keyword || '',
         related_keywords: opp.relatedKeywords || opp.related_keywords || [],
         search_volume: opp.searchVolume || opp.search_volume || 'medium',
         estimated_searches: opp.estimatedMonthlySearches || opp.estimated_searches || 0,
@@ -59,30 +67,37 @@ export default async function handler(req, res) {
         created_at: opp.created_at || now,
       };
 
-      const { data, error } = await supabase
-        .from('blog_opportunities')
-        .insert(row)
-        .select()
-        .single();
+      const coreRow = {
+        site_url: siteUrl, project_id: projectId,
+        title: fullRow.title, target_keyword: fullRow.target_keyword,
+        description: fullRow.description, status: fullRow.status,
+        created_at: fullRow.created_at,
+      };
 
-      if (!error && data) {
-        inserted.push(data);
-      } else {
-        const { data: fallbackData, error: fallbackErr } = await supabase
-          .from('blog_opportunities')
-          .insert({ site_url: siteUrl, project_id: projectId, title: row.title, description: row.description, status: row.status, created_at: row.created_at })
-          .select()
-          .single();
-        if (!fallbackErr && fallbackData) inserted.push(fallbackData);
-        else console.error('[BlogOpps] POST insert failed:', opp.title, error?.message, fallbackErr?.message);
+      const minRow = {
+        site_url: siteUrl, project_id: projectId,
+        title: fullRow.title, status: fullRow.status,
+        created_at: fullRow.created_at,
+      };
+
+      let saved = false;
+      for (const [label, payload] of [['full', fullRow], ['core', coreRow], ['minimal', minRow]]) {
+        const { data: d, error: e } = await supabase.from('blog_opportunities').insert(payload).select().single();
+        if (!e && d) { inserted.push(d); saved = true; break; }
+        console.warn(`[BlogOpps] POST insert (${label}) failed for "${fullRow.title}":`, e?.message);
       }
+      if (!saved) errors.push(fullRow.title);
     }
 
     if (inserted.length === 0) {
-      return res.status(500).json({ error: 'Failed to save any opportunities to database.' });
+      return res.status(500).json({ error: `Failed to save any of ${opportunities.length} ideas. The blog_opportunities table may be missing columns. Check Supabase logs.` });
     }
 
-    return res.status(200).json({ opportunities: inserted, batchId, saved: inserted.length, total: opportunities.length });
+    return res.status(200).json({
+      opportunities: inserted, batchId,
+      saved: inserted.length, total: opportunities.length,
+      ...(errors.length > 0 ? { warning: `${errors.length} ideas could not be saved` } : {}),
+    });
   }
 
   if (req.method === 'PUT') {

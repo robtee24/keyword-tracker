@@ -202,84 +202,74 @@ Return JSON: {"opportunities":[{"title":"...","targetKeyword":"...","relatedKeyw
     const now = new Date().toISOString();
 
     if (supabase && opportunities.length > 0) {
+      const { error: tableErr } = await supabase.from('blog_opportunities').select('id').limit(1);
+      if (tableErr) {
+        console.error('[BlogOpps] Table not accessible:', tableErr.message);
+        const fallback = opportunities.map((opp) => ({ ...opp, created_at: now, batch_id: batchId }));
+        return res.status(200).json({
+          opportunities: fallback,
+          batchId,
+          warning: `Ideas generated but the blog_opportunities table is not accessible: ${tableErr.message}. Run migration 007_blog_opportunities.sql in Supabase SQL Editor.`,
+        });
+      }
+
       const fullRow = (opp) => ({
-        site_url: siteUrl,
-        project_id: projectId || null,
-        batch_id: batchId,
-        title: opp.title,
-        target_keyword: opp.targetKeyword,
-        related_keywords: opp.relatedKeywords || [],
-        search_volume: opp.searchVolume || 'medium',
-        estimated_searches: opp.estimatedMonthlySearches || 0,
-        difficulty: opp.difficulty || 'medium',
-        funnel_stage: opp.funnelStage || 'awareness',
-        description: opp.description || '',
-        content_type: opp.contentType || 'guide',
-        status: 'pending',
-        created_at: now,
+        site_url: siteUrl, project_id: projectId || null, batch_id: batchId,
+        title: opp.title, target_keyword: opp.targetKeyword,
+        related_keywords: opp.relatedKeywords || [], search_volume: opp.searchVolume || 'medium',
+        estimated_searches: opp.estimatedMonthlySearches || 0, difficulty: opp.difficulty || 'medium',
+        funnel_stage: opp.funnelStage || 'awareness', description: opp.description || '',
+        content_type: opp.contentType || 'guide', status: 'pending', created_at: now,
       });
 
       const coreRow = (opp) => ({
-        site_url: siteUrl,
-        project_id: projectId || null,
-        title: opp.title,
-        description: opp.description || '',
-        status: 'pending',
-        created_at: now,
+        site_url: siteUrl, project_id: projectId || null,
+        title: opp.title, target_keyword: opp.targetKeyword || '',
+        description: opp.description || '', status: 'pending', created_at: now,
+      });
+
+      const minRow = (opp) => ({
+        site_url: siteUrl, project_id: projectId || null,
+        title: opp.title, status: 'pending', created_at: now,
       });
 
       let inserted = null;
       const errors = [];
 
-      console.log('[BlogOpps] Attempting full insert with all columns...');
-      const result1 = await supabase.from('blog_opportunities').insert(opportunities.map(fullRow)).select();
-      if (!result1.error && result1.data?.length > 0) {
-        inserted = result1.data;
-        console.log(`[BlogOpps] Full insert succeeded: ${inserted.length} rows`);
-      } else {
-        const err1 = result1.error?.message || `Insert returned ${result1.data?.length || 0} rows`;
-        errors.push('Full: ' + err1);
-        console.warn('[BlogOpps] Full insert failed:', err1, '— retrying with core columns');
+      for (const [label, mapper] of [['full', fullRow], ['core', coreRow], ['minimal', minRow]]) {
+        console.log(`[BlogOpps] Attempting ${label} batch insert...`);
+        const result = await supabase.from('blog_opportunities').insert(opportunities.map(mapper)).select();
+        if (!result.error && result.data?.length > 0) {
+          inserted = result.data;
+          console.log(`[BlogOpps] ${label} batch insert succeeded: ${inserted.length} rows`);
+          break;
+        }
+        const errMsg = result.error?.message || `returned ${result.data?.length || 0} rows`;
+        errors.push(`${label}: ${errMsg}`);
+        console.warn(`[BlogOpps] ${label} batch insert failed:`, errMsg);
+      }
 
-        const result2 = await supabase.from('blog_opportunities').insert(opportunities.map(coreRow)).select();
-        if (!result2.error && result2.data?.length > 0) {
-          inserted = result2.data;
-          console.log(`[BlogOpps] Core insert succeeded: ${inserted.length} rows`);
-        } else {
-          const err2 = result2.error?.message || `Insert returned ${result2.data?.length || 0} rows`;
-          errors.push('Core: ' + err2);
-          console.warn('[BlogOpps] Core insert failed:', err2, '— retrying one-by-one');
-
-          const singles = [];
-          for (const opp of opportunities) {
-            const { data: singleData, error: singleErr } = await supabase
-              .from('blog_opportunities')
-              .insert(coreRow(opp))
-              .select()
-              .single();
-            if (!singleErr && singleData) {
-              singles.push(singleData);
-            } else {
-              console.error('[BlogOpps] Single insert failed for:', opp.title, singleErr?.message);
-            }
-          }
-          if (singles.length > 0) {
-            inserted = singles;
-            console.log(`[BlogOpps] Single insert succeeded: ${inserted.length}/${opportunities.length} rows`);
-          } else {
-            errors.push('Single: all failed');
-            console.error('[BlogOpps] All insert methods failed');
-          }
+      if (!inserted) {
+        console.warn('[BlogOpps] All batch inserts failed — trying one-by-one with minimal columns');
+        const singles = [];
+        for (const opp of opportunities) {
+          const { data: d, error: e } = await supabase.from('blog_opportunities').insert(minRow(opp)).select().single();
+          if (!e && d) singles.push(d);
+          else console.error('[BlogOpps] Single insert failed for:', opp.title, e?.message);
+        }
+        if (singles.length > 0) {
+          inserted = singles;
+          console.log(`[BlogOpps] Single insert succeeded: ${inserted.length}/${opportunities.length} rows`);
         }
       }
 
       if (!inserted || inserted.length === 0) {
-        console.error('[BlogOpps] All insert attempts failed:', errors.join(' | '));
+        console.error('[BlogOpps] ALL insert attempts failed:', errors.join(' | '));
         const fallback = opportunities.map((opp) => ({ ...opp, created_at: now, batch_id: batchId }));
         return res.status(200).json({
           opportunities: fallback,
           batchId,
-          warning: 'Ideas generated but could not be saved to database. Use "Retry Save" to try again.',
+          warning: `Ideas generated but could not be saved to database (${errors[0] || 'unknown error'}). Use "Retry Save" to try again.`,
         });
       }
 
