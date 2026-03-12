@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { usePlan } from '../contexts/PlanContext';
+import { useCredits } from '../contexts/CreditsContext';
 import { PlanBadge } from './UpgradePrompt';
 import { InfoTooltip } from './Tooltip';
 
@@ -216,6 +217,86 @@ function SectionHeader({ label, collapsed }: { label: string; collapsed: boolean
       <div className="text-[10px] font-semibold text-apple-text-tertiary uppercase tracking-widest">
         {label}
       </div>
+    </div>
+  );
+}
+
+function SidebarFooter({ collapsed, onSignOut, onNavigate }: { collapsed: boolean; onSignOut: () => void; onNavigate: (view: View) => void }) {
+  const { monthlyUsage, balance, unlimited, loading } = useCredits();
+
+  const used = monthlyUsage.used;
+  const limit = unlimited ? -1 : balance + used;
+  const pct = limit > 0 ? Math.min((used / limit) * 100, 100) : 0;
+
+  const periodLabel = monthlyUsage.periodStart
+    ? new Date(monthlyUsage.periodStart).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    : '';
+
+  const formatDollars = (v: number) => {
+    if (v < 0.01 && v > 0) return `$${v.toFixed(3)}`;
+    return `$${v.toFixed(2)}`;
+  };
+
+  const barColor = pct > 90 ? 'bg-apple-red' : pct > 70 ? 'bg-amber-500' : 'bg-apple-blue';
+
+  return (
+    <div className="px-2 pb-4 shrink-0 space-y-2">
+      {!collapsed && (
+        <div className="px-3 py-2">
+          <PlanBadge />
+        </div>
+      )}
+
+      {!collapsed && !loading && (
+        <button
+          onClick={() => onNavigate('billing')}
+          className="w-full px-3 py-2 rounded-apple-sm hover:bg-apple-fill-secondary transition-colors text-left group"
+        >
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-semibold text-apple-text-tertiary uppercase tracking-wider">AI Usage</span>
+            {periodLabel && (
+              <span className="text-[10px] text-apple-text-tertiary">{periodLabel}</span>
+            )}
+          </div>
+          <div className="w-full h-1.5 bg-apple-fill-secondary rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+              style={{ width: unlimited ? '0%' : `${pct}%` }}
+            />
+          </div>
+          <div className="flex items-center justify-between mt-1">
+            <span className="text-[11px] text-apple-text-secondary font-medium">
+              {formatDollars(used)} used
+            </span>
+            <span className="text-[11px] text-apple-text-tertiary">
+              {unlimited ? 'Unlimited' : `of ${formatDollars(limit)}`}
+            </span>
+          </div>
+        </button>
+      )}
+
+      {collapsed && !loading && (
+        <button
+          onClick={() => onNavigate('billing')}
+          className="w-full flex items-center justify-center px-1 py-2 rounded-apple-sm hover:bg-apple-fill-secondary transition-colors"
+          title={`AI Usage: ${formatDollars(used)} used${unlimited ? ' (Unlimited)' : ` of ${formatDollars(limit)}`}`}
+        >
+          <svg className="w-5 h-5 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+          </svg>
+        </button>
+      )}
+
+      <button
+        onClick={onSignOut}
+        className="w-full flex items-center gap-3 px-3 py-2 rounded-apple-sm text-apple-sm text-apple-text-tertiary hover:text-apple-red hover:bg-red-50/50 transition-all duration-150"
+        title={collapsed ? 'Sign Out' : undefined}
+      >
+        <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+        </svg>
+        {!collapsed && <span>Sign Out</span>}
+      </button>
     </div>
   );
 }
@@ -583,23 +664,7 @@ export default function Sidebar({
         )}
       </nav>
 
-      <div className="px-2 pb-4 shrink-0 space-y-2">
-        {!collapsed && (
-          <div className="px-3 py-2">
-            <PlanBadge />
-          </div>
-        )}
-        <button
-          onClick={onSignOut}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-apple-sm text-apple-sm text-apple-text-tertiary hover:text-apple-red hover:bg-red-50/50 transition-all duration-150"
-          title={collapsed ? 'Sign Out' : undefined}
-        >
-          <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
-          {!collapsed && <span>Sign Out</span>}
-        </button>
-      </div>
+      <SidebarFooter collapsed={collapsed} onSignOut={onSignOut} onNavigate={onNavigate} />
     </div>
   );
 }

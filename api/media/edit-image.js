@@ -7,13 +7,23 @@ export const config = { maxDuration: 120 };
 
 const MODEL_COSTS = {
   'nano-banana-pro-edit': 0.067,
-  'fal-flux-kontext': 0.05,
-  'fal-nano-banana-2-edit': 0.067,
+  'fal-flux-kontext': 0.04,
+  'fal-flux-2-pro-edit': 0.03,
+  'fal-nano-banana-2-edit': 0.08,
+  'fal-gpt-image-1.5-edit': 0.133,
+  'fal-reve-edit': 0.04,
+  'fal-seedream-4.5-edit': 0.04,
+  'fal-qwen-image-2-edit': 0.02,
 };
 
 const FAL_EDIT_MODELS = {
   'fal-flux-kontext': 'fal-ai/flux-pro/kontext',
+  'fal-flux-2-pro-edit': 'fal-ai/flux-2-pro/edit',
   'fal-nano-banana-2-edit': 'fal-ai/nano-banana-2/edit',
+  'fal-gpt-image-1.5-edit': 'fal-ai/gpt-image-1.5/edit',
+  'fal-reve-edit': 'fal-ai/reve/edit',
+  'fal-seedream-4.5-edit': 'fal-ai/bytedance/seedream/v4.5/edit',
+  'fal-qwen-image-2-edit': 'fal-ai/qwen-image-2/edit',
 };
 
 export default async function handler(req, res) {

@@ -48,7 +48,7 @@ import BackgroundTaskIndicator from './components/BackgroundTaskIndicator';
 import UpgradePrompt from './components/UpgradePrompt';
 import SettingsView from './components/SettingsView';
 import BillingView from './components/BillingView';
-import CreditsBar from './components/CreditsBar';
+
 import { CreditsProvider } from './contexts/CreditsContext';
 import BrandView from './components/BrandView';
 import VideoIdeasView from './components/VideoIdeasView';
@@ -867,7 +867,7 @@ function App() {
             <BillingView projectId={activeProject.id} />
           )}
         </main>
-        <CreditsBar onNavigateToBilling={() => handleNavigate('billing' as View)} />
+
       </div>
       <BackgroundTaskIndicator />
     </div>

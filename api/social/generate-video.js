@@ -16,17 +16,23 @@ const PLATFORM_VIDEO_SPECS = {
 const FAL_VIDEO_MODELS = {
   'fal-veo-3.1': 'fal-ai/veo3.1',
   'fal-veo-3.1-fast': 'fal-ai/veo3.1/fast',
+  'fal-sora-2': 'fal-ai/sora-2/text-to-video',
+  'fal-sora-2-pro': 'fal-ai/sora-2/text-to-video/pro',
   'fal-kling-3-pro': 'fal-ai/kling-video/v3/pro/text-to-video',
   'fal-kling-2.5-turbo': 'fal-ai/kling-video/v2.5-turbo/pro/text-to-video',
   'fal-ltx-2.3-fast': 'fal-ai/ltx-2.3/text-to-video/fast',
+  'fal-ltx-2.3-pro': 'fal-ai/ltx-2.3/text-to-video',
 };
 
 const MODEL_COSTS_PER_SEC = {
   'fal-veo-3.1': 0.40,
-  'fal-veo-3.1-fast': 0.20,
-  'fal-kling-3-pro': 0.10,
-  'fal-kling-2.5-turbo': 0.05,
+  'fal-veo-3.1-fast': 0.15,
+  'fal-sora-2': 0.30,
+  'fal-sora-2-pro': 0.50,
+  'fal-kling-3-pro': 0.112,
+  'fal-kling-2.5-turbo': 0.07,
   'fal-ltx-2.3-fast': 0.04,
+  'fal-ltx-2.3-pro': 0.06,
 };
 
 function buildPromptFromShots(shots, platform) {

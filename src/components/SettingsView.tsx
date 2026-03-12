@@ -69,6 +69,9 @@ function ModelDropdown({ label, hint, models, selected, onChange }: ModelDropdow
           </select>
         )}
       </div>
+      {selectedModel?.description && (
+        <p className="text-[11px] text-apple-text-tertiary mt-1 ml-0.5">{selectedModel.description}</p>
+      )}
     </div>
   );
 }

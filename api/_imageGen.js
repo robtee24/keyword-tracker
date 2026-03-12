@@ -21,14 +21,19 @@ const SIZE_TO_ASPECT = {
 
 export const IMAGE_MODELS = {
   'dall-e-3': { provider: 'openai', label: 'DALL-E 3 (OpenAI)', cost: '$0.08' },
-  'imagen-3.0-generate-002': { provider: 'google', label: 'Imagen 3 (Google)', cost: '$0.03' },
   'imagen-4.0-fast-generate-001': { provider: 'google', label: 'Imagen 4 Fast (Google)', cost: '$0.02' },
   'imagen-4.0-generate-001': { provider: 'google', label: 'Imagen 4 (Google)', cost: '$0.04' },
   'imagen-4.0-ultra-generate-001': { provider: 'google', label: 'Imagen 4 Ultra (Google)', cost: '$0.06' },
   'nano-banana-pro': { provider: 'google-gemini', label: 'Nano Banana Pro (Gemini)', cost: '$0.067' },
+  'fal-nano-banana-2': { provider: 'fal', falModelId: 'fal-ai/nano-banana-2', label: 'Nano Banana 2', cost: '$0.08' },
   'fal-flux-schnell': { provider: 'fal', falModelId: 'fal-ai/flux/schnell', label: 'FLUX.1 Schnell', cost: '$0.003' },
   'fal-flux-dev': { provider: 'fal', falModelId: 'fal-ai/flux/dev', label: 'FLUX.1 Dev', cost: '$0.025' },
+  'fal-flux-2-pro': { provider: 'fal', falModelId: 'fal-ai/flux-2-pro', label: 'FLUX 2 Pro', cost: '$0.03' },
   'fal-recraft-v3': { provider: 'fal', falModelId: 'fal-ai/recraft/v3/text-to-image', label: 'Recraft V3', cost: '$0.04' },
+  'fal-recraft-v4-pro': { provider: 'fal', falModelId: 'fal-ai/recraft/v4/pro/text-to-image', label: 'Recraft V4 Pro', cost: '$0.25' },
+  'fal-seedream-4.5': { provider: 'fal', falModelId: 'fal-ai/bytedance/seedream/v4.5', label: 'Seedream 4.5', cost: '$0.03' },
+  'fal-qwen-image-2': { provider: 'fal', falModelId: 'fal-ai/qwen-image-2/text-to-image', label: 'Qwen Image 2.0', cost: '$0.02' },
+  'fal-imagineart-1.5': { provider: 'fal', falModelId: 'fal-ai/imagineart/imagineart-1.5-preview/text-to-image', label: 'ImagineArt 1.5', cost: '$0.04' },
 };
 
 export const VIDEO_MODELS = {

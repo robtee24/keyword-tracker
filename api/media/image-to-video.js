@@ -7,17 +7,25 @@ export const config = { maxDuration: 300 };
 const I2V_MODELS = {
   'fal-veo-3.1-i2v': 'fal-ai/veo3.1/image-to-video',
   'fal-veo-3.1-fast-i2v': 'fal-ai/veo3.1/fast/image-to-video',
+  'fal-sora-2-i2v': 'fal-ai/sora-2/image-to-video',
+  'fal-sora-2-pro-i2v': 'fal-ai/sora-2/image-to-video/pro',
   'fal-kling-3-pro-i2v': 'fal-ai/kling-video/v3/pro/image-to-video',
+  'fal-kling-o3-i2v': 'fal-ai/kling-video/o3/standard/image-to-video',
   'fal-kling-2.5-i2v': 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video',
   'fal-ltx-2.3-i2v': 'fal-ai/ltx-2.3/image-to-video',
+  'fal-wan-2.2-i2v': 'fal-ai/wan/v2.2-a14b/image-to-video',
 };
 
 const MODEL_COSTS_PER_SEC = {
   'fal-veo-3.1-i2v': 0.40,
-  'fal-veo-3.1-fast-i2v': 0.20,
-  'fal-kling-3-pro-i2v': 0.10,
-  'fal-kling-2.5-i2v': 0.05,
+  'fal-veo-3.1-fast-i2v': 0.15,
+  'fal-sora-2-i2v': 0.30,
+  'fal-sora-2-pro-i2v': 0.50,
+  'fal-kling-3-pro-i2v': 0.112,
+  'fal-kling-o3-i2v': 0.07,
+  'fal-kling-2.5-i2v': 0.07,
   'fal-ltx-2.3-i2v': 0.04,
+  'fal-wan-2.2-i2v': 0.05,
 };
 
 export default async function handler(req, res) {

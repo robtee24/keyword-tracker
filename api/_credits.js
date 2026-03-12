@@ -139,6 +139,36 @@ export async function enforceCredits(userId, amount, res) {
 }
 
 /**
+ * Get total usage (credits spent) for the current monthly billing cycle.
+ * Returns { used: number, periodStart: string, periodEnd: string }.
+ */
+export async function getMonthlyUsage(userId) {
+  const supabase = getSupabase();
+  if (!supabase) return { used: 0, periodStart: '', periodEnd: '' };
+
+  const now = new Date();
+  const periodStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const periodEnd = nextMonth.toISOString();
+
+  const { data, error } = await supabase
+    .from('ai_credit_transactions')
+    .select('amount')
+    .eq('user_id', userId)
+    .eq('type', 'usage')
+    .gte('created_at', periodStart)
+    .lt('created_at', periodEnd);
+
+  if (error) {
+    console.error('[Credits] Monthly usage query error:', error.message);
+    return { used: 0, periodStart, periodEnd };
+  }
+
+  const used = (data || []).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  return { used: Math.round(used * 100) / 100, periodStart, periodEnd };
+}
+
+/**
  * Get recent transactions for a user.
  */
 export async function getTransactions(userId, limit = 50) {

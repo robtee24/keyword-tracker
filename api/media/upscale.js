@@ -6,10 +6,12 @@ export const config = { maxDuration: 120 };
 
 const MODEL_COSTS = {
   'fal-seedvr-upscale': 0.02,
+  'fal-topaz-upscale': 0.08,
 };
 
 const UPSCALE_MODELS = {
   'fal-seedvr-upscale': 'fal-ai/seedvr/upscale/image',
+  'fal-topaz-upscale': 'fal-ai/topaz/upscale/image',
 };
 
 export default async function handler(req, res) {

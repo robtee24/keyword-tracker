@@ -96,7 +96,10 @@ export default function MediaGenerationModal({
       FLUX: 'bg-purple-50 text-purple-700', Kling: 'bg-cyan-50 text-cyan-700',
       LTX: 'bg-violet-50 text-violet-700', Recraft: 'bg-rose-50 text-rose-700',
       Bria: 'bg-teal-50 text-teal-700', Pixelcut: 'bg-indigo-50 text-indigo-700',
-      SeedVR: 'bg-orange-50 text-orange-700',
+      SeedVR: 'bg-orange-50 text-orange-700', ByteDance: 'bg-sky-50 text-sky-700',
+      Qwen: 'bg-amber-50 text-amber-700', ImagineArt: 'bg-fuchsia-50 text-fuchsia-700',
+      Reve: 'bg-lime-50 text-lime-700', Topaz: 'bg-yellow-50 text-yellow-700',
+      Wan: 'bg-pink-50 text-pink-700',
     };
     return (
       <span className={`text-[10px] px-1.5 py-0.5 rounded-apple-pill font-medium ${colors[vendor] || 'bg-gray-100 text-gray-600'}`}>
