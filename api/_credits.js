@@ -192,18 +192,24 @@ export async function getCycleUsage(userId) {
 }
 
 /**
- * Get recent transactions for a user.
+ * Get recent transactions for a user, optionally filtered by project.
  */
-export async function getTransactions(userId, limit = 50) {
+export async function getTransactions(userId, limit = 50, projectId = null) {
   const supabase = getSupabase();
   if (!supabase) return [];
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('ai_credit_transactions')
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(limit);
+
+  if (projectId) {
+    query = query.eq('project_id', projectId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error('[Credits] Transactions read error:', error.message);
@@ -211,4 +217,28 @@ export async function getTransactions(userId, limit = 50) {
   }
 
   return data || [];
+}
+
+/**
+ * Get total usage for a specific project (all time).
+ * Returns { used: number }.
+ */
+export async function getProjectUsage(userId, projectId) {
+  const supabase = getSupabase();
+  if (!supabase) return { used: 0 };
+
+  const { data, error } = await supabase
+    .from('ai_credit_transactions')
+    .select('amount')
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .eq('type', 'usage');
+
+  if (error) {
+    console.error('[Credits] Project usage query error:', error.message);
+    return { used: 0 };
+  }
+
+  const used = (data || []).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  return { used: Math.round(used * 100) / 100 };
 }

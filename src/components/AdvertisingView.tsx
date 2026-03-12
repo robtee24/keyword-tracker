@@ -93,7 +93,7 @@ export default function AdvertisingView({ siteUrl, projectId }: AdvertisingViewP
         const resp = await fetch(API_ENDPOINTS.advertising.generate, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ siteUrl, objectives }),
+          body: JSON.stringify({ siteUrl, projectId, objectives }),
         });
         const body = await resp.json().catch(() => null);
         if (!resp.ok) {

@@ -33,7 +33,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { prompt, platform, size, model, context } = req.body || {};
+  const { prompt, platform, size, model, context, projectId } = req.body || {};
   if (!prompt) return res.status(400).json({ error: 'prompt is required' });
 
   const imageSize = size || PLATFORM_IMAGE_SIZES[platform] || '1024x1024';
@@ -71,7 +71,7 @@ VISUAL QUALITY:
       responseFormat,
     });
 
-    await deductCredits(auth.user.id, creditCost, imageModel, 'Social image generation');
+    await deductCredits(auth.user.id, creditCost, imageModel, 'Social image generation', projectId || null);
 
     return res.status(200).json({
       imageUrl,

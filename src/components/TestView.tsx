@@ -86,7 +86,7 @@ interface TestSectionProps {
   defaultPrompt: string;
 }
 
-function TestSection({ title, type, models, needsImage, defaultPrompt }: TestSectionProps) {
+function TestSection({ title, type, models, needsImage, defaultPrompt, projectId }: TestSectionProps & { projectId?: string }) {
   const [prompt, setPrompt] = useState(defaultPrompt);
   const [sourceImage, setSourceImage] = useState('');
   const [results, setResults] = useState<TestResult[]>([]);
@@ -120,6 +120,7 @@ function TestSection({ title, type, models, needsImage, defaultPrompt }: TestSec
         const body: Record<string, string> = { type, model: model.id, prompt };
         if (model.falModelId) body.falModelId = model.falModelId;
         if (needsImage && sourceImage) body.imageUrl = sourceImage;
+        if (projectId) body.projectId = projectId;
 
         const resp = await authenticatedFetch(TEST_ENDPOINT, {
           method: 'POST',
@@ -203,7 +204,7 @@ function TestSection({ title, type, models, needsImage, defaultPrompt }: TestSec
   );
 }
 
-export default function TestView() {
+export default function TestView({ projectId }: { projectId: string }) {
   return (
     <div className="max-w-6xl mx-auto">
       <div className="mb-8">
@@ -221,6 +222,7 @@ export default function TestView() {
         type="textToImage"
         models={TEXT_TO_IMAGE_MODELS}
         defaultPrompt="A serene mountain lake at sunset with snow-capped peaks reflected in crystal clear water"
+        projectId={projectId}
       />
 
       <TestSection
@@ -229,6 +231,7 @@ export default function TestView() {
         models={IMAGE_EDIT_MODELS}
         needsImage
         defaultPrompt="Make the colors more vibrant and add a warm golden glow"
+        projectId={projectId}
       />
 
       <TestSection
@@ -236,6 +239,7 @@ export default function TestView() {
         type="textToVideo"
         models={TEXT_TO_VIDEO_MODELS}
         defaultPrompt="A calm ocean wave rolling onto a sandy beach at golden hour with seagulls flying overhead"
+        projectId={projectId}
       />
 
       <TestSection
@@ -244,6 +248,7 @@ export default function TestView() {
         models={IMAGE_TO_VIDEO_MODELS}
         needsImage
         defaultPrompt="Gently animate this scene with subtle motion and atmospheric effects"
+        projectId={projectId}
       />
     </div>
   );

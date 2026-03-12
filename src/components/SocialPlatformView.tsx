@@ -919,7 +919,7 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
       const resp = await authenticatedFetch(API_ENDPOINTS.social.generateVideo, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, shots, model: videoModel, context: buildContext(true) }),
+        body: JSON.stringify({ platform, shots, model: videoModel, context: buildContext(true), projectId }),
       });
       if (!resp.ok) throw new Error('Video generation failed');
       const data = await resp.json();
@@ -935,7 +935,7 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
       const resp = await authenticatedFetch(API_ENDPOINTS.social.generateImage, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: imagePrompt, platform, model: getModelPreferences(projectId).imageModel, context: buildContext(false) }),
+        body: JSON.stringify({ prompt: imagePrompt, platform, model: getModelPreferences(projectId).imageModel, context: buildContext(false), projectId }),
       });
       if (!resp.ok) throw new Error('Image generation failed');
       const data = await resp.json();

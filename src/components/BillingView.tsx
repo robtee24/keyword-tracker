@@ -11,11 +11,16 @@ const CREDIT_PACKAGES = [
 ];
 
 export default function BillingView({ projectId }: BillingViewProps) {
-  const { balance, unlimited, transactions, refreshCredits } = useCredits();
+  const { balance, unlimited, transactions, usage, projectUsage, refreshCredits } = useCredits();
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  };
+
+  const formatDollars = (v: number) => {
+    if (v < 0.01 && v > 0) return `$${v.toFixed(3)}`;
+    return `$${v.toFixed(2)}`;
   };
 
   const typeColors: Record<string, string> = {
@@ -34,32 +39,44 @@ export default function BillingView({ projectId }: BillingViewProps) {
         </p>
       </div>
 
-      {/* Balance Card */}
-      <div className="card p-6 mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-apple-xs text-apple-text-secondary uppercase tracking-wider font-medium">Current Balance</p>
-            {unlimited ? (
-              <p className="text-3xl font-bold text-emerald-600 mt-1">Unlimited</p>
-            ) : (
-              <p className="text-3xl font-bold text-apple-text mt-1">${balance.toFixed(2)}</p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <svg className="w-10 h-10 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z" />
-            </svg>
-          </div>
+      {/* Usage Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {/* Balance Card */}
+        <div className="card p-5">
+          <p className="text-[10px] text-apple-text-tertiary uppercase tracking-wider font-semibold mb-1">Balance</p>
+          {unlimited ? (
+            <p className="text-2xl font-bold text-emerald-600">Unlimited</p>
+          ) : (
+            <p className="text-2xl font-bold text-apple-text">{formatDollars(balance)}</p>
+          )}
         </div>
 
-        {unlimited && (
-          <div className="mt-4 p-3 rounded-apple bg-emerald-50 border border-emerald-100">
-            <p className="text-apple-sm text-emerald-700">
-              Your account has unlimited AI credits. All AI generation tools are available without restrictions.
-            </p>
-          </div>
-        )}
+        {/* Total Usage Card */}
+        <div className="card p-5">
+          <p className="text-[10px] text-apple-text-tertiary uppercase tracking-wider font-semibold mb-1">Total Usage (Cycle)</p>
+          <p className="text-2xl font-bold text-apple-text">{formatDollars(usage.used)}</p>
+          <p className="text-[11px] text-apple-text-tertiary mt-0.5">
+            {unlimited ? 'Across all projects' : `of ${formatDollars(usage.cycleTotal)}`}
+          </p>
+        </div>
+
+        {/* Project Usage Card */}
+        <div className="card p-5">
+          <p className="text-[10px] text-apple-text-tertiary uppercase tracking-wider font-semibold mb-1">This Project</p>
+          <p className="text-2xl font-bold text-apple-blue">
+            {projectUsage ? formatDollars(projectUsage.used) : formatDollars(0)}
+          </p>
+          <p className="text-[11px] text-apple-text-tertiary mt-0.5">All-time project usage</p>
+        </div>
       </div>
+
+      {unlimited && (
+        <div className="card p-4 mb-6 bg-emerald-50 border-emerald-100">
+          <p className="text-apple-sm text-emerald-700">
+            Your account has unlimited AI credits. All usage is tracked for reporting purposes.
+          </p>
+        </div>
+      )}
 
       {/* Purchase Credits */}
       {!unlimited && (
@@ -87,13 +104,19 @@ export default function BillingView({ projectId }: BillingViewProps) {
 
       {/* Transaction History */}
       <div className="card p-6">
-        <h2 className="text-apple-title3 font-semibold text-apple-text mb-4">Recent Activity</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-apple-title3 font-semibold text-apple-text">
+            Recent Activity
+            <span className="text-apple-xs text-apple-text-tertiary font-normal ml-2">(this project)</span>
+          </h2>
+          <span className="text-[11px] text-apple-text-tertiary">{transactions.length} transactions</span>
+        </div>
         {transactions.length === 0 ? (
           <div className="text-center py-8">
             <svg className="w-10 h-10 mx-auto text-apple-text-tertiary mb-2" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
             </svg>
-            <p className="text-apple-sm text-apple-text-secondary">No transactions yet</p>
+            <p className="text-apple-sm text-apple-text-secondary">No transactions yet for this project</p>
             <p className="text-apple-xs text-apple-text-tertiary mt-1">Activity will appear here as you use AI tools</p>
           </div>
         ) : (

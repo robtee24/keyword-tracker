@@ -21,7 +21,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { imageUrl, model, scale } = req.body || {};
+  const { imageUrl, model, scale, projectId } = req.body || {};
   if (!imageUrl) return res.status(400).json({ error: 'imageUrl is required' });
 
   const upModel = model || 'fal-seedvr-upscale';
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   try {
     const result = await falUpscale(falModelId, { imageUrl, scale: scale || 2 });
     if (!result.imageUrl) throw new Error('No image returned from upscale');
-    await deductCredits(auth.user.id, creditCost, upModel, 'Image upscale');
+    await deductCredits(auth.user.id, creditCost, upModel, 'Image upscale', projectId || null);
     return res.status(200).json({ imageUrl: result.imageUrl, model: upModel });
   } catch (err) {
     console.error('[Upscale] Error:', err.message);

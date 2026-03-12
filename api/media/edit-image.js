@@ -33,7 +33,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { imageUrl, editPrompt, model } = req.body || {};
+  const { imageUrl, editPrompt, model, projectId } = req.body || {};
   if (!imageUrl || !editPrompt) {
     return res.status(400).json({ error: 'imageUrl and editPrompt are required' });
   }
@@ -47,7 +47,7 @@ export default async function handler(req, res) {
   try {
     if (editModel === 'nano-banana-pro-edit') {
       const result = await editImageWithGemini(imageUrl, editPrompt);
-      await deductCredits(auth.user.id, creditCost, editModel, 'Image editing');
+      await deductCredits(auth.user.id, creditCost, editModel, 'Image editing', projectId || null);
       return res.status(200).json({ imageUrl: result.imageUrl, model: editModel });
     }
 
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
     if (falModelId) {
       const result = await falEditImage(falModelId, { imageUrl, prompt: editPrompt });
       if (!result.imageUrl) throw new Error('No image returned from editing model');
-      await deductCredits(auth.user.id, creditCost, editModel, 'Image editing');
+      await deductCredits(auth.user.id, creditCost, editModel, 'Image editing', projectId || null);
       return res.status(200).json({ imageUrl: result.imageUrl, model: editModel });
     }
 

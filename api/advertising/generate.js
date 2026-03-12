@@ -1,6 +1,7 @@
 import { getSupabase } from '../db.js';
 import { authenticateRequest } from '../_config.js';
 import { enforcePlanFeature } from '../_plans.js';
+import { deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 60 };
 
@@ -16,7 +17,7 @@ export default async function handler(req, res) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'OpenAI API key not configured' });
 
-  const { siteUrl, objectives } = req.body || {};
+  const { siteUrl, objectives, projectId } = req.body || {};
   if (!siteUrl) return res.status(400).json({ error: 'siteUrl is required' });
 
   const supabase = getSupabase();
@@ -188,6 +189,10 @@ Respond with ONLY valid JSON:
       else console.log('[Advertising] Saved to DB');
     } catch (err) {
       console.error('[Advertising] DB save exception:', err.message);
+    }
+
+    if (auth) {
+      await deductCredits(auth.user.id, 0.01 * 1.3, 'gpt-4o-mini', 'Ad keyword generation', projectId || null);
     }
 
     return res.status(200).json(result);

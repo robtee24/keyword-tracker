@@ -467,7 +467,7 @@ function App() {
 
   return (
     <PlanProvider isAuthenticated={appState === 'authenticated'}>
-    <CreditsProvider isAuthenticated={appState === 'authenticated'}>
+    <CreditsProvider isAuthenticated={appState === 'authenticated'} projectId={activeProject?.id}>
     <BackgroundTaskProvider>
     <div className="flex h-screen bg-apple-bg overflow-hidden">
       <Sidebar
@@ -868,7 +868,7 @@ function App() {
             <BillingView projectId={activeProject.id} />
           )}
           {currentView === 'test' && activeProject && (
-            <TestView />
+            <TestView projectId={activeProject.id} />
           )}
         </main>
 

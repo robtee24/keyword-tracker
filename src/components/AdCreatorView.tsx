@@ -372,7 +372,7 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
       const resp = await authenticatedFetch(API_ENDPOINTS.advertising.generateAd, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, siteUrl, objective: objective || objectives, targetAudience, valueProposition, creativeType, landingPageUrl, additionalContext }),
+        body: JSON.stringify({ platform, siteUrl, projectId, objective: objective || objectives, targetAudience, valueProposition, creativeType, landingPageUrl, additionalContext }),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || `Server error (${resp.status})`);
@@ -407,6 +407,7 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
           dimensions: firstImageSpec,
           model: getModelPreferences(projectId).imageModel,
           context: buildAdContext(variation),
+          projectId,
         }),
       });
       const data = await resp.json();

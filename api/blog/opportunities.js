@@ -1,6 +1,7 @@
 import { getSupabase } from '../db.js';
 import { authenticateRequest } from '../_config.js';
 import { extractRootDomain } from '../_domainMatch.js';
+import { deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 120 };
 
@@ -196,6 +197,8 @@ Return JSON: {"opportunities":[{"title":"...","targetKeyword":"...","relatedKeyw
 
     const opportunities = parsed.opportunities || [];
     console.log(`[BlogOpps] Parsed ${opportunities.length} opportunities`);
+
+    await deductCredits(auth.user.id, 0.005 * 1.3, 'claude-haiku-4.5', 'Blog opportunity discovery', projectId || null);
 
     const batchId = crypto.randomUUID();
 

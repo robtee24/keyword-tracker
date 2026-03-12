@@ -1,5 +1,6 @@
 import { authenticateRequest } from '../_config.js';
 import { getSupabase } from '../db.js';
+import { deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 120 };
 
@@ -124,10 +125,10 @@ export default async function handler(req, res) {
     }
 
     if (mode === 'single') {
-      return await auditSinglePost(req, res, siteUrl, blogUrl, openaiKey, projectId);
+      return await auditSinglePost(req, res, siteUrl, blogUrl, openaiKey, projectId, auth);
     }
 
-    return await auditFullBlog(req, res, siteUrl, blogUrl, openaiKey, projectId);
+    return await auditFullBlog(req, res, siteUrl, blogUrl, openaiKey, projectId, auth);
   } catch (error) {
     console.error('[BlogAudit] Unhandled error:', error);
     return res.status(500).json({
@@ -137,7 +138,7 @@ export default async function handler(req, res) {
   }
 }
 
-async function auditSinglePost(req, res, siteUrl, blogUrl, apiKey, projectId) {
+async function auditSinglePost(req, res, siteUrl, blogUrl, apiKey, projectId, auth) {
   let content;
   try {
     content = await fetchBlogContent(blogUrl);
@@ -168,12 +169,13 @@ async function auditSinglePost(req, res, siteUrl, blogUrl, apiKey, projectId) {
     console.error('[BlogAudit] DB save failed (non-fatal):', dbErr.message);
   }
 
+  await deductCredits(auth.user.id, 0.005 * 1.3, 'gpt-4o-mini', 'Blog audit', projectId || null);
   return res.status(200).json({
     blogUrl, mode: 'single', ...result,
   });
 }
 
-async function auditFullBlog(req, res, siteUrl, blogRootUrl, apiKey, projectId) {
+async function auditFullBlog(req, res, siteUrl, blogRootUrl, apiKey, projectId, auth) {
   let blogPostUrls = [];
   try {
     blogPostUrls = await discoverBlogPosts(siteUrl, blogRootUrl);
@@ -233,6 +235,7 @@ async function auditFullBlog(req, res, siteUrl, blogRootUrl, apiKey, projectId) 
     await saveBlogAudit(supabase, siteUrl, blogRootUrl, 'overview', overviewResult, projectId);
   }
 
+  await deductCredits(auth.user.id, 0.005 * 1.3, 'gpt-4o-mini', 'Blog audit', projectId || null);
   return res.status(200).json({
     blogUrl: blogRootUrl,
     mode: 'full',

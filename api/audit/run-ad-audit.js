@@ -1,4 +1,6 @@
 import { getSupabase } from '../db.js';
+import { authenticateRequest } from '../_config.js';
+import { deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 60 };
 
@@ -184,6 +186,8 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  const auth = await authenticateRequest(req);
+
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey) return res.status(500).json({ error: 'OpenAI API key not configured' });
 
@@ -229,6 +233,10 @@ export default async function handler(req, res) {
       } catch (dbErr) {
         console.error('DB save error:', dbErr);
       }
+    }
+
+    if (auth) {
+      await deductCredits(auth.user.id, 0.01 * 1.3, 'gpt-4o-mini', 'Ad campaign audit', projectId || null);
     }
 
     return res.status(200).json(result);

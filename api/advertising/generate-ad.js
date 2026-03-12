@@ -1,4 +1,5 @@
 import { authenticateRequest } from '../_config.js';
+import { deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 120 };
 
@@ -139,6 +140,7 @@ export default async function handler(req, res) {
     creativeType,
     landingPageUrl,
     additionalContext,
+    projectId,
   } = req.body || {};
 
   if (!platform || !PLATFORM_SPECS[platform]) {
@@ -228,6 +230,8 @@ Return JSON:
       if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
       else throw new Error('Failed to parse AI response');
     }
+
+    await deductCredits(auth.user.id, 0.03 * 1.3, 'claude-sonnet-4', 'Ad creative generation', projectId || null);
 
     return res.status(200).json({
       ...parsed,

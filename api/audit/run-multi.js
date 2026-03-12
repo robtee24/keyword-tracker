@@ -1,6 +1,7 @@
 import { getSupabase } from '../db.js';
 import { authenticateRequest } from '../_config.js';
 import { checkLimit, checkAuditType, incrementUsage, getUserPlan } from '../_plans.js';
+import { deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 120 };
 
@@ -430,6 +431,7 @@ export default async function handler(req, res) {
   const successCount = auditResults.filter((r) => !r.error).length;
   if (auth && successCount > 0) {
     await incrementUsage(auth.user.id, 'page_audits', successCount);
+    await deductCredits(auth.user.id, 0.08 * 1.3, 'claude-sonnet-4', 'Multi-page audit', projectId || null);
   }
 
   const output = auditResults.map((r) => ({

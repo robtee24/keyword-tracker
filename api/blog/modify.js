@@ -1,5 +1,6 @@
 import { getSupabase } from '../db.js';
 import { authenticateRequest } from '../_config.js';
+import { deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 120 };
 
@@ -38,7 +39,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { articleId, currentContent, currentTitle, modifyPrompt } = req.body || {};
+  const { articleId, currentContent, currentTitle, modifyPrompt, projectId } = req.body || {};
   if (!articleId || !currentContent || !modifyPrompt) {
     return res.status(400).json({ error: 'articleId, currentContent, and modifyPrompt are required' });
   }
@@ -99,6 +100,7 @@ Respond with ONLY valid JSON:
       return res.status(500).json({ error: error.message });
     }
 
+    await deductCredits(auth.user.id, 0.03 * 1.3, 'claude-sonnet-4', 'Blog article modification', projectId || null);
     return res.status(200).json({ article: updated, changesSummary: result.changesSummary });
   } catch (err) {
     console.error('[BlogModify] Error:', err.message);

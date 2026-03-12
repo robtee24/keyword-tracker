@@ -1,6 +1,7 @@
 import { getSupabase } from '../db.js';
 import { authenticateRequest } from '../_config.js';
 import { getBrandContext } from '../_brand.js';
+import { deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 300 };
 
@@ -497,6 +498,7 @@ Respond with ONLY valid JSON:
       }
     }
 
+    await deductCredits(auth.user.id, 0.15 * 1.3, 'claude-sonnet-4', 'Blog article rewrite', projectId || null);
     return res.status(200).json({ blog });
   } catch (err) {
     console.error('[BlogRewrite] Error:', err.message);

@@ -1,3 +1,6 @@
+import { authenticateRequest } from '../_config.js';
+import { deductCredits } from '../_credits.js';
+
 export const config = {
   maxDuration: 60,
 };
@@ -13,7 +16,8 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { siteUrl } = req.body || {};
+  const auth = await authenticateRequest(req);
+  const { siteUrl, projectId } = req.body || {};
   if (!siteUrl) return res.status(400).json({ error: 'siteUrl is required' });
 
   const openaiKey = process.env.OPENAI_API_KEY;
@@ -59,6 +63,10 @@ export default async function handler(req, res) {
     // 4. Ask GPT to fill out objectives
     const prompt = buildObjectivesPrompt(siteUrl, siteText);
     const result = await callOpenAI(openaiKey, prompt);
+
+    if (auth) {
+      await deductCredits(auth.user.id, 0.05 * 1.3, 'gpt-4o', 'Site analysis', projectId || null);
+    }
 
     return res.status(200).json({ objectives: result });
   } catch (err) {

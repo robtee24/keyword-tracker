@@ -89,6 +89,7 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
           descriptions,
           model: getModelPreferences(projectId).imageModel,
           context: { contentType: 'editorial', style: 'photorealistic', mood: 'professional', purpose: 'blog_image', subject: title || '', includesText: false, includesPeople: false },
+          projectId,
         }),
       });
       const data = await parseJsonOrThrow<{ images?: unknown[] }>(resp);
@@ -110,7 +111,7 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.generateBrief, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl, keywords: keywords.trim() }),
+        body: JSON.stringify({ siteUrl, projectId, keywords: keywords.trim() }),
       });
       const data = await parseJsonOrThrow<{ brief?: string }>(resp);
       return data.brief || '';

@@ -1,3 +1,5 @@
+import { authenticateRequest } from '../_config.js';
+import { deductCredits } from '../_credits.js';
 import { getBrandContext } from '../_brand.js';
 
 export const config = { maxDuration: 120 };
@@ -6,6 +8,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  const auth = await authenticateRequest(req);
   const { siteUrl, projectId, pageUrl, currentHtml, modifications, currentTitle, currentMeta } = req.body || {};
 
   if (!currentHtml || !modifications) {
@@ -84,6 +87,11 @@ Apply the requested modifications to the HTML above and return the updated page.
     }
 
     const parsed = JSON.parse(cleaned);
+
+    if (auth) {
+      await deductCredits(auth.user.id, 0.05 * 1.3, 'claude-sonnet-4', 'Page modification', projectId || null);
+    }
+
     return res.status(200).json({
       result: {
         title: parsed.title || currentTitle || '',

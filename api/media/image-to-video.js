@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { imageUrl, prompt, model, duration, aspectRatio, resolution, generateAudio } = req.body || {};
+  const { imageUrl, prompt, model, duration, aspectRatio, resolution, generateAudio, projectId } = req.body || {};
   if (!imageUrl) return res.status(400).json({ error: 'imageUrl is required' });
 
   const i2vModel = model || 'fal-veo-3.1-fast-i2v';
@@ -59,7 +59,7 @@ export default async function handler(req, res) {
 
     if (!result.videoUrl) throw new Error('No video returned from I2V model');
 
-    await deductCredits(auth.user.id, creditCost, i2vModel, `Image-to-video (${durationNum}s)`);
+    await deductCredits(auth.user.id, creditCost, i2vModel, `Image-to-video (${durationNum}s)`, projectId || null);
 
     return res.status(200).json({
       videoUrl: result.videoUrl,

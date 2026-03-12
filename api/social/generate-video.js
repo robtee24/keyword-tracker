@@ -56,7 +56,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { platform, prompt, shots, duration, model, aspectRatio: overrideAspect, resolution: overrideRes, generateAudio, context } = req.body || {};
+  const { platform, prompt, shots, duration, model, aspectRatio: overrideAspect, resolution: overrideRes, generateAudio, context, projectId } = req.body || {};
 
   let videoPrompt = buildPromptFromShots(shots, platform, context);
   if (!videoPrompt && prompt) {
@@ -92,7 +92,7 @@ export default async function handler(req, res) {
 
       if (!result.videoUrl) throw new Error('No video returned');
 
-      await deductCredits(auth.user.id, creditCost, videoModel, `Social video generation (${durationNum}s)`);
+      await deductCredits(auth.user.id, creditCost, videoModel, `Social video generation (${durationNum}s)`, projectId || null);
 
       return res.status(200).json({
         videoUrl: result.videoUrl,
@@ -151,7 +151,7 @@ export default async function handler(req, res) {
     const base64 = videoBuffer.toString('base64');
     const videoUrl = `data:video/mp4;base64,${base64}`;
 
-    await deductCredits(auth.user.id, ltxCreditCost, 'ltx-2-fast', `Social video LTX (${videoDuration}s)`);
+    await deductCredits(auth.user.id, ltxCreditCost, 'ltx-2-fast', `Social video LTX (${videoDuration}s)`, projectId || null);
 
     return res.status(200).json({
       videoUrl,

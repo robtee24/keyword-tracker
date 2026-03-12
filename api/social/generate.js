@@ -1,5 +1,6 @@
 import { getSupabase } from '../db.js';
 import { authenticateRequest } from '../_config.js';
+import { deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 60 };
 
@@ -246,6 +247,7 @@ For multi-part content, clearly number or label each section.`;
       });
     }
 
+    await deductCredits(auth.user.id, 0.03 * 1.3, 'claude-sonnet-4', 'Social post generation', projectId || null);
     return res.status(200).json(result);
   } catch (err) {
     console.error('[SocialGenerate] Error:', err.message);

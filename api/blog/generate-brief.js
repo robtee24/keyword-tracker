@@ -1,4 +1,5 @@
 import { authenticateRequest } from '../_config.js';
+import { deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 30 };
 
@@ -12,7 +13,7 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
 
-  const { siteUrl, keywords } = req.body || {};
+  const { siteUrl, keywords, projectId } = req.body || {};
   if (!keywords) return res.status(400).json({ error: 'keywords are required' });
 
   try {
@@ -48,6 +49,7 @@ Respond with a single paragraph (3-5 sentences) that describes the article topic
     const data = await response.json();
     const brief = data.content?.[0]?.text || '';
 
+    await deductCredits(auth.user.id, 0.008 * 1.3, 'claude-sonnet-4', 'Blog brief generation', projectId || null);
     return res.status(200).json({ brief });
   } catch (err) {
     console.error('[BlogBrief] Error:', err.message);

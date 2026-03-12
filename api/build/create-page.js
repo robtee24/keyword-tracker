@@ -1,4 +1,5 @@
 import { authenticateRequest } from '../_config.js';
+import { deductCredits } from '../_credits.js';
 import { enforcePlanLimit, incrementUsage } from '../_plans.js';
 import { getBrandContext } from '../_brand.js';
 
@@ -297,6 +298,7 @@ Respond with ONLY valid JSON:
 
     if (auth) {
       await incrementUsage(auth.user.id, 'page_builds');
+      await deductCredits(auth.user.id, 0.12 * 1.3, 'claude-sonnet-4', 'Page creation', projectId || null);
     }
 
     return res.status(200).json({ page });

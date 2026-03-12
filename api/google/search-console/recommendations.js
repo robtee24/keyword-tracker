@@ -1,4 +1,5 @@
 import { authenticateRequest } from '../../_config.js';
+import { deductCredits } from '../../_credits.js';
 import { getSupabase } from '../../db.js';
 
 export const config = {
@@ -24,7 +25,7 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  const { keyword, pages, siteUrl } = req.body || {};
+  const { keyword, pages, siteUrl, projectId } = req.body || {};
 
   if (!keyword || !pages || !siteUrl) {
     return res.status(400).json({ error: 'keyword, pages, and siteUrl are required' });
@@ -114,6 +115,8 @@ export default async function handler(req, res) {
         );
       if (dbErr) console.error('Failed to save recommendation to DB:', dbErr.message);
     }
+
+    await deductCredits(auth.user.id, 0.08 * 1.3, 'gpt-4o', 'SEO recommendations', projectId || null);
 
     return res.status(200).json({ ...scanResult, scannedAt });
   } catch (error) {

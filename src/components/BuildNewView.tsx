@@ -129,6 +129,7 @@ export default function BuildNewView({ siteUrl, projectId }: BuildNewViewProps) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           siteUrl,
+          projectId,
           objectives,
           existingPages: sitemapData.urls || [],
         }),

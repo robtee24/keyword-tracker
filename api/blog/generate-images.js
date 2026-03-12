@@ -70,7 +70,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { descriptions, model, context } = req.body || {};
+  const { descriptions, model, context, projectId } = req.body || {};
   if (!descriptions || !Array.isArray(descriptions) || descriptions.length === 0) {
     return res.status(400).json({ error: 'descriptions array is required' });
   }
@@ -100,7 +100,7 @@ export default async function handler(req, res) {
       console.log(`[BlogImages] Generating image ${i + 1}/${toGenerate.length}`);
       const { imageUrl } = await generateImage(prompt, { model: imageModel, size: '1792x1024' });
 
-      await deductCredits(auth.user.id, creditCost, imageModel, `Blog image ${i + 1}/${toGenerate.length}`);
+      await deductCredits(auth.user.id, creditCost, imageModel, `Blog image ${i + 1}/${toGenerate.length}`, projectId || null);
 
       if (caption) {
         try {

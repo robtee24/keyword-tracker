@@ -1,6 +1,7 @@
 import { authenticateRequest } from '../_config.js';
 import { getBrandContext } from '../_brand.js';
 import { getSupabase } from '../db.js';
+import { deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 120 };
 
@@ -341,6 +342,8 @@ RESPOND WITH ONLY VALID JSON:
         }
       }
     }
+
+    await deductCredits(auth.user.id, 0.08 * 1.3, 'claude-sonnet-4', 'Video prompt creation', projectId || null);
 
     return res.status(200).json(result);
   } catch (err) {

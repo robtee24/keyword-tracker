@@ -42,7 +42,7 @@ export default function MediaEditButton({
       const resp = await authenticatedFetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl }),
+        body: JSON.stringify({ imageUrl, projectId }),
       });
 
       if (!resp.ok) throw new Error('Operation failed');
@@ -71,6 +71,7 @@ export default function MediaEditButton({
             imageUrl,
             editPrompt: settings.prompt,
             model: settings.model,
+            projectId,
           }),
         });
 
@@ -90,6 +91,7 @@ export default function MediaEditButton({
             aspectRatio: settings.aspectRatio,
             resolution: settings.resolution,
             generateAudio: settings.generateAudio,
+            projectId,
           }),
         });
 

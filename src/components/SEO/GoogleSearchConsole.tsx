@@ -475,7 +475,7 @@ export default function GoogleSearchConsole({
         const resp = await fetch(API_ENDPOINTS.ai.classifyIntents, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ siteUrl, keywords, objectives: objectives || {} }),
+          body: JSON.stringify({ siteUrl, projectId, keywords, objectives: objectives || {} }),
         });
         const result = resp.ok ? await resp.json() : null;
         if (!cancelled && result?.intents) {

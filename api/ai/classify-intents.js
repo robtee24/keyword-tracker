@@ -1,3 +1,5 @@
+import { authenticateRequest } from '../_config.js';
+import { deductCredits } from '../_credits.js';
 import { getSupabase } from '../db.js';
 
 export const config = { maxDuration: 60 };
@@ -14,7 +16,8 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { siteUrl, keywords, objectives } = req.body || {};
+  const auth = await authenticateRequest(req);
+  const { siteUrl, keywords, objectives, projectId } = req.body || {};
   if (!siteUrl || !Array.isArray(keywords) || keywords.length === 0) {
     return res.status(400).json({ error: 'siteUrl and keywords array are required' });
   }
@@ -105,6 +108,11 @@ export default async function handler(req, res) {
   }
 
   const allIntents = { ...cached, ...freshIntents };
+
+  if (auth) {
+    await deductCredits(auth.user.id, 0.005 * 1.3, 'gpt-4o-mini', 'Keyword intent classification', projectId || null);
+  }
+
   return res.status(200).json({ intents: allIntents, classified: Object.keys(freshIntents).length });
 }
 

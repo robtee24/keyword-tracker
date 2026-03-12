@@ -21,7 +21,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { imageUrl, model } = req.body || {};
+  const { imageUrl, model, projectId } = req.body || {};
   if (!imageUrl) return res.status(400).json({ error: 'imageUrl is required' });
 
   const bgModel = model || 'fal-bria-bg-remove';
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   try {
     const result = await falBackgroundRemove(falModelId, { imageUrl });
     if (!result.imageUrl) throw new Error('No image returned from background removal');
-    await deductCredits(auth.user.id, creditCost, bgModel, 'Background removal');
+    await deductCredits(auth.user.id, creditCost, bgModel, 'Background removal', projectId || null);
     return res.status(200).json({ imageUrl: result.imageUrl, model: bgModel });
   } catch (err) {
     console.error('[BgRemove] Error:', err.message);

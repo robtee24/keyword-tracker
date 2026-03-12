@@ -165,7 +165,7 @@ export default function ObjectivesView({ projectId, projectName, siteUrl }: Obje
         const resp = await fetch(API_ENDPOINTS.ai.analyzeSite, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ siteUrl }),
+          body: JSON.stringify({ siteUrl, projectId }),
         });
 
         if (!resp.ok) {

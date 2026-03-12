@@ -329,6 +329,7 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
           videoStyle: project.video_style,
           characterBibles: project.character_bibles || [],
           colorGrading: project.color_grading || '',
+          projectId,
         }),
       });
       const data = await parseJsonOrThrow<{ updatedPrompt: string; changesMade: string }>(resp);
@@ -378,6 +379,7 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
             durationSeconds: scene.durationSeconds || 8,
             model: getModelPreferences(projectId).videoModel,
             context: buildVideoContext(project, scene),
+            projectId,
           }),
         });
         const data = await parseJsonOrThrow<{ operationName: string; sceneIndex: number }>(resp);
@@ -402,7 +404,7 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
         const resp = await authenticatedFetch(API_ENDPOINTS.videoAds.generateVideo, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoProjectId: vpId, generateAll: true, model: getModelPreferences(projectId).videoModel, context: buildVideoContext(project) }),
+          body: JSON.stringify({ videoProjectId: vpId, generateAll: true, model: getModelPreferences(projectId).videoModel, context: buildVideoContext(project), projectId }),
         });
         const data = await parseJsonOrThrow<{ operations: Array<{ sceneIndex: number; operationName?: string; status: string; error?: string }> }>(resp);
 
@@ -491,6 +493,7 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
             videoStyle: project.video_style,
             characterBibles: project.character_bibles || [],
             colorGrading: project.color_grading || '',
+            projectId,
           }),
         });
         const data = await parseJsonOrThrow<{ updatedPrompt: string; changesMade: string }>(resp);

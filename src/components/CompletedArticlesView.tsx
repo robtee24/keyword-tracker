@@ -271,7 +271,7 @@ export default function CompletedArticlesView({ siteUrl, projectId, highlightArt
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.modify, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ articleId: article.id, currentContent: article.content, currentTitle: article.title, modifyPrompt: prompt }),
+        body: JSON.stringify({ articleId: article.id, projectId, currentContent: article.content, currentTitle: article.title, modifyPrompt: prompt }),
       });
       const data = await parseJsonOrThrow<{ article?: Article; error?: string }>(resp);
       if (!data.article) throw new Error('No result returned');
@@ -327,7 +327,7 @@ export default function CompletedArticlesView({ siteUrl, projectId, highlightArt
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.generateImages, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ descriptions: article.suggested_images, model: getModelPreferences(projectId).imageModel, context }),
+        body: JSON.stringify({ descriptions: article.suggested_images, model: getModelPreferences(projectId).imageModel, context, projectId }),
       });
       const data = await parseJsonOrThrow<{ images?: ArticleImage[]; errors?: string[]; error?: string }>(resp);
 

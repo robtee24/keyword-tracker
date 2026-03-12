@@ -1,5 +1,6 @@
-import { getSupabase } from '../db.js';
 import { authenticateRequest } from '../_config.js';
+import { deductCredits } from '../_credits.js';
+import { getSupabase } from '../db.js';
 
 export const config = { maxDuration: 120 };
 
@@ -287,6 +288,8 @@ LOGO URLs: ${logos.map(l => l.url).join(', ') || 'none found'}`;
         await supabase.from('brand_profiles').insert(profile);
       }
     }
+
+    await deductCredits(auth.user.id, 0.03 * 1.3, 'claude-sonnet-4', 'Brand analysis', projectId || null);
 
     return res.status(200).json({ profile });
   } catch (err) {

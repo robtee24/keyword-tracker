@@ -17,7 +17,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { imageDescription, textOverlay, platform, dimensions, model, context } = req.body || {};
+  const { imageDescription, textOverlay, platform, dimensions, model, context, projectId } = req.body || {};
   if (!imageDescription) return res.status(400).json({ error: 'imageDescription is required' });
 
   const sizeMap = {
@@ -67,7 +67,7 @@ ${context?.includesText ? '- Leave generous negative space for text overlay (esp
       size,
     });
 
-    await deductCredits(auth.user.id, creditCost, imageModel, 'Ad image generation');
+    await deductCredits(auth.user.id, creditCost, imageModel, 'Ad image generation', projectId || null);
 
     return res.status(200).json({ imageUrl, revisedPrompt });
   } catch (err) {

@@ -1,6 +1,7 @@
 import { getSupabase } from '../db.js';
 import { authenticateRequest } from '../_config.js';
 import { enforcePlanLimit, incrementUsage } from '../_plans.js';
+import { deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 120 };
 
@@ -371,6 +372,7 @@ HTML FORMAT RULES for the "content" field:
       await incrementUsage(auth.user.id, 'blog_posts');
     }
 
+    if (auth) await deductCredits(auth.user.id, 0.15 * 1.3, 'claude-sonnet-4', 'Blog article generation', projectId || null);
     return res.status(200).json({ blog });
   } catch (err) {
     console.error('[BlogGenerate] Error:', err.message);

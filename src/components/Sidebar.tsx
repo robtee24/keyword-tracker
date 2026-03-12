@@ -223,12 +223,13 @@ function SectionHeader({ label, collapsed }: { label: string; collapsed: boolean
 }
 
 function SidebarFooter({ collapsed, onSignOut, onNavigate }: { collapsed: boolean; onSignOut: () => void; onNavigate: (view: View) => void }) {
-  const { usage, unlimited, loading } = useCredits();
+  const { usage, projectUsage, unlimited, loading } = useCredits();
 
-  const used = usage.used;
+  const totalUsed = usage.used;
+  const projectUsed = projectUsage?.used ?? 0;
   const cycleTotal = usage.cycleTotal;
   const hasCycle = cycleTotal > 0;
-  const pct = hasCycle ? Math.min((used / cycleTotal) * 100, 100) : 0;
+  const pct = hasCycle ? Math.min((totalUsed / cycleTotal) * 100, 100) : 0;
 
   const formatDollars = (v: number) => {
     if (v < 0.01 && v > 0) return `$${v.toFixed(3)}`;
@@ -256,17 +257,22 @@ function SidebarFooter({ collapsed, onSignOut, onNavigate }: { collapsed: boolea
           <div className="w-full h-1.5 bg-apple-fill-secondary rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-500 ${unlimited ? 'bg-apple-blue' : barColor}`}
-              style={{ width: unlimited ? (used > 0 ? '8%' : '0%') : `${pct}%`, minWidth: used > 0 ? '4px' : '0' }}
+              style={{ width: unlimited ? (totalUsed > 0 ? '8%' : '0%') : `${pct}%`, minWidth: totalUsed > 0 ? '4px' : '0' }}
             />
           </div>
           <div className="flex items-center justify-between mt-1">
             <span className="text-[11px] text-apple-text-secondary font-medium">
-              {formatDollars(used)} used
+              {formatDollars(totalUsed)} total
             </span>
             <span className="text-[11px] text-apple-text-tertiary">
               {unlimited ? 'Unlimited' : `of ${formatDollars(cycleTotal)}`}
             </span>
           </div>
+          {projectUsed > 0 && (
+            <div className="mt-0.5">
+              <span className="text-[10px] text-apple-blue font-medium">{formatDollars(projectUsed)} this project</span>
+            </div>
+          )}
         </button>
       )}
 
@@ -274,7 +280,7 @@ function SidebarFooter({ collapsed, onSignOut, onNavigate }: { collapsed: boolea
         <button
           onClick={() => onNavigate('billing')}
           className="w-full flex items-center justify-center px-1 py-2 rounded-apple-sm hover:bg-apple-fill-secondary transition-colors"
-          title={`AI Usage: ${formatDollars(used)} used${unlimited ? ' (Unlimited)' : ` of ${formatDollars(cycleTotal)}`}`}
+          title={`AI Usage: ${formatDollars(totalUsed)} total${projectUsed > 0 ? ` (${formatDollars(projectUsed)} this project)` : ''}${unlimited ? ' — Unlimited' : ` of ${formatDollars(cycleTotal)}`}`}
         >
           <svg className="w-5 h-5 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />

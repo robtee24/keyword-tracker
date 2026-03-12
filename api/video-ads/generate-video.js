@@ -93,7 +93,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Authentication required' });
 
-  const { videoProjectId, sceneIndex, generateAll, prompt, aspectRatio, durationSeconds, model: videoModel, context } = req.body || {};
+  const { videoProjectId, sceneIndex, generateAll, prompt, aspectRatio, durationSeconds, model: videoModel, context, projectId } = req.body || {};
 
   function enhancePrompt(rawPrompt) {
     if (!context) return rawPrompt;
@@ -132,7 +132,7 @@ export default async function handler(req, res) {
           });
         }
 
-        await deductCredits(auth.user.id, creditCost, videoModel, `Video ad scene ${sceneIndex}`, videoProjectId);
+        await deductCredits(auth.user.id, creditCost, videoModel, `Video ad scene ${sceneIndex}`, projectId || videoProjectId);
 
         return res.status(200).json({ videoUrl, sceneIndex, status: 'completed', model: videoModel });
       } catch (err) {
@@ -163,7 +163,7 @@ export default async function handler(req, res) {
         });
       }
 
-      await deductCredits(auth.user.id, creditCost, videoModel || 'veo-3.1-generate-preview', `Video ad scene ${sceneIndex}`, videoProjectId);
+      await deductCredits(auth.user.id, creditCost, videoModel || 'veo-3.1-generate-preview', `Video ad scene ${sceneIndex}`, projectId || videoProjectId);
 
       return res.status(200).json({ operationName, sceneIndex, status: 'generating' });
     } catch (err) {
@@ -225,7 +225,7 @@ export default async function handler(req, res) {
 
           if (videoUrl) {
             const sceneCost = costPerSec * (scene.durationSeconds || 8) * 1.3;
-            await deductCredits(auth.user.id, sceneCost, videoModel, `Video ad scene ${i}`, videoProjectId);
+            await deductCredits(auth.user.id, sceneCost, videoModel, `Video ad scene ${i}`, projectId || videoProjectId);
           }
 
           operations.push({ sceneIndex: i, status: videoUrl ? 'completed' : 'failed', videoUrl });
@@ -258,7 +258,7 @@ export default async function handler(req, res) {
           });
 
           const sceneCost = costPerSec * (scene.durationSeconds || 8) * 1.3;
-          await deductCredits(auth.user.id, sceneCost, videoModel || 'veo-3.1-generate-preview', `Video ad scene ${i}`, videoProjectId);
+          await deductCredits(auth.user.id, sceneCost, videoModel || 'veo-3.1-generate-preview', `Video ad scene ${i}`, projectId || videoProjectId);
 
           operations.push({ sceneIndex: i, operationName, status: 'generating' });
         }

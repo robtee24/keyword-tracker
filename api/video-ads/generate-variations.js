@@ -1,4 +1,5 @@
 import { authenticateRequest } from '../_config.js';
+import { deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 120 };
 
@@ -103,6 +104,8 @@ Respond with ONLY valid JSON:
       if (jsonMatch) result = JSON.parse(jsonMatch[0]);
       else throw new Error('Failed to parse AI response');
     }
+
+    await deductCredits(auth.user.id, 0.03 * 1.3, 'claude-sonnet-4', 'Video variation generation', projectId || null);
 
     return res.status(200).json(result);
   } catch (err) {

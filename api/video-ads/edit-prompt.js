@@ -1,4 +1,5 @@
 import { authenticateRequest } from '../_config.js';
+import { deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 60 };
 
@@ -9,7 +10,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Authentication required' });
 
-  const { currentPrompt, editInstruction, sceneDescription, voiceStyle, videoStyle, characterBibles, colorGrading } = req.body || {};
+  const { currentPrompt, editInstruction, sceneDescription, voiceStyle, videoStyle, characterBibles, colorGrading, projectId } = req.body || {};
   if (!currentPrompt || !editInstruction) {
     return res.status(400).json({ error: 'currentPrompt and editInstruction required' });
   }
@@ -86,6 +87,8 @@ Apply the user's edit to the prompt. Keep all character bible descriptions EXACT
       if (jsonMatch) result = JSON.parse(jsonMatch[0]);
       else throw new Error('Failed to parse AI response');
     }
+
+    await deductCredits(auth.user.id, 0.01 * 1.3, 'claude-sonnet-4', 'Video prompt editing', projectId || null);
 
     return res.status(200).json(result);
   } catch (err) {

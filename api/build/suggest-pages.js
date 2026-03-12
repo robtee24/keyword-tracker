@@ -1,3 +1,6 @@
+import { authenticateRequest } from '../_config.js';
+import { deductCredits } from '../_credits.js';
+
 export const config = { maxDuration: 60 };
 
 async function callClaude(systemPrompt, userMessage, maxTokens = 8000) {
@@ -32,7 +35,8 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { siteUrl, objectives, existingPages } = req.body || {};
+  const auth = await authenticateRequest(req);
+  const { siteUrl, objectives, existingPages, projectId } = req.body || {};
   if (!siteUrl) return res.status(400).json({ error: 'siteUrl required' });
 
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
@@ -94,6 +98,10 @@ Respond with ONLY valid JSON:
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
       if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
       else throw new Error('Failed to parse AI response');
+    }
+
+    if (auth) {
+      await deductCredits(auth.user.id, 0.03 * 1.3, 'claude-sonnet-4', 'Page suggestions', projectId || null);
     }
 
     return res.status(200).json({ suggestions: parsed.suggestions || [] });
