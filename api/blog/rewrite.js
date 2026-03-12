@@ -413,9 +413,20 @@ Respond with ONLY valid JSON:
         .maybeSingle();
 
       if (discovery?.posts) {
+        const now = new Date().toISOString();
         const updatedPosts = discovery.posts.map(p => {
           if (p.url === postUrl) {
-            return { ...p, rewrittenAt: new Date().toISOString(), articleId: article?.id };
+            const existingRewrites = p.rewrites || [];
+            if (!existingRewrites.length && p.rewrittenAt && p.articleId) {
+              existingRewrites.push({ articleId: p.articleId, rewrittenAt: p.rewrittenAt });
+            }
+            const newRewrite = { articleId: article?.id, rewrittenAt: now };
+            return {
+              ...p,
+              rewrittenAt: now,
+              articleId: article?.id,
+              rewrites: [newRewrite, ...existingRewrites.filter(r => r.articleId !== article?.id)],
+            };
           }
           return p;
         });

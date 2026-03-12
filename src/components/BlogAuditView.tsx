@@ -18,6 +18,11 @@ import { parseJsonOrThrow } from '../utils/apiResponse';
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
+interface RewriteEntry {
+  articleId: string;
+  rewrittenAt: string;
+}
+
 interface BlogPost {
   url: string;
   title: string;
@@ -27,6 +32,7 @@ interface BlogPost {
   auditedAt?: string;
   rewrittenAt?: string;
   articleId?: string;
+  rewrites?: RewriteEntry[];
 }
 
 interface AuditResult {
@@ -258,11 +264,20 @@ export default function BlogAuditView({ siteUrl, projectId, onNavigateToArticle 
       });
       const data = await parseJsonOrThrow<{ blog?: { articleId?: string } }>(resp);
 
+      const now = new Date().toISOString();
+      const newArticleId = data.blog?.articleId;
+
       setBlogs(prev => prev.map(b => {
         if (b.root_path !== blog.root_path) return b;
-        const updatedPosts = b.posts.map(p =>
-          p.url === postUrl ? { ...p, rewrittenAt: new Date().toISOString(), articleId: data.blog?.articleId } : p
-        );
+        const updatedPosts = b.posts.map(p => {
+          if (p.url !== postUrl) return p;
+          const newRewrite: RewriteEntry = { articleId: newArticleId || '', rewrittenAt: now };
+          const existingRewrites = p.rewrites || [];
+          if (!existingRewrites.length && p.rewrittenAt && p.articleId) {
+            existingRewrites.push({ articleId: p.articleId, rewrittenAt: p.rewrittenAt });
+          }
+          return { ...p, rewrittenAt: now, articleId: newArticleId, rewrites: [newRewrite, ...existingRewrites.filter(r => r.articleId !== newArticleId)] };
+        });
         authenticatedFetch(API_ENDPOINTS.db.blogDiscoveries, {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ projectId, siteUrl, rootPath: blog.root_path, updates: { posts: updatedPosts } }),
@@ -778,21 +793,7 @@ function PostRow({
         {/* Status */}
         <td className="py-3 px-3 text-center">
           {post.rewrittenAt ? (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (post.articleId && onNavigateToArticle) onNavigateToArticle(post.articleId);
-              }}
-              className={`inline-flex flex-col items-center gap-0.5 text-apple-xs bg-green-100 text-green-700 px-2 py-1 rounded transition-colors ${
-                post.articleId && onNavigateToArticle ? 'hover:bg-green-200 cursor-pointer' : 'cursor-default'
-              }`}
-              title={post.articleId ? 'View rewritten article in Publish' : undefined}
-            >
-              <span className="font-medium">Rewritten</span>
-              <span className="text-[10px] text-green-600">
-                {new Date(post.rewrittenAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-              </span>
-            </button>
+            <span className="inline-block text-apple-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">Rewritten</span>
           ) : post.auditedAt ? (
             <span className="inline-block text-apple-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
               {post.auditResult ? <span className={getScoreColor(post.auditResult.score)}>{post.auditResult.score}</span> : 'Audited'}
@@ -835,6 +836,41 @@ function PostRow({
                   </div>
                 )}
               </div>
+
+              {/* Rewrite cards */}
+              {(() => {
+                let allRewrites: RewriteEntry[] = post.rewrites || [];
+                if (!allRewrites.length && post.rewrittenAt && post.articleId) {
+                  allRewrites = [{ articleId: post.articleId, rewrittenAt: post.rewrittenAt }];
+                }
+                if (allRewrites.length === 0) return null;
+                return (
+                  <div className="space-y-1.5">
+                    {allRewrites.map((rw, idx) => (
+                      <button
+                        key={rw.articleId || idx}
+                        onClick={() => onNavigateToArticle?.(rw.articleId)}
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-apple-sm bg-green-50 border border-green-200 text-left hover:bg-green-100 hover:border-green-300 transition-colors cursor-pointer group"
+                      >
+                        <div className="w-7 h-7 rounded-full bg-green-100 group-hover:bg-green-200 flex items-center justify-center shrink-0 transition-colors">
+                          <svg className="w-3.5 h-3.5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-apple-sm font-medium text-green-800">Rewritten</span>
+                          <span className="text-apple-xs text-green-600 ml-2">
+                            {new Date(rw.rewrittenAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </span>
+                        </div>
+                        <svg className="w-4 h-4 text-green-400 group-hover:text-green-600 transition-colors shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
 
               {/* Post Monthly Performance Graph */}
               <div>
