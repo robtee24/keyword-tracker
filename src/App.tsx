@@ -87,9 +87,9 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   'ad-audit-creative': 'Ad Audit › Creative & Copy',
   'ad-audit-attribution': 'Ad Audit › Attribution',
   'ad-audit-structure': 'Ad Audit › Account Structure',
-  'blog-opportunity': 'Content › Blog Ideas',
-  'blog-automate': 'Content › Blog Writer',
-  'blog-completed': 'Content › Completed',
+  'blog-opportunity': 'Blog › Blog Ideas',
+  'blog-automate': 'Blog › Blog Writer',
+  'blog-completed': 'Blog › Publish',
   'ads-google': 'Ads › Google Search',
   'ads-meta': 'Ads › Meta',
   'ads-tiktok': 'Ads › TikTok',
@@ -210,6 +210,7 @@ function App() {
 
   const [visitedAudits, setVisitedAudits] = useState<Set<string>>(new Set());
   const [adTizeIdea, setAdTizeIdea] = useState<Record<string, unknown> | null>(null);
+  const [highlightArticleId, setHighlightArticleId] = useState<string | null>(null);
 
   const [dateRange, setDateRange] = useState<DateRange>({
     startDate: new Date(new Date().setDate(new Date().getDate() - 30)),
@@ -786,7 +787,15 @@ function App() {
 
           {/* ── Blog Views ── */}
           {currentView === 'blog-audit' && activeProject && (
-            <BlogAuditView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
+            <BlogAuditView
+              key={connectionVersion}
+              siteUrl={getSiteUrl(activeProject)}
+              projectId={activeProject.id}
+              onNavigateToArticle={(articleId) => {
+                setHighlightArticleId(articleId);
+                handleNavigate('blog-completed');
+              }}
+            />
           )}
           {currentView === 'blog-opportunity' && activeProject && (
             <BlogOpportunityView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
@@ -795,7 +804,13 @@ function App() {
             <BlogAutomateView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
           )}
           {currentView === 'blog-completed' && activeProject && (
-            <CompletedArticlesView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} projectId={activeProject.id} />
+            <CompletedArticlesView
+              key={connectionVersion}
+              siteUrl={getSiteUrl(activeProject)}
+              projectId={activeProject.id}
+              highlightArticleId={highlightArticleId}
+              onHighlightHandled={() => setHighlightArticleId(null)}
+            />
           )}
 
           {/* ── Build Views ── */}

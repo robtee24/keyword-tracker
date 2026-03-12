@@ -78,6 +78,7 @@ interface MonthlyData {
 interface BlogAuditViewProps {
   siteUrl: string;
   projectId: string;
+  onNavigateToArticle?: (articleId: string) => void;
 }
 
 type SortColumn = 'title' | 'clicks' | 'impressions';
@@ -89,7 +90,7 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps) {
+export default function BlogAuditView({ siteUrl, projectId, onNavigateToArticle }: BlogAuditViewProps) {
   const [blogs, setBlogs] = useState<BlogDiscovery[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -635,6 +636,7 @@ export default function BlogAuditView({ siteUrl, projectId }: BlogAuditViewProps
                           onToggle={() => setExpandedPost(expandedPost === post.url ? null : post.url)}
                           onAudit={() => auditPost(blog, post.url)}
                           onRewrite={() => rewritePost(blog, post.url)}
+                          onNavigateToArticle={onNavigateToArticle}
                         />
                       ))}
                     </tbody>
@@ -727,12 +729,13 @@ interface PostRowProps {
   onToggle: () => void;
   onAudit: () => void;
   onRewrite: () => void;
+  onNavigateToArticle?: (articleId: string) => void;
 }
 
 function PostRow({
   post, isExpanded, auditing, rewriting,
   monthlyData, monthlyLoading, getScoreColor, postPath,
-  onToggle, onAudit, onRewrite,
+  onToggle, onAudit, onRewrite, onNavigateToArticle,
 }: PostRowProps) {
   const clicks = post.gscData?.totalClicks || 0;
   const impressions = post.gscData?.totalImpressions || 0;
@@ -775,7 +778,21 @@ function PostRow({
         {/* Status */}
         <td className="py-3 px-3 text-center">
           {post.rewrittenAt ? (
-            <span className="inline-block text-apple-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">Rewritten</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (post.articleId && onNavigateToArticle) onNavigateToArticle(post.articleId);
+              }}
+              className={`inline-flex flex-col items-center gap-0.5 text-apple-xs bg-green-100 text-green-700 px-2 py-1 rounded transition-colors ${
+                post.articleId && onNavigateToArticle ? 'hover:bg-green-200 cursor-pointer' : 'cursor-default'
+              }`}
+              title={post.articleId ? 'View rewritten article in Publish' : undefined}
+            >
+              <span className="font-medium">Rewritten</span>
+              <span className="text-[10px] text-green-600">
+                {new Date(post.rewrittenAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </span>
+            </button>
           ) : post.auditedAt ? (
             <span className="inline-block text-apple-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
               {post.auditResult ? <span className={getScoreColor(post.auditResult.score)}>{post.auditResult.score}</span> : 'Audited'}

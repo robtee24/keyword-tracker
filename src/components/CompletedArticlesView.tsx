@@ -38,6 +38,8 @@ interface Article {
 interface CompletedArticlesViewProps {
   siteUrl: string;
   projectId: string;
+  highlightArticleId?: string | null;
+  onHighlightHandled?: () => void;
 }
 
 function markdownToHtml(md: string): string {
@@ -193,7 +195,7 @@ function formatDate(dateStr: string): string {
   });
 }
 
-export default function CompletedArticlesView({ siteUrl, projectId }: CompletedArticlesViewProps) {
+export default function CompletedArticlesView({ siteUrl, projectId, highlightArticleId, onHighlightHandled }: CompletedArticlesViewProps) {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedArticle, setExpandedArticle] = useState<string | null>(null);
@@ -227,6 +229,20 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
   useEffect(() => {
     loadArticles();
   }, [loadArticles]);
+
+  useEffect(() => {
+    if (highlightArticleId && articles.length > 0) {
+      const found = articles.find(a => a.id === highlightArticleId);
+      if (found) {
+        setExpandedArticle(highlightArticleId);
+        onHighlightHandled?.();
+        requestAnimationFrame(() => {
+          const el = document.getElementById(`article-${highlightArticleId}`);
+          el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
+    }
+  }, [highlightArticleId, articles]);
 
   const deleteArticle = async (id: string) => {
     if (!confirm('Delete this article permanently?')) return;
@@ -405,14 +421,14 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
     setEditSaving(false);
   };
 
-  const sourceLabel = (s: string) => s === 'idea' ? 'From Idea' : s === 'series' ? 'Series' : s === 'queue' ? 'From Queue' : 'Manual';
+  const sourceLabel = (s: string) => s === 'idea' ? 'From Idea' : s === 'series' ? 'Series' : s === 'queue' ? 'From Queue' : s === 'rewrite' ? 'Rewrite' : 'Manual';
 
   return (
     <div className="space-y-6 max-w-5xl">
       <div>
-        <h1 className="text-2xl font-semibold text-apple-text">Completed Articles</h1>
+        <h1 className="text-2xl font-semibold text-apple-text">Publish</h1>
         <p className="text-apple-sm text-apple-text-secondary mt-1">
-          All generated blog articles are saved here permanently. Copy HTML to paste directly into your CMS.
+          All generated and rewritten blog articles are saved here. Copy HTML to paste directly into your CMS.
         </p>
       </div>
 
@@ -450,7 +466,7 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
             const isCopied = copyFeedback === article.id;
 
             return (
-              <div key={article.id} className="bg-white rounded-apple border border-apple-border">
+              <div key={article.id} id={`article-${article.id}`} className="bg-white rounded-apple border border-apple-border">
                 <button
                   onClick={() => setExpandedArticle(isExpanded ? null : article.id)}
                   className="w-full flex items-center gap-3 p-4 text-left hover:bg-apple-fill-secondary transition-colors"
@@ -463,7 +479,9 @@ export default function CompletedArticlesView({ siteUrl, projectId }: CompletedA
                   <div className="flex-1 min-w-0">
                     <span className="text-apple-sm font-medium text-apple-text">{article.title}</span>
                     <div className="flex gap-2 mt-1 flex-wrap">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">{sourceLabel(article.source)}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                        article.source === 'rewrite' ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'
+                      }`}>{sourceLabel(article.source)}</span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{article.word_count} words</span>
                       {hasImages && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700">
