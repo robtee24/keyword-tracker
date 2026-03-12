@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { authenticatedFetch } from '../services/authService';
 import { API_ENDPOINTS } from '../config/api';
 import { InfoTooltip } from './Tooltip';
+import { IMAGE_MODELS, VIDEO_MODELS, getModelPreferences, setModelPreferences } from '../config/models';
 
 interface SettingsViewProps {
   projectId: string;
@@ -26,6 +27,11 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  const prefs = getModelPreferences(projectId);
+  const [imageModel, setImageModel] = useState(prefs.imageModel);
+  const [videoModel, setVideoModel] = useState(prefs.videoModel);
+  const [modelSaved, setModelSaved] = useState(false);
+
   const fetchMembers = useCallback(async () => {
     try {
       const res = await authenticatedFetch(
@@ -43,6 +49,26 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
   useEffect(() => {
     fetchMembers();
   }, [fetchMembers]);
+
+  useEffect(() => {
+    const p = getModelPreferences(projectId);
+    setImageModel(p.imageModel);
+    setVideoModel(p.videoModel);
+  }, [projectId]);
+
+  const handleImageModelChange = (model: string) => {
+    setImageModel(model);
+    setModelPreferences(projectId, { imageModel: model });
+    setModelSaved(true);
+    setTimeout(() => setModelSaved(false), 2000);
+  };
+
+  const handleVideoModelChange = (model: string) => {
+    setVideoModel(model);
+    setModelPreferences(projectId, { videoModel: model });
+    setModelSaved(true);
+    setTimeout(() => setModelSaved(false), 2000);
+  };
 
   const handleAddMember = async () => {
     if (!newEmail.trim()) return;
@@ -90,15 +116,130 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
     } catch { /* silently fail */ }
   };
 
+  const selectedImageModel = IMAGE_MODELS.find(m => m.id === imageModel);
+  const selectedVideoModel = VIDEO_MODELS.find(m => m.id === videoModel);
+
   return (
     <div className="max-w-3xl mx-auto">
       <div className="mb-8">
         <h1 className="text-apple-title2 font-bold text-apple-text">Settings</h1>
         <p className="text-apple-sm text-apple-text-secondary mt-1">
-          Manage team access for {projectName}
+          Manage project settings for {projectName}
         </p>
       </div>
 
+      {/* AI Models Section */}
+      <div className="card p-6 mb-6">
+        <div className="flex items-center gap-2 mb-1">
+          <h2 className="text-apple-title3 font-semibold text-apple-text">AI Models</h2>
+          <InfoTooltip text="Choose which AI models to use for image and video generation across the platform." position="right" />
+          {modelSaved && (
+            <span className="text-apple-xs text-green-600 font-medium ml-2 animate-fade-in">Saved</span>
+          )}
+        </div>
+        <p className="text-apple-xs text-apple-text-tertiary mb-5">
+          Selected models apply to blog images, social media images, ad creatives, and video generation.
+        </p>
+
+        <div className="space-y-5">
+          {/* Image Generation Model */}
+          <div>
+            <label className="block text-apple-sm font-medium text-apple-text mb-2">
+              Image Generation
+            </label>
+            <div className="space-y-2">
+              {IMAGE_MODELS.map((m) => (
+                <label
+                  key={m.id}
+                  className={`flex items-start gap-3 p-3 rounded-apple-sm border cursor-pointer transition-all ${
+                    imageModel === m.id
+                      ? 'border-apple-blue bg-blue-50/50 ring-1 ring-apple-blue/30'
+                      : 'border-apple-border hover:border-apple-border-heavy hover:bg-apple-fill-tertiary'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="imageModel"
+                    value={m.id}
+                    checked={imageModel === m.id}
+                    onChange={() => handleImageModelChange(m.id)}
+                    className="mt-0.5 accent-blue-600"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-apple-sm font-medium text-apple-text">{m.label}</span>
+                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                        m.provider === 'google' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {m.provider === 'google' ? 'Google' : 'OpenAI'}
+                      </span>
+                      <span className="text-[10px] text-apple-text-tertiary">{m.cost}</span>
+                    </div>
+                    <p className="text-apple-xs text-apple-text-secondary mt-0.5">{m.description}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+            {selectedImageModel && (
+              <p className="text-apple-xs text-apple-text-tertiary mt-2">
+                {selectedImageModel.provider === 'google'
+                  ? 'Requires GEMINI_API_KEY in environment variables.'
+                  : 'Requires OPENAI_API_KEY in environment variables.'}
+              </p>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-apple-border" />
+
+          {/* Video Generation Model */}
+          <div>
+            <label className="block text-apple-sm font-medium text-apple-text mb-2">
+              Video Generation
+            </label>
+            <div className="space-y-2">
+              {VIDEO_MODELS.map((m) => (
+                <label
+                  key={m.id}
+                  className={`flex items-start gap-3 p-3 rounded-apple-sm border cursor-pointer transition-all ${
+                    videoModel === m.id
+                      ? 'border-apple-blue bg-blue-50/50 ring-1 ring-apple-blue/30'
+                      : 'border-apple-border hover:border-apple-border-heavy hover:bg-apple-fill-tertiary'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="videoModel"
+                    value={m.id}
+                    checked={videoModel === m.id}
+                    onChange={() => handleVideoModelChange(m.id)}
+                    className="mt-0.5 accent-blue-600"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-apple-sm font-medium text-apple-text">{m.label}</span>
+                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                        m.provider === 'google' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {m.provider === 'google' ? 'Google' : 'OpenAI'}
+                      </span>
+                      <span className="text-[10px] text-apple-text-tertiary">{m.cost}</span>
+                    </div>
+                    <p className="text-apple-xs text-apple-text-secondary mt-0.5">{m.description}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+            {selectedVideoModel && (
+              <p className="text-apple-xs text-apple-text-tertiary mt-2">
+                Requires GEMINI_API_KEY in environment variables.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Team Members Section */}
       <div className="card p-6 mb-6">
         <div className="flex items-center gap-2 mb-4">
           <h2 className="text-apple-title3 font-semibold text-apple-text">Team Members</h2>

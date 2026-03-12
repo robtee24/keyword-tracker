@@ -1,7 +1,8 @@
 import { authenticateRequest } from '../_config.js';
+import { generateImage } from '../_imageGen.js';
 import sharp from 'sharp';
 
-export const config = { maxDuration: 120 };
+export const config = { maxDuration: 300 };
 
 function buildTextOverlaySvg(text, width, height) {
   if (!text) return null;
@@ -51,6 +52,10 @@ async function downloadImage(url) {
   return Buffer.from(await resp.arrayBuffer());
 }
 
+function isDataUrl(url) {
+  return url && url.startsWith('data:');
+}
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -58,18 +63,16 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
-
-  const { descriptions } = req.body || {};
+  const { descriptions, model } = req.body || {};
   if (!descriptions || !Array.isArray(descriptions) || descriptions.length === 0) {
     return res.status(400).json({ error: 'descriptions array is required' });
   }
 
-  const maxImages = Math.min(descriptions.length, 3);
+  const imageModel = model || 'dall-e-3';
+  const maxImages = Math.min(descriptions.length, 5);
   const toGenerate = descriptions.slice(0, maxImages);
 
-  console.log(`[BlogImages] Generating ${toGenerate.length} images`);
+  console.log(`[BlogImages] Generating ${toGenerate.length} images with model: ${imageModel}`);
 
   const results = [];
   for (let i = 0; i < toGenerate.length; i++) {
@@ -81,41 +84,15 @@ export default async function handler(req, res) {
 
     try {
       console.log(`[BlogImages] Generating image ${i + 1}/${toGenerate.length}`);
-      const resp = await fetch('https://api.openai.com/v1/images/generations', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openaiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'dall-e-3',
-          prompt,
-          n: 1,
-          size: '1792x1024',
-          quality: 'hd',
-          style: 'natural',
-          response_format: 'url',
-        }),
-      });
-
-      if (!resp.ok) {
-        const errText = await resp.text().catch(() => 'unknown');
-        console.error(`[BlogImages] DALL-E error (${resp.status}):`, errText);
-        results.push({ description: desc, caption, error: `DALL-E error (${resp.status})`, imageUrl: null });
-        continue;
-      }
-
-      const data = await resp.json();
-      const dalleUrl = data.data?.[0]?.url;
-      if (!dalleUrl) {
-        results.push({ description: desc, caption, error: 'No image URL returned', imageUrl: null });
-        continue;
-      }
+      const { imageUrl } = await generateImage(prompt, { model: imageModel, size: '1792x1024' });
 
       if (caption) {
         try {
           console.log(`[BlogImages] Compositing text onto image ${i + 1}`);
-          const imgBuffer = await downloadImage(dalleUrl);
+          const imgBuffer = isDataUrl(imageUrl)
+            ? Buffer.from(imageUrl.split(',')[1], 'base64')
+            : await downloadImage(imageUrl);
+
           const metadata = await sharp(imgBuffer).metadata();
           const w = metadata.width || 1792;
           const h = metadata.height || 1024;
@@ -132,10 +109,10 @@ export default async function handler(req, res) {
           results.push({ description: desc, caption, imageUrl: dataUrl });
         } catch (compErr) {
           console.warn(`[BlogImages] Text composite failed, using original:`, compErr.message);
-          results.push({ description: desc, caption, imageUrl: dalleUrl });
+          results.push({ description: desc, caption, imageUrl });
         }
       } else {
-        results.push({ description: desc, caption, imageUrl: dalleUrl });
+        results.push({ description: desc, caption, imageUrl });
       }
     } catch (err) {
       console.error(`[BlogImages] Image ${i + 1} error:`, err.message);

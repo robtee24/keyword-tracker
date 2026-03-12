@@ -3,6 +3,7 @@ import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
 import { parseJsonOrThrow } from '../utils/apiResponse';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
+import { getModelPreferences } from '../config/models';
 
 interface AdIdea {
   title: string;
@@ -355,6 +356,7 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
             prompt: scene.prompt,
             aspectRatio: project.aspect_ratio,
             durationSeconds: scene.durationSeconds || 8,
+            model: getModelPreferences(projectId).videoModel,
           }),
         });
         const data = await parseJsonOrThrow<{ operationName: string; sceneIndex: number }>(resp);
@@ -379,7 +381,7 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
         const resp = await authenticatedFetch(API_ENDPOINTS.videoAds.generateVideo, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoProjectId: vpId, generateAll: true }),
+          body: JSON.stringify({ videoProjectId: vpId, generateAll: true, model: getModelPreferences(projectId).videoModel }),
         });
         const data = await parseJsonOrThrow<{ operations: Array<{ sceneIndex: number; operationName?: string; status: string; error?: string }> }>(resp);
 

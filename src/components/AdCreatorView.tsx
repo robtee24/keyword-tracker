@@ -3,6 +3,7 @@ import { API_ENDPOINTS } from '../config/api';
 import { authenticatedFetch } from '../services/authService';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 import { parseJsonOrThrow } from '../utils/apiResponse';
+import { getModelPreferences } from '../config/models';
 
 type AdPlatform = 'meta' | 'tiktok' | 'linkedin' | 'x';
 type CreativeType = 'static' | 'video';
@@ -378,7 +379,7 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
       const resp = await authenticatedFetch(API_ENDPOINTS.advertising.generateImage, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageDescription: variation.imageDescription, textOverlay: variation.textOverlay || null, platform, dimensions: firstImageSpec }),
+        body: JSON.stringify({ imageDescription: variation.imageDescription, textOverlay: variation.textOverlay || null, platform, dimensions: firstImageSpec, model: getModelPreferences(projectId).imageModel }),
       });
       const data = await resp.json();
       if (!data.imageUrl) throw new Error(data.error || 'Failed to generate image');

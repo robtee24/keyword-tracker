@@ -4,6 +4,7 @@ import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 import { parseJsonOrThrow } from '../utils/apiResponse';
+import { getModelPreferences } from '../config/models';
 
 interface QueueItem {
   id: string;
@@ -84,7 +85,7 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.generateImages, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ descriptions }),
+        body: JSON.stringify({ descriptions, model: getModelPreferences(projectId).imageModel }),
       });
       const data = await parseJsonOrThrow<{ images?: unknown[] }>(resp);
       if (data.images) {

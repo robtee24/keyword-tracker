@@ -5,11 +5,11 @@ export const config = { maxDuration: 300 };
 
 const VEO_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
-async function generateVeoVideo(prompt, aspectRatio = '16:9', durationSeconds = 8) {
+async function generateVeoVideo(prompt, aspectRatio = '16:9', durationSeconds = 8, modelOverride = null) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
 
-  const model = 'veo-3.1-generate-preview';
+  const model = modelOverride || 'veo-3.1-generate-preview';
 
   const response = await fetch(
     `${VEO_BASE}/models/${model}:predictLongRunning`,
@@ -66,7 +66,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Authentication required' });
 
-  const { videoProjectId, sceneIndex, generateAll, prompt, aspectRatio, durationSeconds } = req.body || {};
+  const { videoProjectId, sceneIndex, generateAll, prompt, aspectRatio, durationSeconds, model: videoModel } = req.body || {};
 
   if (!process.env.GEMINI_API_KEY) {
     return res.status(500).json({ error: 'GEMINI_API_KEY is not configured' });
@@ -78,7 +78,8 @@ export default async function handler(req, res) {
       const operationName = await generateVeoVideo(
         prompt,
         aspectRatio || '16:9',
-        durationSeconds || 8
+        durationSeconds || 8,
+        videoModel
       );
 
       if (!operationName) {
@@ -135,7 +136,8 @@ export default async function handler(req, res) {
         const operationName = await generateVeoVideo(
           scene.prompt,
           project.aspect_ratio || '16:9',
-          scene.durationSeconds || 8
+          scene.durationSeconds || 8,
+          videoModel
         );
 
         if (!operationName) {

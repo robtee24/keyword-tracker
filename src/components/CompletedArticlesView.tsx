@@ -4,6 +4,7 @@ import { authenticatedFetch } from '../services/authService';
 import { logActivity } from '../utils/activityLog';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 import { parseJsonOrThrow } from '../utils/apiResponse';
+import { getModelPreferences } from '../config/models';
 
 interface ArticleImage {
   description: string;
@@ -313,7 +314,7 @@ export default function CompletedArticlesView({ siteUrl, projectId, highlightArt
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.generateImages, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ descriptions: article.suggested_images }),
+        body: JSON.stringify({ descriptions: article.suggested_images, model: getModelPreferences(projectId).imageModel }),
       });
       const data = await parseJsonOrThrow<{ images?: ArticleImage[]; errors?: string[]; error?: string }>(resp);
 

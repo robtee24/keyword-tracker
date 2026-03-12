@@ -1,4 +1,5 @@
 import { authenticateRequest } from '../_config.js';
+import { generateImage } from '../_imageGen.js';
 
 export const config = { maxDuration: 60 };
 
@@ -13,10 +14,10 @@ const PLATFORM_IMAGE_SIZES = {
 
 /**
  * POST /api/social/generate-image
- * Generates a static creative image using OpenAI DALL-E 3.
+ * Generates a static creative image for social media posts.
  *
- * Body: { prompt, platform, size? }
- * Returns: { imageUrl } as base64 data URL
+ * Body: { prompt, platform, size?, model? }
+ * Returns: { imageUrl } as base64 data URL or URL
  */
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -25,13 +26,11 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
-
-  const { prompt, platform, size } = req.body || {};
+  const { prompt, platform, size, model } = req.body || {};
   if (!prompt) return res.status(400).json({ error: 'prompt is required' });
 
   const imageSize = size || PLATFORM_IMAGE_SIZES[platform] || '1024x1024';
+  const imageModel = model || 'dall-e-3';
 
   const cleanPrompt = `Create a premium, photorealistic background image for a ${platform || 'social media'} post. Text will be added separately later.
 
@@ -53,42 +52,12 @@ VISUAL QUALITY:
 - No stock photo clichés`;
 
   try {
-    const resp = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'dall-e-3',
-        prompt: cleanPrompt,
-        n: 1,
-        size: imageSize,
-        quality: 'hd',
-        style: 'vivid',
-        response_format: 'b64_json',
-      }),
+    const responseFormat = imageModel === 'dall-e-3' ? 'b64_json' : 'url';
+    const { imageUrl, revisedPrompt } = await generateImage(cleanPrompt, {
+      model: imageModel,
+      size: imageSize,
+      responseFormat,
     });
-
-    if (!resp.ok) {
-      const errStatus = resp.status;
-      let errMsg = `OpenAI API returned ${errStatus}`;
-      if (errStatus === 401) errMsg = 'OpenAI API authentication failed. Check your API key.';
-      else if (errStatus === 400) {
-        try { const e = await resp.json(); errMsg = e.error?.message || errMsg; } catch {}
-      }
-      else if (errStatus === 429) errMsg = 'Rate limit exceeded. Please wait and try again.';
-      return res.status(200).json({ error: errMsg });
-    }
-
-    const data = await resp.json();
-    const b64 = data.data?.[0]?.b64_json;
-    if (!b64) {
-      return res.status(200).json({ error: 'No image was generated. Try a different prompt.' });
-    }
-
-    const imageUrl = `data:image/png;base64,${b64}`;
-    const revisedPrompt = data.data?.[0]?.revised_prompt || '';
 
     return res.status(200).json({
       imageUrl,
@@ -97,7 +66,10 @@ VISUAL QUALITY:
       platform,
     });
   } catch (err) {
-    console.error('[GenerateImage] OpenAI error:', err.message);
+    console.error('[GenerateImage] Error:', err.message);
+    if (err.message.includes('not configured')) {
+      return res.status(200).json({ error: err.message });
+    }
     return res.status(500).json({ error: 'Image generation failed: ' + err.message });
   }
 }

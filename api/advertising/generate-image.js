@@ -1,4 +1,5 @@
 import { authenticateRequest } from '../_config.js';
+import { generateImage } from '../_imageGen.js';
 
 export const config = { maxDuration: 120 };
 
@@ -9,10 +10,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
-
-  const { imageDescription, textOverlay, platform, dimensions } = req.body || {};
+  const { imageDescription, textOverlay, platform, dimensions, model } = req.body || {};
   if (!imageDescription) return res.status(400).json({ error: 'imageDescription is required' });
 
   const sizeMap = {
@@ -22,6 +20,7 @@ export default async function handler(req, res) {
     '1200x627': '1792x1024',
   };
   const size = sizeMap[dimensions] || '1024x1024';
+  const imageModel = model || 'dall-e-3';
 
   const platformContext = {
     meta: 'Facebook/Instagram feed ad',
@@ -52,31 +51,10 @@ VISUAL QUALITY:
 - No stock photo clichés (no handshakes, no pointing at screens)`;
 
   try {
-    const resp = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'dall-e-3',
-        prompt,
-        n: 1,
-        size,
-        quality: 'hd',
-        style: 'vivid',
-        response_format: 'url',
-      }),
+    const { imageUrl, revisedPrompt } = await generateImage(prompt, {
+      model: imageModel,
+      size,
     });
-
-    if (!resp.ok) {
-      const detail = await resp.text().catch(() => '');
-      return res.status(resp.status).json({ error: `Image generation failed (${resp.status}): ${detail}` });
-    }
-
-    const data = await resp.json();
-    const imageUrl = data.data?.[0]?.url || null;
-    const revisedPrompt = data.data?.[0]?.revised_prompt || '';
 
     return res.status(200).json({ imageUrl, revisedPrompt });
   } catch (err) {

@@ -3,6 +3,7 @@ import { authenticatedFetch } from '../services/authService';
 import { API_ENDPOINTS } from '../config/api';
 import { logActivity } from '../utils/activityLog';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
+import { getModelPreferences } from '../config/models';
 
 type SocialPlatform = 'instagram' | 'linkedin' | 'x' | 'facebook' | 'tiktok' | 'pinterest';
 type SocialTab = 'audit' | 'ideas' | 'create';
@@ -909,7 +910,7 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
       const resp = await authenticatedFetch(API_ENDPOINTS.social.generateImage, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: imagePrompt, platform }),
+        body: JSON.stringify({ prompt: imagePrompt, platform, model: getModelPreferences(projectId).imageModel }),
       });
       if (!resp.ok) throw new Error('Image generation failed');
       const data = await resp.json();
@@ -1110,7 +1111,7 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
             <div className="mb-4 rounded-apple-sm border border-apple-divider bg-apple-fill-secondary/20 p-4 flex items-center gap-3">
               <div className="w-5 h-5 border-2 border-apple-blue border-t-transparent rounded-full animate-spin shrink-0" />
               <p className="text-apple-sm text-apple-text">
-                {mediaType === 'video' ? 'Generating video from shot list...' : 'Generating image with DALL-E 3...'}
+                {mediaType === 'video' ? 'Generating video from shot list...' : 'Generating image...'}
               </p>
             </div>
           )}
