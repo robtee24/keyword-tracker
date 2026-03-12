@@ -133,8 +133,8 @@ async function generateWithGemini(prompt, { geminiKey, size = '1792x1024' }) {
       contents: [{ parts: [{ text: `Generate an image: ${prompt}` }] }],
       generationConfig: {
         responseModalities: ['IMAGE', 'TEXT'],
-        imageGenerationConfig: { aspectRatio },
       },
+      imageGenerationConfig: { aspectRatio },
     }),
   });
 

@@ -87,6 +87,9 @@
     },
     "api/media/upscale.js": {
       "maxDuration": 120
+    },
+    "api/test/generate.js": {
+      "maxDuration": 300
     }
   },
   "rewrites": [

@@ -48,6 +48,7 @@ import BackgroundTaskIndicator from './components/BackgroundTaskIndicator';
 import UpgradePrompt from './components/UpgradePrompt';
 import SettingsView from './components/SettingsView';
 import BillingView from './components/BillingView';
+import TestView from './components/TestView';
 
 import { CreditsProvider } from './contexts/CreditsContext';
 import BrandView from './components/BrandView';
@@ -865,6 +866,9 @@ function App() {
           )}
           {currentView === 'billing' && activeProject && (
             <BillingView projectId={activeProject.id} />
+          )}
+          {currentView === 'test' && activeProject && (
+            <TestView />
           )}
         </main>
 
