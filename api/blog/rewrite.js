@@ -394,41 +394,70 @@ Respond with ONLY valid JSON:
 
     const supabase = getSupabase();
     if (supabase && projectId) {
-      const insertPayload = {
-        project_id: projectId,
-        site_url: siteUrl,
-        title: blog.title || crawled.title,
-        subtitle: blog.subtitle || '',
-        author: blog.author || 'Editorial Team',
-        slug: blog.slug || '',
-        meta_description: blog.metaDescription || '',
-        content: blog.content || '',
-        word_count: blog.wordCount || 0,
-        internal_link_suggestions: blog.internalLinkSuggestions || [],
-        suggested_images: blog.suggestedImages || [],
-        images: [],
-        source: 'rewrite',
-        status: 'draft',
-      };
+      const articleTitle = blog.title || crawled.title;
+      const articleContent = blog.content || '';
+
+      const insertAttempts = [
+        {
+          label: 'full',
+          payload: {
+            project_id: projectId, site_url: siteUrl,
+            title: articleTitle, subtitle: blog.subtitle || '', author: blog.author || 'Editorial Team',
+            slug: blog.slug || '', meta_description: blog.metaDescription || '',
+            content: articleContent, word_count: blog.wordCount || 0,
+            internal_link_suggestions: blog.internalLinkSuggestions || [],
+            suggested_images: blog.suggestedImages || [], images: [],
+            source: 'rewrite', status: 'draft',
+          },
+        },
+        {
+          label: 'without rewrite source',
+          payload: {
+            project_id: projectId, site_url: siteUrl,
+            title: articleTitle, subtitle: blog.subtitle || '', author: blog.author || 'Editorial Team',
+            slug: blog.slug || '', meta_description: blog.metaDescription || '',
+            content: articleContent, word_count: blog.wordCount || 0,
+            internal_link_suggestions: blog.internalLinkSuggestions || [],
+            suggested_images: blog.suggestedImages || [], images: [],
+            source: 'writer', status: 'draft',
+          },
+        },
+        {
+          label: 'core columns only',
+          payload: {
+            project_id: projectId, site_url: siteUrl,
+            title: articleTitle, slug: blog.slug || '',
+            meta_description: blog.metaDescription || '',
+            content: articleContent, word_count: blog.wordCount || 0,
+            internal_link_suggestions: blog.internalLinkSuggestions || [],
+            suggested_images: blog.suggestedImages || [], images: [],
+            source: 'writer', status: 'draft',
+          },
+        },
+        {
+          label: 'minimal',
+          payload: {
+            project_id: projectId, site_url: siteUrl,
+            title: articleTitle, content: articleContent,
+            source: 'writer', status: 'draft',
+          },
+        },
+      ];
 
       let article = null;
-      const { data, error: insertErr } = await supabase.from('blog_articles')
-        .insert(insertPayload)
-        .select()
-        .single();
-
-      if (insertErr) {
-        console.warn('[BlogRewrite] Insert with source "rewrite" failed, retrying with "writer":', insertErr.message);
-        const { data: retry, error: retryErr } = await supabase.from('blog_articles')
-          .insert({ ...insertPayload, source: 'writer' })
-          .select()
-          .single();
-        if (retryErr) {
-          console.error('[BlogRewrite] Fallback insert also failed:', retryErr.message);
+      for (const attempt of insertAttempts) {
+        const { data: d, error: e } = await supabase.from('blog_articles')
+          .insert(attempt.payload).select().single();
+        if (!e && d) {
+          article = d;
+          console.log(`[BlogRewrite] Insert succeeded (${attempt.label}), id=${d.id}`);
+          break;
         }
-        article = retry;
-      } else {
-        article = data;
+        console.warn(`[BlogRewrite] Insert failed (${attempt.label}):`, e?.message);
+      }
+
+      if (!article) {
+        console.error('[BlogRewrite] ALL insert attempts failed — article not saved to database');
       }
 
       blog.articleId = article?.id || null;

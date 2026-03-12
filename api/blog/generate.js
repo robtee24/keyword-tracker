@@ -310,26 +310,59 @@ HTML FORMAT RULES for the "content" field:
     }
 
     if (supabase && projectId) {
-      const { data: article } = await supabase.from('blog_articles')
-        .insert({
-          project_id: projectId,
-          site_url: siteUrl,
-          opportunity_id: opportunityId || null,
-          title: blog.title || title,
-          subtitle: blog.subtitle || '',
-          author: blog.author || 'Editorial Team',
-          slug: blog.slug || '',
-          meta_description: blog.metaDescription || '',
-          content: blog.content || '',
-          word_count: blog.wordCount || 0,
-          internal_link_suggestions: blog.internalLinkSuggestions || [],
-          suggested_images: blog.suggestedImages || [],
-          images: [],
-          source: source || (opportunityId ? 'idea' : 'writer'),
-          status: 'draft',
-        })
-        .select()
-        .single();
+      const articleTitle = blog.title || title;
+      const articleContent = blog.content || '';
+      const articleSource = source || (opportunityId ? 'idea' : 'writer');
+
+      const insertAttempts = [
+        {
+          label: 'full',
+          payload: {
+            project_id: projectId, site_url: siteUrl, opportunity_id: opportunityId || null,
+            title: articleTitle, subtitle: blog.subtitle || '', author: blog.author || 'Editorial Team',
+            slug: blog.slug || '', meta_description: blog.metaDescription || '',
+            content: articleContent, word_count: blog.wordCount || 0,
+            internal_link_suggestions: blog.internalLinkSuggestions || [],
+            suggested_images: blog.suggestedImages || [], images: [],
+            source: articleSource, status: 'draft',
+          },
+        },
+        {
+          label: 'core columns',
+          payload: {
+            project_id: projectId, site_url: siteUrl, opportunity_id: opportunityId || null,
+            title: articleTitle, slug: blog.slug || '', meta_description: blog.metaDescription || '',
+            content: articleContent, word_count: blog.wordCount || 0,
+            internal_link_suggestions: blog.internalLinkSuggestions || [],
+            suggested_images: blog.suggestedImages || [], images: [],
+            source: articleSource, status: 'draft',
+          },
+        },
+        {
+          label: 'minimal',
+          payload: {
+            project_id: projectId, site_url: siteUrl,
+            title: articleTitle, content: articleContent,
+            source: articleSource, status: 'draft',
+          },
+        },
+      ];
+
+      let article = null;
+      for (const attempt of insertAttempts) {
+        const { data: d, error: e } = await supabase.from('blog_articles')
+          .insert(attempt.payload).select().single();
+        if (!e && d) {
+          article = d;
+          console.log(`[BlogGenerate] Insert succeeded (${attempt.label}), id=${d.id}`);
+          break;
+        }
+        console.warn(`[BlogGenerate] Insert failed (${attempt.label}):`, e?.message);
+      }
+
+      if (!article) {
+        console.error('[BlogGenerate] ALL insert attempts failed — article not saved');
+      }
 
       blog.articleId = article?.id || null;
     }
