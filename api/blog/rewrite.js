@@ -382,25 +382,42 @@ Respond with ONLY valid JSON:
 
     const supabase = getSupabase();
     if (supabase && projectId) {
-      const { data: article } = await supabase.from('blog_articles')
-        .insert({
-          project_id: projectId,
-          site_url: siteUrl,
-          title: blog.title || crawled.title,
-          subtitle: blog.subtitle || '',
-          author: blog.author || 'Editorial Team',
-          slug: blog.slug || '',
-          meta_description: blog.metaDescription || '',
-          content: blog.content || '',
-          word_count: blog.wordCount || 0,
-          internal_link_suggestions: blog.internalLinkSuggestions || [],
-          suggested_images: blog.suggestedImages || [],
-          images: [],
-          source: 'rewrite',
-          status: 'draft',
-        })
+      const insertPayload = {
+        project_id: projectId,
+        site_url: siteUrl,
+        title: blog.title || crawled.title,
+        subtitle: blog.subtitle || '',
+        author: blog.author || 'Editorial Team',
+        slug: blog.slug || '',
+        meta_description: blog.metaDescription || '',
+        content: blog.content || '',
+        word_count: blog.wordCount || 0,
+        internal_link_suggestions: blog.internalLinkSuggestions || [],
+        suggested_images: blog.suggestedImages || [],
+        images: [],
+        source: 'rewrite',
+        status: 'draft',
+      };
+
+      let article = null;
+      const { data, error: insertErr } = await supabase.from('blog_articles')
+        .insert(insertPayload)
         .select()
         .single();
+
+      if (insertErr) {
+        console.warn('[BlogRewrite] Insert with source "rewrite" failed, retrying with "writer":', insertErr.message);
+        const { data: retry, error: retryErr } = await supabase.from('blog_articles')
+          .insert({ ...insertPayload, source: 'writer' })
+          .select()
+          .single();
+        if (retryErr) {
+          console.error('[BlogRewrite] Fallback insert also failed:', retryErr.message);
+        }
+        article = retry;
+      } else {
+        article = data;
+      }
 
       blog.articleId = article?.id || null;
 
