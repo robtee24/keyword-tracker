@@ -4,6 +4,7 @@ import { authenticatedFetch } from '../services/authService';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 import { parseJsonOrThrow } from '../utils/apiResponse';
 import { getModelPreferences } from '../config/models';
+import type { GenerationContext } from '../config/models';
 import MediaGenerationModal, { GenerationSettingsIcon } from './MediaGenerationModal';
 import type { GenerationSettings } from './MediaGenerationModal';
 import MediaEditButton from './MediaEditButton';
@@ -379,6 +380,17 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
     });
   };
 
+  const buildAdContext = (variation: { imageDescription?: string; textOverlay?: string }): GenerationContext => ({
+    contentType: 'ad',
+    subject: variation.imageDescription || '',
+    style: 'photorealistic',
+    mood: objective === 'awareness' ? 'luxurious' : 'energetic',
+    includesText: !!variation.textOverlay,
+    includesPeople: false,
+    platform,
+    purpose: 'ad_creative',
+  });
+
   const handleGenerateImage = (variationIndex: number) => {
     if (!result) return;
     const variation = result.variations[variationIndex];
@@ -388,7 +400,14 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
       const resp = await authenticatedFetch(API_ENDPOINTS.advertising.generateImage, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageDescription: variation.imageDescription, textOverlay: variation.textOverlay || null, platform, dimensions: firstImageSpec, model: getModelPreferences(projectId).imageModel }),
+        body: JSON.stringify({
+          imageDescription: variation.imageDescription,
+          textOverlay: variation.textOverlay || null,
+          platform,
+          dimensions: firstImageSpec,
+          model: getModelPreferences(projectId).imageModel,
+          context: buildAdContext(variation),
+        }),
       });
       const data = await resp.json();
       if (!data.imageUrl) throw new Error(data.error || 'Failed to generate image');
@@ -851,6 +870,7 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
         onGenerate={(settings: GenerationSettings) => {
           handleGenerateImage(activeVariation);
         }}
+        defaultContext={currentVariation ? buildAdContext(currentVariation) : undefined}
       />
     </div>
   );

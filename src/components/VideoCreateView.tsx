@@ -4,6 +4,7 @@ import { authenticatedFetch } from '../services/authService';
 import { parseJsonOrThrow } from '../utils/apiResponse';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 import { getModelPreferences } from '../config/models';
+import type { GenerationContext } from '../config/models';
 import MediaGenerationModal, { GenerationSettingsIcon } from './MediaGenerationModal';
 import type { GenerationSettings } from './MediaGenerationModal';
 import { useCredits } from '../contexts/CreditsContext';
@@ -342,6 +343,20 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
     }
   };
 
+  const buildVideoContext = (project: VideoProject, scene?: Scene): GenerationContext => ({
+    contentType: 'cinematic_ad',
+    subject: scene?.description || project.overall_concept || '',
+    style: project.video_style || 'cinematic',
+    mood: project.idea?.emotionalAngle || 'professional',
+    includesText: (scene?.textOverlays?.length || 0) > 0,
+    includesPeople: true,
+    cameraMotion: 'tracking',
+    hasDialogue: !!scene?.audioDirection,
+    platform: project.platforms?.[0] || '',
+    purpose: 'video_ad',
+    colorHints: project.color_grading || '',
+  });
+
   const generateVideo = async (vpId: string, sceneIdx: number) => {
     const project = projects.find(p => p.id === vpId);
     if (!project) return;
@@ -362,6 +377,7 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
             aspectRatio: project.aspect_ratio,
             durationSeconds: scene.durationSeconds || 8,
             model: getModelPreferences(projectId).videoModel,
+            context: buildVideoContext(project, scene),
           }),
         });
         const data = await parseJsonOrThrow<{ operationName: string; sceneIndex: number }>(resp);
@@ -386,7 +402,7 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
         const resp = await authenticatedFetch(API_ENDPOINTS.videoAds.generateVideo, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoProjectId: vpId, generateAll: true, model: getModelPreferences(projectId).videoModel }),
+          body: JSON.stringify({ videoProjectId: vpId, generateAll: true, model: getModelPreferences(projectId).videoModel, context: buildVideoContext(project) }),
         });
         const data = await parseJsonOrThrow<{ operations: Array<{ sceneIndex: number; operationName?: string; status: string; error?: string }> }>(resp);
 
@@ -1038,6 +1054,7 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
         onGenerate={(settings: GenerationSettings) => {
           // Override model preference for the next generation
         }}
+        defaultContext={projects[0] ? buildVideoContext(projects[0]) : undefined}
       />
     </div>
   );

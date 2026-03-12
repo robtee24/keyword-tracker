@@ -4,6 +4,7 @@ import { API_ENDPOINTS } from '../config/api';
 import { logActivity } from '../utils/activityLog';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 import { getModelPreferences } from '../config/models';
+import type { GenerationContext } from '../config/models';
 import MediaGenerationModal, { GenerationSettingsIcon } from './MediaGenerationModal';
 import type { GenerationSettings } from './MediaGenerationModal';
 import MediaEditButton from './MediaEditButton';
@@ -898,6 +899,19 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
     });
   };
 
+  const buildContext = (isVideo: boolean): GenerationContext => ({
+    contentType: isVideo ? 'social_clip' : 'lifestyle',
+    subject: generated?.content?.substring(0, 200) || topic || '',
+    style: 'photorealistic',
+    mood: 'energetic',
+    includesText: !!generated?.textOverlay,
+    includesPeople: false,
+    cameraMotion: isVideo ? (videoStyle === 'ugc' ? 'handheld' : 'tracking') : undefined,
+    hasDialogue: false,
+    platform,
+    purpose: 'social_post',
+  });
+
   const autoGenerateVideo = (shots: unknown[]) => {
     setMediaError(null);
     startTask(mediaTaskId, 'social-media', `${config.name} video`, async () => {
@@ -905,7 +919,7 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
       const resp = await authenticatedFetch(API_ENDPOINTS.social.generateVideo, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, shots, model: videoModel }),
+        body: JSON.stringify({ platform, shots, model: videoModel, context: buildContext(true) }),
       });
       if (!resp.ok) throw new Error('Video generation failed');
       const data = await resp.json();
@@ -921,7 +935,7 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
       const resp = await authenticatedFetch(API_ENDPOINTS.social.generateImage, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: imagePrompt, platform, model: getModelPreferences(projectId).imageModel }),
+        body: JSON.stringify({ prompt: imagePrompt, platform, model: getModelPreferences(projectId).imageModel, context: buildContext(false) }),
       });
       if (!resp.ok) throw new Error('Image generation failed');
       const data = await resp.json();
@@ -1279,6 +1293,7 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
         mode={genModalMode}
         projectId={projectId}
         onGenerate={() => {}}
+        defaultContext={buildContext(genModalMode === 'textToVideo')}
       />
     </div>
   );

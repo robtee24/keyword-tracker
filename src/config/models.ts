@@ -25,6 +25,75 @@ export interface ModelOption {
   routes?: ModelRoute[];
 }
 
+// --------------- GENERATION CONTEXT ---------------
+export interface GenerationContext {
+  contentType: string;
+  subject: string;
+  style: string;
+  mood: string;
+  colorHints?: string;
+  includesText: boolean;
+  includesPeople: boolean;
+  cameraMotion?: string;
+  hasDialogue?: boolean;
+  negativePrompt?: string;
+  platform?: string;
+  purpose?: string;
+}
+
+export const IMAGE_CONTENT_TYPES = [
+  { value: 'product', label: 'Product' },
+  { value: 'lifestyle', label: 'Lifestyle' },
+  { value: 'illustration', label: 'Illustration' },
+  { value: 'portrait', label: 'Portrait' },
+  { value: 'landscape', label: 'Landscape' },
+  { value: 'abstract', label: 'Abstract' },
+  { value: 'ad', label: 'Ad Creative' },
+  { value: 'editorial', label: 'Editorial' },
+  { value: 'icon', label: 'Icon / Logo' },
+] as const;
+
+export const VIDEO_CONTENT_TYPES = [
+  { value: 'cinematic_ad', label: 'Cinematic Ad' },
+  { value: 'social_clip', label: 'Social Clip' },
+  { value: 'ugc', label: 'UGC / Casual' },
+  { value: 'product_demo', label: 'Product Demo' },
+  { value: 'explainer', label: 'Explainer' },
+] as const;
+
+export const STYLE_OPTIONS = [
+  { value: 'photorealistic', label: 'Photorealistic' },
+  { value: 'illustration', label: 'Illustration' },
+  { value: '3d_render', label: '3D Render' },
+  { value: 'watercolor', label: 'Watercolor' },
+  { value: 'minimalist', label: 'Minimalist' },
+  { value: 'vintage', label: 'Vintage' },
+  { value: 'cinematic', label: 'Cinematic' },
+  { value: 'flat_design', label: 'Flat Design' },
+  { value: 'anime', label: 'Anime' },
+] as const;
+
+export const MOOD_OPTIONS = [
+  { value: 'professional', label: 'Professional' },
+  { value: 'playful', label: 'Playful' },
+  { value: 'dramatic', label: 'Dramatic' },
+  { value: 'warm', label: 'Warm' },
+  { value: 'cool', label: 'Cool' },
+  { value: 'energetic', label: 'Energetic' },
+  { value: 'calm', label: 'Calm' },
+  { value: 'luxurious', label: 'Luxurious' },
+] as const;
+
+export const CAMERA_MOTION_OPTIONS = [
+  { value: 'static', label: 'Static' },
+  { value: 'pan', label: 'Pan' },
+  { value: 'zoom', label: 'Zoom' },
+  { value: 'tracking', label: 'Tracking' },
+  { value: 'dolly', label: 'Dolly' },
+  { value: 'handheld', label: 'Handheld' },
+  { value: 'orbit', label: 'Orbit' },
+] as const;
+
 function markup(cost: number): number {
   return Math.round(cost * 1.3 * 10000) / 10000;
 }

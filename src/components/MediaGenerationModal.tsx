@@ -1,9 +1,10 @@
 import { useState, useRef } from 'react';
-import type { ModelOption, ModelCategory } from '../config/models';
+import type { ModelOption, ModelCategory, GenerationContext } from '../config/models';
 import {
   TEXT_TO_IMAGE_MODELS, IMAGE_EDIT_MODELS, TEXT_TO_VIDEO_MODELS,
   IMAGE_TO_VIDEO_MODELS, BG_REMOVAL_MODELS, UPSCALE_MODELS,
   getModelPreferences,
+  IMAGE_CONTENT_TYPES, VIDEO_CONTENT_TYPES, STYLE_OPTIONS, MOOD_OPTIONS, CAMERA_MOTION_OPTIONS,
 } from '../config/models';
 
 type GenerationMode = 'textToImage' | 'imageEdit' | 'textToVideo' | 'imageToVideo' | 'backgroundRemoval' | 'imageUpscale';
@@ -17,6 +18,7 @@ interface MediaGenerationModalProps {
   defaultPrompt?: string;
   defaultImageUrl?: string;
   hidePrompt?: boolean;
+  defaultContext?: Partial<GenerationContext>;
 }
 
 export interface GenerationSettings {
@@ -27,6 +29,7 @@ export interface GenerationSettings {
   resolution?: string;
   duration?: string;
   generateAudio?: boolean;
+  context?: GenerationContext;
 }
 
 const MODE_CONFIG: Record<GenerationMode, { title: string; getModels: () => ModelOption[]; prefKey: keyof ReturnType<typeof getModelPreferences> }> = {
@@ -42,9 +45,62 @@ const ASPECT_RATIOS = ['16:9', '9:16', '1:1', '4:3', '3:4'];
 const RESOLUTIONS = ['720p', '1080p', '4k'];
 const DURATIONS = ['4s', '6s', '8s', '10s', '14s', '20s'];
 
+function PillSelector({ options, value, onChange }: {
+  options: readonly { value: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={`px-2.5 py-1 text-[11px] rounded-apple-pill border transition-all ${
+            value === o.value
+              ? 'border-apple-blue bg-blue-50 text-apple-blue font-medium'
+              : 'border-apple-divider text-apple-text-secondary hover:border-gray-300'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ToggleSwitch({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex items-center gap-2 cursor-pointer select-none">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors ${
+          checked ? 'bg-apple-blue' : 'bg-gray-200'
+        }`}
+      >
+        <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform ${
+          checked ? 'translate-x-4' : 'translate-x-0'
+        }`} />
+      </button>
+      <span className="text-apple-xs text-apple-text">{label}</span>
+    </label>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <label className="block text-[10px] font-semibold text-apple-text-tertiary uppercase tracking-wider mb-1.5">{children}</label>
+  );
+}
+
 export default function MediaGenerationModal({
   isOpen, onClose, mode, projectId, onGenerate,
   defaultPrompt = '', defaultImageUrl = '', hidePrompt = false,
+  defaultContext,
 }: MediaGenerationModalProps) {
   const config = MODE_CONFIG[mode];
   const models = config.getModels();
@@ -60,11 +116,29 @@ export default function MediaGenerationModal({
   const [generateAudio, setGenerateAudio] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isVideo = mode === 'textToVideo' || mode === 'imageToVideo';
+  const isUtility = mode === 'backgroundRemoval' || mode === 'imageUpscale';
+  const hasContextFields = !isUtility;
+
+  const [contentType, setContentType] = useState(defaultContext?.contentType || (isVideo ? 'social_clip' : 'lifestyle'));
+  const [subject, setSubject] = useState(defaultContext?.subject || '');
+  const [style, setStyle] = useState(defaultContext?.style || 'photorealistic');
+  const [mood, setMood] = useState(defaultContext?.mood || 'professional');
+  const [colorHints, setColorHints] = useState(defaultContext?.colorHints || '');
+  const [includesText, setIncludesText] = useState(defaultContext?.includesText ?? false);
+  const [includesPeople, setIncludesPeople] = useState(defaultContext?.includesPeople ?? false);
+  const [cameraMotion, setCameraMotion] = useState(defaultContext?.cameraMotion || 'tracking');
+  const [hasDialogue, setHasDialogue] = useState(defaultContext?.hasDialogue ?? false);
+  const [negativePrompt, setNegativePrompt] = useState(defaultContext?.negativePrompt || '');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showModelSelector, setShowModelSelector] = useState(false);
+
   if (!isOpen) return null;
 
   const needsImage = mode === 'imageEdit' || mode === 'imageToVideo' || mode === 'backgroundRemoval' || mode === 'imageUpscale';
   const needsPrompt = mode !== 'backgroundRemoval' && mode !== 'imageUpscale';
-  const isVideo = mode === 'textToVideo' || mode === 'imageToVideo';
+  const contentTypeOptions = isVideo ? VIDEO_CONTENT_TYPES : IMAGE_CONTENT_TYPES;
+  const selectedModelObj = models.find(m => m.id === selectedModel) || models[0];
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -85,6 +159,22 @@ export default function MediaGenerationModal({
       settings.generateAudio = generateAudio;
     } else if (mode === 'textToImage') {
       settings.aspectRatio = aspectRatio;
+    }
+    if (hasContextFields) {
+      settings.context = {
+        contentType,
+        subject,
+        style,
+        mood,
+        colorHints: colorHints || undefined,
+        includesText,
+        includesPeople,
+        cameraMotion: isVideo ? cameraMotion : undefined,
+        hasDialogue: isVideo ? hasDialogue : undefined,
+        negativePrompt: negativePrompt || undefined,
+        platform: defaultContext?.platform,
+        purpose: defaultContext?.purpose,
+      };
     }
     onGenerate(settings);
     onClose();
@@ -112,8 +202,9 @@ export default function MediaGenerationModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-apple-lg shadow-xl w-full max-w-lg max-h-[85vh] overflow-y-auto">
+        {/* Header */}
         <div className="sticky top-0 bg-white border-b border-apple-divider px-5 py-3 flex items-center justify-between z-10">
-          <h3 className="text-apple-base font-semibold text-apple-text">{config.title} Settings</h3>
+          <h3 className="text-apple-base font-semibold text-apple-text">{config.title}</h3>
           <button onClick={onClose} className="p-1 hover:bg-apple-fill-secondary rounded-apple transition-colors">
             <svg className="w-5 h-5 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
@@ -121,47 +212,11 @@ export default function MediaGenerationModal({
           </button>
         </div>
 
-        <div className="p-5 space-y-5">
-          {/* Model Selector */}
-          <div>
-            <label className="block text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider mb-2">Model</label>
-            <div className="space-y-1.5">
-              {models.map((m) => (
-                <label
-                  key={m.id}
-                  className={`flex items-center gap-3 p-2.5 rounded-apple border cursor-pointer transition-all ${
-                    selectedModel === m.id
-                      ? 'border-apple-blue bg-blue-50/50 ring-1 ring-apple-blue/20'
-                      : 'border-apple-divider hover:border-gray-300'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="model"
-                    value={m.id}
-                    checked={selectedModel === m.id}
-                    onChange={() => setSelectedModel(m.id)}
-                    className="accent-apple-blue"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-apple-sm font-medium text-apple-text">{m.label}</span>
-                      {vendorBadge(m.vendor)}
-                    </div>
-                    <p className="text-[11px] text-apple-text-tertiary mt-0.5">{m.description}</p>
-                  </div>
-                  <span className="text-[11px] font-mono text-apple-text-secondary whitespace-nowrap">{m.costLabel}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
+        <div className="p-5 space-y-4">
           {/* Image Upload (for edit/I2V/utility modes) */}
           {needsImage && (
             <div>
-              <label className="block text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider mb-2">
-                Source Image
-              </label>
+              <SectionLabel>Source Image</SectionLabel>
               {imageUrl ? (
                 <div className="relative">
                   <img src={imageUrl} alt="Source" className="w-full h-32 object-cover rounded-apple border border-apple-divider" />
@@ -177,12 +232,12 @@ export default function MediaGenerationModal({
               ) : (
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full h-24 border-2 border-dashed border-apple-divider rounded-apple flex flex-col items-center justify-center gap-1 hover:border-apple-blue hover:bg-blue-50/30 transition-all"
+                  className="w-full h-20 border-2 border-dashed border-apple-divider rounded-apple flex flex-col items-center justify-center gap-1 hover:border-apple-blue hover:bg-blue-50/30 transition-all"
                 >
-                  <svg className="w-6 h-6 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <svg className="w-5 h-5 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
                   </svg>
-                  <span className="text-apple-xs text-apple-text-tertiary">Upload image</span>
+                  <span className="text-[11px] text-apple-text-tertiary">Upload image</span>
                 </button>
               )}
               <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
@@ -192,92 +247,202 @@ export default function MediaGenerationModal({
           {/* Prompt */}
           {needsPrompt && !hidePrompt && (
             <div>
-              <label className="block text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider mb-2">
-                {mode === 'imageEdit' ? 'Edit Instructions' : 'Prompt'}
-              </label>
+              <SectionLabel>{mode === 'imageEdit' ? 'Edit Instructions' : 'Prompt'}</SectionLabel>
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder={mode === 'imageEdit' ? 'Describe the changes you want...' : 'Describe what you want to generate...'}
-                className="input w-full h-20 text-apple-sm resize-none"
+                className="input w-full h-16 text-apple-sm resize-none"
               />
             </div>
           )}
 
-          {/* Aspect Ratio */}
+          {/* Context Fields (not for utility modes) */}
+          {hasContextFields && (
+            <>
+              {/* Subject */}
+              <div>
+                <SectionLabel>Subject / Focus</SectionLabel>
+                <input
+                  type="text"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="Main subject of the visual (e.g., coffee cup on marble, person using laptop)"
+                  className="input w-full text-apple-sm"
+                />
+              </div>
+
+              {/* Content Type */}
+              <div>
+                <SectionLabel>Content Type</SectionLabel>
+                <PillSelector options={contentTypeOptions} value={contentType} onChange={setContentType} />
+              </div>
+
+              {/* Visual Style */}
+              <div>
+                <SectionLabel>Visual Style</SectionLabel>
+                <PillSelector options={STYLE_OPTIONS} value={style} onChange={setStyle} />
+              </div>
+
+              {/* Mood / Tone */}
+              <div>
+                <SectionLabel>Mood / Tone</SectionLabel>
+                <PillSelector options={MOOD_OPTIONS} value={mood} onChange={setMood} />
+              </div>
+
+              {/* People & Text Toggles */}
+              <div className="flex items-center gap-6">
+                <ToggleSwitch label="Includes people" checked={includesPeople} onChange={setIncludesPeople} />
+                <ToggleSwitch label="Text overlay needed" checked={includesText} onChange={setIncludesText} />
+              </div>
+
+              {/* Camera Motion (video only) */}
+              {isVideo && (
+                <div>
+                  <SectionLabel>Camera Motion</SectionLabel>
+                  <PillSelector options={CAMERA_MOTION_OPTIONS} value={cameraMotion} onChange={setCameraMotion} />
+                </div>
+              )}
+
+              {/* Dialogue toggle (video only) */}
+              {isVideo && (
+                <div className="flex items-center gap-6">
+                  <ToggleSwitch label="Has dialogue / voiceover" checked={hasDialogue} onChange={setHasDialogue} />
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Technical Settings */}
           {(mode === 'textToImage' || isVideo) && (
             <div>
-              <label className="block text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider mb-2">Aspect Ratio</label>
-              <div className="flex flex-wrap gap-1.5">
-                {ASPECT_RATIOS.map((ar) => (
-                  <button
-                    key={ar}
-                    onClick={() => setAspectRatio(ar)}
-                    className={`px-3 py-1.5 text-apple-xs rounded-apple-pill border transition-all ${
-                      aspectRatio === ar
-                        ? 'border-apple-blue bg-blue-50 text-apple-blue font-medium'
-                        : 'border-apple-divider text-apple-text-secondary hover:border-gray-300'
-                    }`}
-                  >
-                    {ar}
-                  </button>
-                ))}
+              <SectionLabel>Aspect Ratio</SectionLabel>
+              <PillSelector
+                options={ASPECT_RATIOS.map(ar => ({ value: ar, label: ar }))}
+                value={aspectRatio}
+                onChange={setAspectRatio}
+              />
+            </div>
+          )}
+
+          {isVideo && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <SectionLabel>Duration</SectionLabel>
+                <PillSelector
+                  options={DURATIONS.map(d => ({ value: d, label: d }))}
+                  value={duration}
+                  onChange={setDuration}
+                />
+              </div>
+              <div>
+                <SectionLabel>Resolution</SectionLabel>
+                <PillSelector
+                  options={RESOLUTIONS.map(r => ({ value: r, label: r }))}
+                  value={resolution}
+                  onChange={setResolution}
+                />
               </div>
             </div>
           )}
 
-          {/* Video-specific options */}
           {isVideo && (
-            <>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider mb-2">Duration</label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {DURATIONS.map((d) => (
-                      <button
-                        key={d}
-                        onClick={() => setDuration(d)}
-                        className={`px-2.5 py-1 text-apple-xs rounded-apple-pill border transition-all ${
-                          duration === d
-                            ? 'border-apple-blue bg-blue-50 text-apple-blue font-medium'
-                            : 'border-apple-divider text-apple-text-secondary hover:border-gray-300'
-                        }`}
-                      >
-                        {d}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-apple-xs font-medium text-apple-text-secondary uppercase tracking-wider mb-2">Resolution</label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {RESOLUTIONS.map((r) => (
-                      <button
-                        key={r}
-                        onClick={() => setResolution(r)}
-                        className={`px-2.5 py-1 text-apple-xs rounded-apple-pill border transition-all ${
-                          resolution === r
-                            ? 'border-apple-blue bg-blue-50 text-apple-blue font-medium'
-                            : 'border-apple-divider text-apple-text-secondary hover:border-gray-300'
-                        }`}
-                      >
-                        {r}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={generateAudio}
-                  onChange={(e) => setGenerateAudio(e.target.checked)}
-                  className="accent-apple-blue"
-                />
-                <span className="text-apple-sm text-apple-text">Generate audio</span>
-              </label>
-            </>
+            <ToggleSwitch label="Generate audio" checked={generateAudio} onChange={setGenerateAudio} />
           )}
+
+          {/* Advanced (collapsible) */}
+          {hasContextFields && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="flex items-center gap-1.5 text-[11px] font-medium text-apple-text-secondary hover:text-apple-text transition-colors"
+              >
+                <svg className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                </svg>
+                Advanced
+              </button>
+              {showAdvanced && (
+                <div className="mt-2 space-y-3">
+                  <div>
+                    <SectionLabel>Color Palette / Brand Colors</SectionLabel>
+                    <input
+                      type="text"
+                      value={colorHints}
+                      onChange={(e) => setColorHints(e.target.value)}
+                      placeholder="e.g., navy blue and gold, warm earth tones, #FF6B35"
+                      className="input w-full text-apple-sm"
+                    />
+                  </div>
+                  <div>
+                    <SectionLabel>Negative Prompt (things to avoid)</SectionLabel>
+                    <input
+                      type="text"
+                      value={negativePrompt}
+                      onChange={(e) => setNegativePrompt(e.target.value)}
+                      placeholder="e.g., blurry, low quality, text, watermark"
+                      className="input w-full text-apple-sm"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Model Selector (collapsible) */}
+          <div className="border-t border-apple-divider pt-3">
+            <button
+              type="button"
+              onClick={() => setShowModelSelector(!showModelSelector)}
+              className="w-full flex items-center justify-between text-[11px] font-medium text-apple-text-secondary hover:text-apple-text transition-colors"
+            >
+              <span className="flex items-center gap-1.5">
+                <svg className={`w-3.5 h-3.5 transition-transform ${showModelSelector ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                </svg>
+                Model
+              </span>
+              {selectedModelObj && (
+                <span className="flex items-center gap-1.5">
+                  <span className="text-apple-text font-medium">{selectedModelObj.label}</span>
+                  {vendorBadge(selectedModelObj.vendor)}
+                  <span className="font-mono text-apple-text-tertiary">{selectedModelObj.costLabel}</span>
+                </span>
+              )}
+            </button>
+            {showModelSelector && (
+              <div className="mt-2 space-y-1.5">
+                {models.map((m) => (
+                  <label
+                    key={m.id}
+                    className={`flex items-center gap-3 p-2 rounded-apple border cursor-pointer transition-all ${
+                      selectedModel === m.id
+                        ? 'border-apple-blue bg-blue-50/50 ring-1 ring-apple-blue/20'
+                        : 'border-apple-divider hover:border-gray-300'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="model"
+                      value={m.id}
+                      checked={selectedModel === m.id}
+                      onChange={() => setSelectedModel(m.id)}
+                      className="accent-apple-blue"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-apple-sm font-medium text-apple-text">{m.label}</span>
+                        {vendorBadge(m.vendor)}
+                      </div>
+                      <p className="text-[10px] text-apple-text-tertiary mt-0.5 line-clamp-1">{m.description}</p>
+                    </div>
+                    <span className="text-[10px] font-mono text-apple-text-secondary whitespace-nowrap">{m.costLabel}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Footer */}

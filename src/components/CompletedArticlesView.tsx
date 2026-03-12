@@ -5,6 +5,7 @@ import { logActivity } from '../utils/activityLog';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 import { parseJsonOrThrow } from '../utils/apiResponse';
 import { getModelPreferences } from '../config/models';
+import type { GenerationContext } from '../config/models';
 import MediaEditButton from './MediaEditButton';
 import { useCredits } from '../contexts/CreditsContext';
 
@@ -313,11 +314,20 @@ export default function CompletedArticlesView({ siteUrl, projectId, highlightArt
 
   const generateImages = (article: Article) => {
     setImageError(null);
+    const context: GenerationContext = {
+      contentType: 'editorial',
+      subject: article.title || '',
+      style: 'photorealistic',
+      mood: 'professional',
+      includesText: false,
+      includesPeople: false,
+      purpose: 'blog_image',
+    };
     startTask(`blog-images-${article.id}`, 'blog-images', `Images: ${article.title.slice(0, 50)}`, async () => {
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.generateImages, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ descriptions: article.suggested_images, model: getModelPreferences(projectId).imageModel }),
+        body: JSON.stringify({ descriptions: article.suggested_images, model: getModelPreferences(projectId).imageModel, context }),
       });
       const data = await parseJsonOrThrow<{ images?: ArticleImage[]; errors?: string[]; error?: string }>(resp);
 

@@ -1,6 +1,7 @@
 import { authenticateRequest } from '../_config.js';
 import { generateImage } from '../_imageGen.js';
 import { enforceCredits, deductCredits } from '../_credits.js';
+import { buildContextBlock, resolveStyleLabel } from '../_contextPrompt.js';
 
 export const config = { maxDuration: 120 };
 
@@ -16,7 +17,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { imageDescription, textOverlay, platform, dimensions, model } = req.body || {};
+  const { imageDescription, textOverlay, platform, dimensions, model, context } = req.body || {};
   if (!imageDescription) return res.status(400).json({ error: 'imageDescription is required' });
 
   const sizeMap = {
@@ -35,24 +36,24 @@ export default async function handler(req, res) {
     x: 'Twitter/X promoted post card',
   }[platform] || 'social media ad';
 
-  const prompt = `Create a premium, photorealistic background image for a ${platformContext}. This is ONLY the visual backdrop — text will be added separately later.
+  const styleLabel = resolveStyleLabel(context);
+  const contextBlock = buildContextBlock(context);
+
+  const prompt = `Create a premium, ${styleLabel} background image for a ${platformContext}. This is ONLY the visual backdrop — text will be added separately later.
 
 CONCEPT: ${imageDescription}
-
+${contextBlock}
 CRITICAL RULES:
 - DO NOT include ANY text, words, letters, numbers, logos, watermarks, or typography of any kind
 - DO NOT include any UI elements, buttons, or interface components
 - The image must be completely clean of all text and writing
 
 VISUAL QUALITY:
-- Ultra high-quality, photorealistic or premium illustration style
-- Bold, scroll-stopping visual with a clear focal point
+- Ultra high-quality, bold, scroll-stopping visual with a clear focal point
 - Rich, vibrant colors with high contrast that pop in social feeds
 - Professional studio-quality lighting and composition
-- Leave negative space for text overlay (especially in the center and lower third)
-- Modern, premium aesthetic — think Apple or Nike ad photography
-- If showing people: authentic, diverse, emotionally engaging
-- If showing products: clean, well-lit, aspirational context
+${context?.includesText ? '- Leave generous negative space for text overlay (especially in the center and lower third)' : ''}
+- Modern, premium aesthetic
 - Depth of field to create visual hierarchy
 - No stock photo clichés (no handshakes, no pointing at screens)`;
 

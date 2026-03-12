@@ -80,12 +80,16 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
 
   const allSeriesItems = [...queueItems, ...seriesTopics.filter(t => !t.fromQueue)];
 
-  const autoGenerateImages = useCallback(async (articleId: string, descriptions: string[]) => {
+  const autoGenerateImages = useCallback(async (articleId: string, descriptions: string[], title?: string) => {
     try {
       const resp = await authenticatedFetch(API_ENDPOINTS.blog.generateImages, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ descriptions, model: getModelPreferences(projectId).imageModel }),
+        body: JSON.stringify({
+          descriptions,
+          model: getModelPreferences(projectId).imageModel,
+          context: { contentType: 'editorial', style: 'photorealistic', mood: 'professional', purpose: 'blog_image', subject: title || '', includesText: false, includesPeople: false },
+        }),
       });
       const data = await parseJsonOrThrow<{ images?: unknown[] }>(resp);
       if (data.images) {
@@ -136,7 +140,7 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
       const data = await parseJsonOrThrow<{ blog?: Record<string, unknown>; error?: string }>(resp);
       if (!data.blog) throw new Error('No article was returned.');
       if (data.blog.articleId && (data.blog.suggestedImages as unknown[])?.length > 0) {
-        autoGenerateImages(data.blog.articleId as string, data.blog.suggestedImages as string[]);
+        autoGenerateImages(data.blog.articleId as string, data.blog.suggestedImages as string[], title);
       }
       return data.blog;
     });
@@ -225,7 +229,7 @@ export default function BlogAutomateView({ siteUrl, projectId }: BlogAutomateVie
         } catch { /* best effort */ }
       }
       if (data.blog.articleId && (data.blog.suggestedImages as unknown[])?.length > 0) {
-        autoGenerateImages(data.blog.articleId as string, data.blog.suggestedImages as string[]);
+        autoGenerateImages(data.blog.articleId as string, data.blog.suggestedImages as string[], item.title);
       }
       return { blog: data.blog, itemId: item.id, fromQueue: item.fromQueue, title: item.title };
     });

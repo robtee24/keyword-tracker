@@ -1,6 +1,7 @@
 import { authenticateRequest } from '../_config.js';
 import { generateImage } from '../_imageGen.js';
 import { enforceCredits, deductCredits } from '../_credits.js';
+import { buildContextBlock, resolveStyleLabel } from '../_contextPrompt.js';
 import sharp from 'sharp';
 
 export const config = { maxDuration: 300 };
@@ -69,12 +70,14 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { descriptions, model } = req.body || {};
+  const { descriptions, model, context } = req.body || {};
   if (!descriptions || !Array.isArray(descriptions) || descriptions.length === 0) {
     return res.status(400).json({ error: 'descriptions array is required' });
   }
 
   const imageModel = model || 'dall-e-3';
+  const styleLabel = resolveStyleLabel(context);
+  const contextBlock = buildContextBlock(context);
   const maxImages = Math.min(descriptions.length, 5);
   const toGenerate = descriptions.slice(0, maxImages);
 
@@ -91,7 +94,7 @@ export default async function handler(req, res) {
     const desc = typeof item === 'string' ? item : item.description || '';
     const caption = typeof item === 'string' ? '' : item.caption || '';
 
-    const prompt = `Create a premium, photorealistic blog article image. CONCEPT: ${desc}. CRITICAL RULE: DO NOT include ANY text, words, letters, numbers, logos, watermarks, or typography of any kind. The image must be completely clean of all text and writing — text will be added separately with perfect typography. STYLE: Ultra high-quality editorial photography, professional lighting, modern composition, rich colors. Leave clean space in the lower third for text overlay. Think top-tier magazine or brand campaign quality.`;
+    const prompt = `Create a premium, ${styleLabel} blog article image.${context?.subject ? ` ARTICLE: ${context.subject}.` : ''} CONCEPT: ${desc}.${contextBlock} CRITICAL RULE: DO NOT include ANY text, words, letters, numbers, logos, watermarks, or typography of any kind. The image must be completely clean of all text and writing — text will be added separately with perfect typography. VISUAL QUALITY: Ultra high-quality editorial photography, professional lighting, modern composition, rich colors. Leave clean space in the lower third for text overlay. Think top-tier magazine or brand campaign quality.`;
 
     try {
       console.log(`[BlogImages] Generating image ${i + 1}/${toGenerate.length}`);

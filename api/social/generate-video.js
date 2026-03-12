@@ -1,6 +1,7 @@
 import { authenticateRequest } from '../_config.js';
 import { falTextToVideo } from '../_fal.js';
 import { enforceCredits, deductCredits } from '../_credits.js';
+import { buildVideoContextBlock, resolveStyleLabel } from '../_contextPrompt.js';
 
 export const config = { maxDuration: 300 };
 
@@ -35,7 +36,7 @@ const MODEL_COSTS_PER_SEC = {
   'fal-ltx-2.3-pro': 0.06,
 };
 
-function buildPromptFromShots(shots, platform) {
+function buildPromptFromShots(shots, platform, context) {
   if (!shots || !Array.isArray(shots) || shots.length === 0) return null;
   const scenes = shots
     .map((s, i) => {
@@ -43,7 +44,9 @@ function buildPromptFromShots(shots, platform) {
       return `Scene ${i + 1} (${s.time || ''}): ${visual}`;
     })
     .join('. ');
-  return `Premium cinematic ${PLATFORM_VIDEO_SPECS[platform]?.description || 'social media video'}. Ultra high-quality, professional lighting, smooth camera movements, rich color grading. NO text, words, letters, or typography anywhere in the video. ${scenes}. Modern aesthetic, shallow depth of field, professional color grading like a brand campaign.`;
+  const styleLabel = resolveStyleLabel(context);
+  const contextBlock = buildVideoContextBlock(context);
+  return `Premium ${styleLabel} ${PLATFORM_VIDEO_SPECS[platform]?.description || 'social media video'}. Ultra high-quality, professional lighting, smooth camera movements, rich color grading. NO text, words, letters, or typography anywhere in the video. ${scenes}.${contextBlock} Modern aesthetic, shallow depth of field, professional color grading like a brand campaign.`;
 }
 
 export default async function handler(req, res) {
@@ -53,12 +56,14 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { platform, prompt, shots, duration, model, aspectRatio: overrideAspect, resolution: overrideRes, generateAudio } = req.body || {};
+  const { platform, prompt, shots, duration, model, aspectRatio: overrideAspect, resolution: overrideRes, generateAudio, context } = req.body || {};
 
-  let videoPrompt = buildPromptFromShots(shots, platform);
+  let videoPrompt = buildPromptFromShots(shots, platform, context);
   if (!videoPrompt && prompt) {
     const cleanPrompt = prompt.replace(/text overlay[^.]*\./gi, '').replace(/text on screen[^.]*\./gi, '').trim();
-    videoPrompt = `Premium cinematic video. Ultra high-quality, professional lighting, smooth camera movements. NO text, words, letters, or typography anywhere in the video. ${cleanPrompt}. Professional color grading, shallow depth of field.`;
+    const styleLabel = resolveStyleLabel(context);
+    const contextBlock = buildVideoContextBlock(context);
+    videoPrompt = `Premium ${styleLabel} video. Ultra high-quality, professional lighting, smooth camera movements. NO text, words, letters, or typography anywhere in the video. ${cleanPrompt}.${contextBlock} Professional color grading, shallow depth of field.`;
   }
   if (!videoPrompt) return res.status(400).json({ error: 'Either prompt or shots array is required' });
 

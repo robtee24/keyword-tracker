@@ -2,6 +2,7 @@ import { authenticateRequest } from '../_config.js';
 import { getSupabase } from '../db.js';
 import { falTextToVideo } from '../_fal.js';
 import { enforceCredits, deductCredits } from '../_credits.js';
+import { buildVideoContextBlock, resolveStyleLabel } from '../_contextPrompt.js';
 
 export const config = { maxDuration: 300 };
 
@@ -92,7 +93,15 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Authentication required' });
 
-  const { videoProjectId, sceneIndex, generateAll, prompt, aspectRatio, durationSeconds, model: videoModel } = req.body || {};
+  const { videoProjectId, sceneIndex, generateAll, prompt, aspectRatio, durationSeconds, model: videoModel, context } = req.body || {};
+
+  function enhancePrompt(rawPrompt) {
+    if (!context) return rawPrompt;
+    const contextBlock = buildVideoContextBlock(context);
+    const styleLabel = resolveStyleLabel(context);
+    if (!contextBlock) return rawPrompt;
+    return `${styleLabel} video. ${rawPrompt}${contextBlock}`;
+  }
 
   // Single scene generation
   if (prompt && sceneIndex !== undefined) {
@@ -101,9 +110,11 @@ export default async function handler(req, res) {
     const creditCost = rawCost * 1.3;
     if (!(await enforceCredits(auth.user.id, creditCost, res))) return;
 
+    const enhancedPrompt = enhancePrompt(prompt);
+
     if (isFalModel(videoModel)) {
       try {
-        const videoUrl = await generateWithFal(prompt, videoModel, aspectRatio || '16:9', durationSeconds || 8);
+        const videoUrl = await generateWithFal(enhancedPrompt, videoModel, aspectRatio || '16:9', durationSeconds || 8);
         if (!videoUrl) return res.status(500).json({ error: 'No video returned from fal' });
 
         const supabase = getSupabase();
@@ -136,7 +147,7 @@ export default async function handler(req, res) {
     }
 
     try {
-      const operationName = await generateVeoVideo(prompt, aspectRatio || '16:9', durationSeconds || 8, videoModel);
+      const operationName = await generateVeoVideo(enhancedPrompt, aspectRatio || '16:9', durationSeconds || 8, videoModel);
       if (!operationName) return res.status(500).json({ error: 'No operation returned from VEO' });
 
       const supabase = getSupabase();
@@ -190,10 +201,11 @@ export default async function handler(req, res) {
 
     for (let i = 0; i < scenes.length; i++) {
       const scene = scenes[i];
+      const scenePrompt = enhancePrompt(scene.prompt);
       try {
         if (useFal) {
           const videoUrl = await generateWithFal(
-            scene.prompt,
+            scenePrompt,
             videoModel,
             project.aspect_ratio || '16:9',
             scene.durationSeconds || 8
@@ -224,7 +236,7 @@ export default async function handler(req, res) {
           }
 
           const operationName = await generateVeoVideo(
-            scene.prompt,
+            scenePrompt,
             project.aspect_ratio || '16:9',
             scene.durationSeconds || 8,
             videoModel
