@@ -4,9 +4,10 @@ import { API_ENDPOINTS } from '../config/api';
 import { InfoTooltip } from './Tooltip';
 import {
   TEXT_TO_IMAGE_MODELS, IMAGE_EDIT_MODELS, TEXT_TO_VIDEO_MODELS, IMAGE_TO_VIDEO_MODELS,
-  getModelPreferences, setModelPreferences,
+  CONTENT_GENERATION_MODELS, ANALYSIS_AUDIT_MODELS, IDEA_GENERATION_MODELS,
+  getModelPreferences, setModelPreferences, formatModelOption,
 } from '../config/models';
-import type { ModelOption, ModelProvider } from '../config/models';
+import type { ModelOption } from '../config/models';
 
 interface SettingsViewProps {
   projectId: string;
@@ -22,62 +23,51 @@ interface Member {
   user_id: string | null;
 }
 
-function providerBadge(provider: ModelProvider) {
-  const config: Record<string, { bg: string; label: string }> = {
-    google: { bg: 'bg-blue-100 text-blue-700', label: 'Google' },
-    openai: { bg: 'bg-emerald-100 text-emerald-700', label: 'OpenAI' },
-    fal: { bg: 'bg-violet-100 text-violet-700', label: 'fal.ai' },
-  };
-  const c = config[provider] || { bg: 'bg-gray-100 text-gray-600', label: provider };
-  return (
-    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${c.bg}`}>
-      {c.label}
-    </span>
-  );
-}
-
-interface ModelSectionProps {
-  title: string;
+interface ModelDropdownProps {
+  label: string;
+  hint?: string;
   models: ModelOption[];
   selected: string;
-  radioName: string;
   onChange: (id: string) => void;
 }
 
-function ModelSection({ title, models, selected, radioName, onChange }: ModelSectionProps) {
+function ModelDropdown({ label, hint, models, selected, onChange }: ModelDropdownProps) {
+  const selectedModel = models.find(m => m.id === selected);
+  const hasRoutes = selectedModel?.routes && selectedModel.routes.length > 1;
+
   return (
     <div>
-      <label className="block text-apple-sm font-medium text-apple-text mb-2">{title}</label>
-      <div className="space-y-2">
-        {models.map((m) => (
-          <label
-            key={m.id}
-            className={`flex items-start gap-3 p-3 rounded-apple-sm border cursor-pointer transition-all ${
-              selected === m.id
-                ? 'border-apple-blue bg-blue-50/50 ring-1 ring-apple-blue/30'
-                : 'border-apple-border hover:border-apple-border-heavy hover:bg-apple-fill-tertiary'
-            }`}
+      <div className="flex items-baseline justify-between mb-1.5">
+        <label className="text-apple-sm font-medium text-apple-text">{label}</label>
+        {hint && <span className="text-[10px] text-apple-text-tertiary">{hint}</span>}
+      </div>
+      <div className="flex gap-2">
+        <select
+          value={selected}
+          onChange={(e) => onChange(e.target.value)}
+          className="input flex-1 text-apple-sm cursor-pointer"
+        >
+          {models.map((m) => (
+            <option key={m.id} value={m.id}>
+              {formatModelOption(m)}
+            </option>
+          ))}
+        </select>
+        {hasRoutes && (
+          <select
+            value={selectedModel.routes!.find(r => r.modelId === selected)?.provider || selectedModel.routes![0].provider}
+            onChange={(e) => {
+              const route = selectedModel.routes!.find(r => r.provider === e.target.value);
+              if (route) onChange(route.modelId);
+            }}
+            className="input w-28 text-apple-xs cursor-pointer"
+            title="Choose API provider"
           >
-            <input
-              type="radio"
-              name={radioName}
-              value={m.id}
-              checked={selected === m.id}
-              onChange={() => onChange(m.id)}
-              className="mt-0.5 accent-blue-600"
-            />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-apple-sm font-medium text-apple-text">{m.label}</span>
-                {providerBadge(m.provider)}
-              </div>
-              <p className="text-apple-xs text-apple-text-secondary mt-0.5">{m.description}</p>
-            </div>
-            <span className="text-[11px] font-mono text-apple-text-tertiary whitespace-nowrap mt-0.5">
-              {m.costLabel}
-            </span>
-          </label>
-        ))}
+            {selectedModel.routes!.map((r) => (
+              <option key={r.provider} value={r.provider}>{r.label}</option>
+            ))}
+          </select>
+        )}
       </div>
     </div>
   );
@@ -97,6 +87,9 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
   const [imageEdit, setImageEdit] = useState(prefs.imageEdit);
   const [textToVideo, setTextToVideo] = useState(prefs.textToVideo);
   const [imageToVideo, setImageToVideo] = useState(prefs.imageToVideo);
+  const [contentGeneration, setContentGeneration] = useState(prefs.contentGeneration);
+  const [analysisAudit, setAnalysisAudit] = useState(prefs.analysisAudit);
+  const [ideaGeneration, setIdeaGeneration] = useState(prefs.ideaGeneration);
   const [modelSaved, setModelSaved] = useState(false);
 
   const fetchMembers = useCallback(async () => {
@@ -113,9 +106,7 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
     }
   }, [projectId]);
 
-  useEffect(() => {
-    fetchMembers();
-  }, [fetchMembers]);
+  useEffect(() => { fetchMembers(); }, [fetchMembers]);
 
   useEffect(() => {
     const p = getModelPreferences(projectId);
@@ -123,6 +114,9 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
     setImageEdit(p.imageEdit);
     setTextToVideo(p.textToVideo);
     setImageToVideo(p.imageToVideo);
+    setContentGeneration(p.contentGeneration);
+    setAnalysisAudit(p.analysisAudit);
+    setIdeaGeneration(p.ideaGeneration);
   }, [projectId]);
 
   const showSaved = () => {
@@ -132,10 +126,15 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
 
   const handleChange = (category: string, model: string) => {
     const update: Record<string, string> = { [category]: model };
-    if (category === 'textToImage') { setTextToImage(model); update.imageModel = model; }
-    else if (category === 'imageEdit') setImageEdit(model);
-    else if (category === 'textToVideo') { setTextToVideo(model); update.videoModel = model; }
-    else if (category === 'imageToVideo') setImageToVideo(model);
+    switch (category) {
+      case 'textToImage': setTextToImage(model); update.imageModel = model; break;
+      case 'imageEdit': setImageEdit(model); break;
+      case 'textToVideo': setTextToVideo(model); update.videoModel = model; break;
+      case 'imageToVideo': setImageToVideo(model); break;
+      case 'contentGeneration': setContentGeneration(model); break;
+      case 'analysisAudit': setAnalysisAudit(model); break;
+      case 'ideaGeneration': setIdeaGeneration(model); break;
+    }
     setModelPreferences(projectId, update);
     showSaved();
   };
@@ -150,11 +149,7 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
       const res = await authenticatedFetch(API_ENDPOINTS.projects.members, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project_id: projectId,
-          email: newEmail.trim(),
-          role: newRole,
-        }),
+        body: JSON.stringify({ project_id: projectId, email: newEmail.trim(), role: newRole }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -180,9 +175,7 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project_id: projectId, member_id: memberId }),
       });
-      if (res.ok) {
-        fetchMembers();
-      }
+      if (res.ok) fetchMembers();
     } catch { /* silently fail */ }
   };
 
@@ -195,56 +188,85 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
         </p>
       </div>
 
-      {/* AI Models Section */}
+      {/* AI Models — Media */}
       <div className="card p-6 mb-6">
         <div className="flex items-center gap-2 mb-1">
-          <h2 className="text-apple-title3 font-semibold text-apple-text">AI Models</h2>
-          <InfoTooltip text="Choose default AI models for each capability. These defaults are used across the platform unless overridden during generation." position="right" />
+          <h2 className="text-apple-title3 font-semibold text-apple-text">Media Models</h2>
+          <InfoTooltip text="Default models for image and video generation. Override per-generation in the settings modal." position="right" />
           {modelSaved && (
             <span className="text-apple-xs text-green-600 font-medium ml-2 animate-fade-in">Saved</span>
           )}
         </div>
-        <p className="text-apple-xs text-apple-text-tertiary mb-5">
-          Prices shown include a 30% service markup on raw API costs.
+        <p className="text-apple-xs text-apple-text-tertiary mb-4">
+          Prices include 30% service markup. Costs are estimated.
         </p>
 
-        <div className="space-y-5">
-          <ModelSection
-            title="Image Generation"
+        <div className="space-y-4">
+          <ModelDropdown
+            label="Image Generation"
+            hint="Blog images, social media, ads"
             models={TEXT_TO_IMAGE_MODELS}
             selected={textToImage}
-            radioName="textToImage"
             onChange={(m) => handleChange('textToImage', m)}
           />
-
-          <div className="border-t border-apple-border" />
-
-          <ModelSection
-            title="Image Editing"
+          <ModelDropdown
+            label="Image Editing"
+            hint="Prompt-based edits, style transfer"
             models={IMAGE_EDIT_MODELS}
             selected={imageEdit}
-            radioName="imageEdit"
             onChange={(m) => handleChange('imageEdit', m)}
           />
-
-          <div className="border-t border-apple-border" />
-
-          <ModelSection
-            title="Video Generation"
+          <ModelDropdown
+            label="Video Generation"
+            hint="Text-to-video for ads, social"
             models={TEXT_TO_VIDEO_MODELS}
             selected={textToVideo}
-            radioName="textToVideo"
             onChange={(m) => handleChange('textToVideo', m)}
           />
-
-          <div className="border-t border-apple-border" />
-
-          <ModelSection
-            title="Image to Video"
+          <ModelDropdown
+            label="Image to Video"
+            hint="Animate images into video clips"
             models={IMAGE_TO_VIDEO_MODELS}
             selected={imageToVideo}
-            radioName="imageToVideo"
             onChange={(m) => handleChange('imageToVideo', m)}
+          />
+        </div>
+      </div>
+
+      {/* AI Models — LLM */}
+      <div className="card p-6 mb-6">
+        <div className="flex items-center gap-2 mb-1">
+          <h2 className="text-apple-title3 font-semibold text-apple-text">AI Writing & Analysis Models</h2>
+          <InfoTooltip text="Models used for content writing, audits, keyword analysis, and idea generation across the platform." position="right" />
+          {modelSaved && (
+            <span className="text-apple-xs text-green-600 font-medium ml-2 animate-fade-in">Saved</span>
+          )}
+        </div>
+        <p className="text-apple-xs text-apple-text-tertiary mb-4">
+          Estimated cost per task. Actual cost varies by content length.
+        </p>
+
+        <div className="space-y-4">
+          <ModelDropdown
+            label="Content Generation"
+            hint="Blog articles, page content, ad copy, social posts"
+            models={CONTENT_GENERATION_MODELS}
+            selected={contentGeneration}
+            onChange={(m) => handleChange('contentGeneration', m)}
+          />
+          <ModelDropdown
+            label="Analysis & Audits"
+            hint="Page audits, keyword analysis, SEO recommendations"
+            models={ANALYSIS_AUDIT_MODELS}
+            selected={analysisAudit}
+            onChange={(m) => handleChange('analysisAudit', m)}
+          />
+          <ModelDropdown
+            label="Idea Generation"
+            hint="Social ideas, blog opportunities, video concepts"
+            models={IDEA_GENERATION_MODELS}
+            selected={ideaGeneration}
+            onChange={(m) => handleChange('ideaGeneration', m)}
           />
         </div>
       </div>
@@ -321,9 +343,7 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
                 onChange={(e) => setNewEmail(e.target.value)}
                 placeholder="colleague@company.com"
                 className="input w-full"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleAddMember();
-                }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAddMember(); }}
               />
             </div>
             <div className="w-32">
@@ -348,12 +368,8 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
             </button>
           </div>
 
-          {error && (
-            <p className="mt-3 text-apple-sm text-apple-red">{error}</p>
-          )}
-          {success && (
-            <p className="mt-3 text-apple-sm text-green-600">{success}</p>
-          )}
+          {error && <p className="mt-3 text-apple-sm text-apple-red">{error}</p>}
+          {success && <p className="mt-3 text-apple-sm text-green-600">{success}</p>}
         </div>
       )}
     </div>

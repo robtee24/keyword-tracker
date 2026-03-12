@@ -90,16 +90,17 @@ export default function MediaGenerationModal({
     onClose();
   };
 
-  const providerBadge = (provider: string) => {
+  const vendorBadge = (vendor: string) => {
     const colors: Record<string, string> = {
-      google: 'bg-blue-50 text-blue-700',
-      openai: 'bg-emerald-50 text-emerald-700',
-      fal: 'bg-violet-50 text-violet-700',
+      Google: 'bg-blue-50 text-blue-700', OpenAI: 'bg-emerald-50 text-emerald-700',
+      FLUX: 'bg-purple-50 text-purple-700', Kling: 'bg-cyan-50 text-cyan-700',
+      LTX: 'bg-violet-50 text-violet-700', Recraft: 'bg-rose-50 text-rose-700',
+      Bria: 'bg-teal-50 text-teal-700', Pixelcut: 'bg-indigo-50 text-indigo-700',
+      SeedVR: 'bg-orange-50 text-orange-700',
     };
-    const labels: Record<string, string> = { google: 'Google', openai: 'OpenAI', fal: 'fal.ai' };
     return (
-      <span className={`text-[10px] px-1.5 py-0.5 rounded-apple-pill font-medium ${colors[provider] || 'bg-gray-100 text-gray-600'}`}>
-        {labels[provider] || provider}
+      <span className={`text-[10px] px-1.5 py-0.5 rounded-apple-pill font-medium ${colors[vendor] || 'bg-gray-100 text-gray-600'}`}>
+        {vendor}
       </span>
     );
   };
@@ -142,7 +143,7 @@ export default function MediaGenerationModal({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-apple-sm font-medium text-apple-text">{m.label}</span>
-                      {providerBadge(m.provider)}
+                      {vendorBadge(m.vendor)}
                     </div>
                     <p className="text-[11px] text-apple-text-tertiary mt-0.5">{m.description}</p>
                   </div>
