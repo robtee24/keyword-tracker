@@ -248,7 +248,28 @@ Return JSON: {"opportunities":[{"title":"...","targetKeyword":"...","relatedKeyw
         } else {
           const err2 = result2.error?.message || `Insert returned ${result2.data?.length || 0} rows`;
           errors.push('Core: ' + err2);
-          console.error('[BlogOpps] Core insert also failed:', err2);
+          console.warn('[BlogOpps] Core insert failed:', err2, '— retrying one-by-one');
+
+          const singles = [];
+          for (const opp of opportunities) {
+            const { data: singleData, error: singleErr } = await supabase
+              .from('blog_opportunities')
+              .insert(coreRow(opp))
+              .select()
+              .single();
+            if (!singleErr && singleData) {
+              singles.push(singleData);
+            } else {
+              console.error('[BlogOpps] Single insert failed for:', opp.title, singleErr?.message);
+            }
+          }
+          if (singles.length > 0) {
+            inserted = singles;
+            console.log(`[BlogOpps] Single insert succeeded: ${inserted.length}/${opportunities.length} rows`);
+          } else {
+            errors.push('Single: all failed');
+            console.error('[BlogOpps] All insert methods failed');
+          }
         }
       }
 
@@ -258,7 +279,7 @@ Return JSON: {"opportunities":[{"title":"...","targetKeyword":"...","relatedKeyw
         return res.status(200).json({
           opportunities: fallback,
           batchId,
-          warning: 'Failed to save: ' + errors.join(' | ') + '. Try running NOTIFY pgrst, \'reload schema\' in Supabase SQL editor to refresh the schema cache.',
+          warning: 'Ideas generated but could not be saved to database. Use "Retry Save" to try again.',
         });
       }
 

@@ -31,6 +31,60 @@ export default async function handler(req, res) {
     return res.status(200).json({ opportunities: data || [] });
   }
 
+  if (req.method === 'POST') {
+    const { opportunities, projectId, siteUrl } = req.body || {};
+    if (!opportunities?.length || !projectId || !siteUrl) {
+      return res.status(400).json({ error: 'opportunities, projectId, and siteUrl are required' });
+    }
+
+    const now = new Date().toISOString();
+    const batchId = crypto.randomUUID();
+    const inserted = [];
+
+    for (const opp of opportunities) {
+      const row = {
+        site_url: siteUrl,
+        project_id: projectId,
+        batch_id: batchId,
+        title: opp.title || '',
+        target_keyword: opp.targetKeyword || opp.target_keyword || '',
+        related_keywords: opp.relatedKeywords || opp.related_keywords || [],
+        search_volume: opp.searchVolume || opp.search_volume || 'medium',
+        estimated_searches: opp.estimatedMonthlySearches || opp.estimated_searches || 0,
+        difficulty: opp.difficulty || 'medium',
+        funnel_stage: opp.funnelStage || opp.funnel_stage || 'awareness',
+        description: opp.description || '',
+        content_type: opp.contentType || opp.content_type || 'guide',
+        status: opp.status === 'completed' ? 'completed' : 'pending',
+        created_at: opp.created_at || now,
+      };
+
+      const { data, error } = await supabase
+        .from('blog_opportunities')
+        .insert(row)
+        .select()
+        .single();
+
+      if (!error && data) {
+        inserted.push(data);
+      } else {
+        const { data: fallbackData, error: fallbackErr } = await supabase
+          .from('blog_opportunities')
+          .insert({ site_url: siteUrl, project_id: projectId, title: row.title, description: row.description, status: row.status, created_at: row.created_at })
+          .select()
+          .single();
+        if (!fallbackErr && fallbackData) inserted.push(fallbackData);
+        else console.error('[BlogOpps] POST insert failed:', opp.title, error?.message, fallbackErr?.message);
+      }
+    }
+
+    if (inserted.length === 0) {
+      return res.status(500).json({ error: 'Failed to save any opportunities to database.' });
+    }
+
+    return res.status(200).json({ opportunities: inserted, batchId, saved: inserted.length, total: opportunities.length });
+  }
+
   if (req.method === 'PUT') {
     const { id, projectId, status, generated_blog } = req.body || {};
     if (!id) return res.status(400).json({ error: 'id is required' });

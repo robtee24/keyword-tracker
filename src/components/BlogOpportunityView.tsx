@@ -139,6 +139,31 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
   const batches = useMemo(() => groupIntoBatches(opportunities), [opportunities]);
 
   const localStorageKey = `blog_opps_backup_${projectId}`;
+  const [retrySaving, setRetrySaving] = useState(false);
+
+  const retrySaveToDb = async () => {
+    if (opportunities.length === 0) return;
+    setRetrySaving(true);
+    try {
+      const resp = await authenticatedFetch(API_ENDPOINTS.db.blogOpportunities, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ opportunities, projectId, siteUrl }),
+      });
+      const data = await parseJsonOrThrow<{ opportunities?: Record<string, unknown>[]; saved?: number; total?: number; error?: string }>(resp);
+      if (data.opportunities && data.opportunities.length > 0) {
+        const normalized = data.opportunities.map((o: Record<string, unknown>) => normalizeOpp(o));
+        setOpportunities(normalized);
+        localStorage.removeItem(localStorageKey);
+        setWarning(null);
+      } else {
+        setWarning(`Retry failed: ${data.error || 'Could not save to database.'}`);
+      }
+    } catch (err) {
+      setWarning(`Retry failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+    setRetrySaving(false);
+  };
 
   const loadOpportunities = useCallback(async () => {
     setLoading(true);
@@ -372,9 +397,23 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
 
       {warning && (
         <div className="bg-amber-50 border border-amber-200 rounded-apple p-4 flex items-center justify-between">
-          <div>
-            <p className="text-apple-sm text-amber-800 font-medium">Save Warning</p>
-            <p className="text-apple-xs text-amber-600 mt-1 whitespace-pre-wrap">{warning}</p>
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="flex-1 min-w-0">
+              <p className="text-apple-sm text-amber-800 font-medium">Save Warning</p>
+              <p className="text-apple-xs text-amber-600 mt-1 whitespace-pre-wrap">{warning}</p>
+            </div>
+            <button
+              onClick={retrySaveToDb}
+              disabled={retrySaving}
+              className="px-3 py-1.5 rounded-apple-sm bg-amber-600 text-white text-apple-xs font-medium hover:bg-amber-700 transition-colors disabled:opacity-50 shrink-0"
+            >
+              {retrySaving ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Saving...
+                </span>
+              ) : 'Retry Save'}
+            </button>
           </div>
           <button onClick={() => setWarning(null)} className="text-amber-400 hover:text-amber-600 shrink-0 ml-4">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
