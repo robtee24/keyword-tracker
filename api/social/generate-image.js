@@ -1,7 +1,13 @@
 import { authenticateRequest } from '../_config.js';
 import { generateImage } from '../_imageGen.js';
+import { enforceCredits, deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 60 };
+
+const MODEL_COSTS = {
+  'dall-e-3': 0.04,
+  'gpt-image-1': 0.04,
+};
 
 const PLATFORM_IMAGE_SIZES = {
   instagram: '1024x1792',
@@ -51,6 +57,10 @@ VISUAL QUALITY:
 - Depth of field for visual hierarchy
 - No stock photo clichés`;
 
+  const rawCost = MODEL_COSTS[imageModel] || 0.04;
+  const creditCost = rawCost * 1.3;
+  if (!(await enforceCredits(auth.user.id, creditCost, res))) return;
+
   try {
     const responseFormat = imageModel === 'dall-e-3' ? 'b64_json' : 'url';
     const { imageUrl, revisedPrompt } = await generateImage(cleanPrompt, {
@@ -58,6 +68,8 @@ VISUAL QUALITY:
       size: imageSize,
       responseFormat,
     });
+
+    await deductCredits(auth.user.id, creditCost, imageModel, 'Social image generation');
 
     return res.status(200).json({
       imageUrl,

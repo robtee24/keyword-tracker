@@ -4,6 +4,10 @@ import { authenticatedFetch } from '../services/authService';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 import { parseJsonOrThrow } from '../utils/apiResponse';
 import { getModelPreferences } from '../config/models';
+import MediaGenerationModal, { GenerationSettingsIcon } from './MediaGenerationModal';
+import type { GenerationSettings } from './MediaGenerationModal';
+import MediaEditButton from './MediaEditButton';
+import { useCredits } from '../contexts/CreditsContext';
 
 type AdPlatform = 'meta' | 'tiktok' | 'linkedin' | 'x';
 type CreativeType = 'static' | 'video';
@@ -282,6 +286,9 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
   const [expandedSaved, setExpandedSaved] = useState<string | null>(null);
   const [activeCreativeId, setActiveCreativeId] = useState<string | null>(null);
 
+  const [showGenModal, setShowGenModal] = useState(false);
+  const { refreshCredits } = useCredits();
+
   const { startTask, getTask, getTasksByType, clearTask } = useBackgroundTasks();
   const adTaskId = `ad-generate-${platform}-${projectId}`;
   const adTask = getTask(adTaskId);
@@ -325,6 +332,7 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
       setActiveVariation(0);
       saveCreative(adResult, {});
       clearTask(adTaskId);
+      refreshCredits();
     } else if (adTask?.status === 'failed') {
       setError(adTask.error || 'Failed to generate ads');
       clearTask(adTaskId);
@@ -347,6 +355,7 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
           return updated;
         });
         clearTask(task.id);
+        refreshCredits();
       } else if (task.status === 'failed') {
         setError(task.error || 'Image generation failed');
         clearTask(task.id);
@@ -684,6 +693,7 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                               </svg>
                               Generate Image
+                              <GenerationSettingsIcon onClick={() => setShowGenModal(true)} />
                             </span>
                           )}
                         </button>
@@ -692,11 +702,22 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
 
                     {generatedImages[activeVariation] && (
                       <div className="space-y-2">
-                        <img
-                          src={generatedImages[activeVariation]}
-                          alt="Generated ad creative"
-                          className="w-full rounded-apple-sm border border-apple-divider"
-                        />
+                        <div className="relative">
+                          <img
+                            src={generatedImages[activeVariation]}
+                            alt="Generated ad creative"
+                            className="w-full rounded-apple-sm border border-apple-divider"
+                          />
+                          <div className="absolute top-2 right-2">
+                            <MediaEditButton
+                              imageUrl={generatedImages[activeVariation]}
+                              projectId={projectId}
+                              onImageUpdated={(newUrl) => {
+                                setGeneratedImages((prev) => ({ ...prev, [activeVariation]: newUrl }));
+                              }}
+                            />
+                          </div>
+                        </div>
                         <div className="flex gap-2">
                           <a
                             href={generatedImages[activeVariation]}
@@ -821,6 +842,16 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
           </div>
         </div>
       )}
+
+      <MediaGenerationModal
+        isOpen={showGenModal}
+        onClose={() => setShowGenModal(false)}
+        mode="textToImage"
+        projectId={projectId}
+        onGenerate={(settings: GenerationSettings) => {
+          handleGenerateImage(activeVariation);
+        }}
+      />
     </div>
   );
 }

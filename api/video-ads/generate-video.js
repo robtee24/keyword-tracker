@@ -1,9 +1,32 @@
 import { authenticateRequest } from '../_config.js';
 import { getSupabase } from '../db.js';
+import { falTextToVideo } from '../_fal.js';
+import { enforceCredits, deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 300 };
 
 const VEO_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+
+const FAL_VIDEO_MODELS = {
+  'fal-veo-3.1': 'fal-ai/veo3.1',
+  'fal-veo-3.1-fast': 'fal-ai/veo3.1/fast',
+  'fal-kling-3-pro': 'fal-ai/kling-video/v3/pro/text-to-video',
+  'fal-kling-2.5-turbo': 'fal-ai/kling-video/v2.5-turbo/pro/text-to-video',
+  'fal-ltx-2.3-fast': 'fal-ai/ltx-2.3/text-to-video/fast',
+};
+
+const MODEL_COSTS_PER_SEC = {
+  'fal-veo-3.1': 0.40,
+  'fal-veo-3.1-fast': 0.20,
+  'fal-kling-3-pro': 0.10,
+  'fal-kling-2.5-turbo': 0.05,
+  'fal-ltx-2.3-fast': 0.04,
+  'veo-3.1-generate-preview': 0.40,
+};
+
+function isFalModel(model) {
+  return !!FAL_VIDEO_MODELS[model];
+}
 
 async function generateVeoVideo(prompt, aspectRatio = '16:9', durationSeconds = 8, modelOverride = null) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -40,23 +63,19 @@ async function generateVeoVideo(prompt, aspectRatio = '16:9', durationSeconds = 
   return data.name || data.operationName || null;
 }
 
-async function pollOperation(operationName) {
-  const apiKey = process.env.GEMINI_API_KEY;
+async function generateWithFal(prompt, model, aspectRatio = '16:9', durationSeconds = 8) {
+  const falModelId = FAL_VIDEO_MODELS[model];
+  if (!falModelId) throw new Error(`Unknown fal video model: ${model}`);
 
-  const response = await fetch(
-    `${VEO_BASE}/${operationName}`,
-    {
-      method: 'GET',
-      headers: { 'x-goog-api-key': apiKey },
-    }
-  );
+  const result = await falTextToVideo(falModelId, {
+    prompt,
+    duration: `${durationSeconds}s`,
+    aspectRatio,
+    resolution: '1080p',
+    generateAudio: true,
+  });
 
-  if (!response.ok) {
-    const detail = await response.text().catch(() => 'unknown');
-    throw new Error(`Poll error (${response.status}): ${detail}`);
-  }
-
-  return response.json();
+  return result.videoUrl;
 }
 
 export default async function handler(req, res) {
@@ -68,23 +87,50 @@ export default async function handler(req, res) {
 
   const { videoProjectId, sceneIndex, generateAll, prompt, aspectRatio, durationSeconds, model: videoModel } = req.body || {};
 
-  if (!process.env.GEMINI_API_KEY) {
-    return res.status(500).json({ error: 'GEMINI_API_KEY is not configured' });
-  }
-
-  // Single scene generation (used for direct prompt or individual scene)
+  // Single scene generation
   if (prompt && sceneIndex !== undefined) {
-    try {
-      const operationName = await generateVeoVideo(
-        prompt,
-        aspectRatio || '16:9',
-        durationSeconds || 8,
-        videoModel
-      );
+    const sceneDuration = durationSeconds || 8;
+    const rawCost = (MODEL_COSTS_PER_SEC[videoModel] || 0.40) * sceneDuration;
+    const creditCost = rawCost * 1.3;
+    if (!(await enforceCredits(auth.user.id, creditCost, res))) return;
 
-      if (!operationName) {
-        return res.status(500).json({ error: 'No operation returned from VEO' });
+    if (isFalModel(videoModel)) {
+      try {
+        const videoUrl = await generateWithFal(prompt, videoModel, aspectRatio || '16:9', durationSeconds || 8);
+        if (!videoUrl) return res.status(500).json({ error: 'No video returned from fal' });
+
+        const supabase = getSupabase();
+        if (supabase && videoProjectId) {
+          await supabase.from('video_generated').insert({
+            video_project_id: videoProjectId,
+            scene_index: sceneIndex,
+            prompt,
+            operation_name: `fal-direct-${Date.now()}`,
+            status: 'completed',
+            video_url: videoUrl,
+            duration_seconds: durationSeconds || 8,
+            aspect_ratio: aspectRatio || '16:9',
+            completed_at: new Date().toISOString(),
+          });
+        }
+
+        await deductCredits(auth.user.id, creditCost, videoModel, `Video ad scene ${sceneIndex}`, videoProjectId);
+
+        return res.status(200).json({ videoUrl, sceneIndex, status: 'completed', model: videoModel });
+      } catch (err) {
+        console.error('[GenerateVideo] fal error:', err.message);
+        return res.status(500).json({ error: err.message });
       }
+    }
+
+    // Google VEO path (long-running operation)
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ error: 'GEMINI_API_KEY is not configured' });
+    }
+
+    try {
+      const operationName = await generateVeoVideo(prompt, aspectRatio || '16:9', durationSeconds || 8, videoModel);
+      if (!operationName) return res.status(500).json({ error: 'No operation returned from VEO' });
 
       const supabase = getSupabase();
       if (supabase && videoProjectId) {
@@ -98,6 +144,8 @@ export default async function handler(req, res) {
           aspect_ratio: aspectRatio || '16:9',
         });
       }
+
+      await deductCredits(auth.user.id, creditCost, videoModel || 'veo-3.1-generate-preview', `Video ad scene ${sceneIndex}`, videoProjectId);
 
       return res.status(200).json({ operationName, sceneIndex, status: 'generating' });
     } catch (err) {
@@ -123,50 +171,81 @@ export default async function handler(req, res) {
     }
 
     const scenes = project.scenes || [];
-    if (scenes.length === 0) {
-      return res.status(400).json({ error: 'Project has no scenes' });
-    }
+    if (scenes.length === 0) return res.status(400).json({ error: 'Project has no scenes' });
+
+    const costPerSec = MODEL_COSTS_PER_SEC[videoModel] || 0.40;
+    const totalDuration = scenes.reduce((sum, s) => sum + (s.durationSeconds || 8), 0);
+    const totalCreditCost = costPerSec * totalDuration * 1.3;
+    if (!(await enforceCredits(auth.user.id, totalCreditCost, res))) return;
 
     const operations = [];
+    const useFal = isFalModel(videoModel);
 
     for (let i = 0; i < scenes.length; i++) {
       const scene = scenes[i];
-      const sceneIdx = i;
       try {
-        const operationName = await generateVeoVideo(
-          scene.prompt,
-          project.aspect_ratio || '16:9',
-          scene.durationSeconds || 8,
-          videoModel
-        );
+        if (useFal) {
+          const videoUrl = await generateWithFal(
+            scene.prompt,
+            videoModel,
+            project.aspect_ratio || '16:9',
+            scene.durationSeconds || 8
+          );
 
-        if (!operationName) {
-          operations.push({ sceneIndex: sceneIdx, status: 'failed', error: 'No operation returned from VEO' });
-          continue;
+          await supabase.from('video_generated').insert({
+            video_project_id: videoProjectId,
+            scene_index: i,
+            prompt: scene.prompt,
+            operation_name: `fal-direct-${Date.now()}-${i}`,
+            status: videoUrl ? 'completed' : 'failed',
+            video_url: videoUrl,
+            duration_seconds: scene.durationSeconds || 8,
+            aspect_ratio: project.aspect_ratio || '16:9',
+            completed_at: new Date().toISOString(),
+          });
+
+          if (videoUrl) {
+            const sceneCost = costPerSec * (scene.durationSeconds || 8) * 1.3;
+            await deductCredits(auth.user.id, sceneCost, videoModel, `Video ad scene ${i}`, videoProjectId);
+          }
+
+          operations.push({ sceneIndex: i, status: videoUrl ? 'completed' : 'failed', videoUrl });
+        } else {
+          if (!process.env.GEMINI_API_KEY) {
+            operations.push({ sceneIndex: i, status: 'failed', error: 'GEMINI_API_KEY not configured' });
+            continue;
+          }
+
+          const operationName = await generateVeoVideo(
+            scene.prompt,
+            project.aspect_ratio || '16:9',
+            scene.durationSeconds || 8,
+            videoModel
+          );
+
+          if (!operationName) {
+            operations.push({ sceneIndex: i, status: 'failed', error: 'No operation returned from VEO' });
+            continue;
+          }
+
+          await supabase.from('video_generated').insert({
+            video_project_id: videoProjectId,
+            scene_index: i,
+            prompt: scene.prompt,
+            operation_name: operationName,
+            status: 'generating',
+            duration_seconds: scene.durationSeconds || 8,
+            aspect_ratio: project.aspect_ratio || '16:9',
+          });
+
+          const sceneCost = costPerSec * (scene.durationSeconds || 8) * 1.3;
+          await deductCredits(auth.user.id, sceneCost, videoModel || 'veo-3.1-generate-preview', `Video ad scene ${i}`, videoProjectId);
+
+          operations.push({ sceneIndex: i, operationName, status: 'generating' });
         }
-
-        await supabase.from('video_generated').insert({
-          video_project_id: videoProjectId,
-          scene_index: sceneIdx,
-          prompt: scene.prompt,
-          operation_name: operationName,
-          status: 'generating',
-          duration_seconds: scene.durationSeconds || 8,
-          aspect_ratio: project.aspect_ratio || '16:9',
-        });
-
-        operations.push({
-          sceneIndex: sceneIdx,
-          operationName,
-          status: 'generating',
-        });
       } catch (err) {
-        console.error(`[GenerateVideo] Scene ${sceneIdx} error:`, err.message);
-        operations.push({
-          sceneIndex: sceneIdx,
-          status: 'failed',
-          error: err.message,
-        });
+        console.error(`[GenerateVideo] Scene ${i} error:`, err.message);
+        operations.push({ sceneIndex: i, status: 'failed', error: err.message });
       }
     }
 
@@ -179,60 +258,4 @@ export default async function handler(req, res) {
   }
 
   return res.status(400).json({ error: 'Provide prompt+sceneIndex or videoProjectId+generateAll' });
-}
-
-// Poll endpoint - GET with operationName
-export async function pollHandler(req, res) {
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
-
-  const { operationName, videoProjectId, sceneIndex } = req.query;
-  if (!operationName) return res.status(400).json({ error: 'operationName required' });
-
-  try {
-    const result = await pollOperation(operationName);
-
-    if (result.done) {
-      const videos = result.response?.generatedSamples
-        || result.response?.generatedVideos
-        || result.result?.generatedSamples
-        || result.result?.generatedVideos
-        || [];
-      const videoUrl = videos[0]?.video?.uri || null;
-
-      if (!videoUrl) {
-        console.error('[PollVideo] No video URL found. Full response:', JSON.stringify(result).slice(0, 2000));
-      }
-
-      // Update DB
-      const supabase = getSupabase();
-      if (supabase && videoProjectId && sceneIndex !== undefined) {
-        await supabase
-          .from('video_generated')
-          .update({
-            status: videoUrl ? 'completed' : 'failed',
-            video_url: videoUrl,
-            completed_at: new Date().toISOString(),
-            error_message: videoUrl ? null : 'No video returned',
-          })
-          .eq('video_project_id', videoProjectId)
-          .eq('scene_index', parseInt(sceneIndex));
-      }
-
-      return res.status(200).json({
-        done: true,
-        videoUrl,
-        status: videoUrl ? 'completed' : 'failed',
-      });
-    }
-
-    const progress = result.metadata?.progress || null;
-    return res.status(200).json({
-      done: false,
-      status: 'generating',
-      progress,
-    });
-  } catch (err) {
-    console.error('[PollVideo] Error:', err.message);
-    return res.status(500).json({ error: err.message });
-  }
 }

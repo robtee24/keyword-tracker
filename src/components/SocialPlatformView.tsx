@@ -4,6 +4,10 @@ import { API_ENDPOINTS } from '../config/api';
 import { logActivity } from '../utils/activityLog';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 import { getModelPreferences } from '../config/models';
+import MediaGenerationModal, { GenerationSettingsIcon } from './MediaGenerationModal';
+import type { GenerationSettings } from './MediaGenerationModal';
+import MediaEditButton from './MediaEditButton';
+import { useCredits } from '../contexts/CreditsContext';
 
 type SocialPlatform = 'instagram' | 'linkedin' | 'x' | 'facebook' | 'tiktok' | 'pinterest';
 type SocialTab = 'audit' | 'ideas' | 'create';
@@ -803,6 +807,10 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
   const running = postTask?.status === 'running';
   const generatingMedia = mediaTask?.status === 'running';
 
+  const [showGenModal, setShowGenModal] = useState(false);
+  const [genModalMode, setGenModalMode] = useState<'textToImage' | 'textToVideo'>('textToImage');
+  const { refreshCredits } = useCredits();
+
   const availableFormats = mediaType === 'video' ? config.videoFormats : config.staticFormats;
 
   useEffect(() => {
@@ -846,6 +854,7 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
       if (data.doVideo && data.shots) autoGenerateVideo(data.shots);
       else if (data.doImage && data.imagePrompt) autoGenerateImage(data.imagePrompt);
       clearTask(postTaskId);
+      refreshCredits();
     } else if (postTask?.status === 'failed') {
       clearTask(postTaskId);
     }
@@ -856,6 +865,7 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
       const data = mediaTask.result as { url: string };
       setMediaUrl(data.url);
       clearTask(mediaTaskId);
+      refreshCredits();
     } else if (mediaTask?.status === 'failed') {
       setMediaError(mediaTask.error || 'Media generation failed.');
       clearTask(mediaTaskId);
@@ -895,7 +905,7 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
       const resp = await authenticatedFetch(API_ENDPOINTS.social.generateVideo, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, shots, model: videoModel.startsWith('ltx') ? videoModel : 'ltx-2-fast' }),
+        body: JSON.stringify({ platform, shots, model: videoModel }),
       });
       if (!resp.ok) throw new Error('Video generation failed');
       const data = await resp.json();
@@ -1039,10 +1049,13 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
         </div>
 
         <button onClick={generatePost} disabled={running || !topic.trim()}
-          className={`px-4 py-2 rounded-apple-sm text-white text-apple-sm font-medium transition-colors disabled:opacity-50 ${
+          className={`px-4 py-2 rounded-apple-sm text-white text-apple-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2 ${
             mediaType === 'video' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-apple-blue hover:bg-apple-blue-hover'
           }`}>
           {running ? 'Generating...' : `Generate ${postType}`}
+          {!running && (
+            <GenerationSettingsIcon onClick={() => { setGenModalMode(mediaType === 'video' ? 'textToVideo' : 'textToImage'); setShowGenModal(true); }} />
+          )}
         </button>
       </div>
 
@@ -1140,6 +1153,14 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
                       </div>
                     </div>
                   )}
+                  <div className="absolute top-2 right-2">
+                    <MediaEditButton
+                      imageUrl={mediaUrl}
+                      projectId={projectId}
+                      onImageUpdated={(newUrl) => setMediaUrl(newUrl)}
+                      onVideoCreated={(videoUrl) => { window.open(videoUrl, '_blank'); }}
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -1251,6 +1272,14 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
           <p className="text-apple-sm text-apple-text-secondary">Choose a post type above to generate your first {config.name} post.</p>
         </div>
       )}
+
+      <MediaGenerationModal
+        isOpen={showGenModal}
+        onClose={() => setShowGenModal(false)}
+        mode={genModalMode}
+        projectId={projectId}
+        onGenerate={() => {}}
+      />
     </div>
   );
 }

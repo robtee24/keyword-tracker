@@ -2,7 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { authenticatedFetch } from '../services/authService';
 import { API_ENDPOINTS } from '../config/api';
 import { InfoTooltip } from './Tooltip';
-import { IMAGE_MODELS, VIDEO_MODELS, getModelPreferences, setModelPreferences } from '../config/models';
+import {
+  TEXT_TO_IMAGE_MODELS, IMAGE_EDIT_MODELS, TEXT_TO_VIDEO_MODELS, IMAGE_TO_VIDEO_MODELS,
+  getModelPreferences, setModelPreferences,
+} from '../config/models';
+import type { ModelOption, ModelProvider } from '../config/models';
 
 interface SettingsViewProps {
   projectId: string;
@@ -18,6 +22,67 @@ interface Member {
   user_id: string | null;
 }
 
+function providerBadge(provider: ModelProvider) {
+  const config: Record<string, { bg: string; label: string }> = {
+    google: { bg: 'bg-blue-100 text-blue-700', label: 'Google' },
+    openai: { bg: 'bg-emerald-100 text-emerald-700', label: 'OpenAI' },
+    fal: { bg: 'bg-violet-100 text-violet-700', label: 'fal.ai' },
+  };
+  const c = config[provider] || { bg: 'bg-gray-100 text-gray-600', label: provider };
+  return (
+    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${c.bg}`}>
+      {c.label}
+    </span>
+  );
+}
+
+interface ModelSectionProps {
+  title: string;
+  models: ModelOption[];
+  selected: string;
+  radioName: string;
+  onChange: (id: string) => void;
+}
+
+function ModelSection({ title, models, selected, radioName, onChange }: ModelSectionProps) {
+  return (
+    <div>
+      <label className="block text-apple-sm font-medium text-apple-text mb-2">{title}</label>
+      <div className="space-y-2">
+        {models.map((m) => (
+          <label
+            key={m.id}
+            className={`flex items-start gap-3 p-3 rounded-apple-sm border cursor-pointer transition-all ${
+              selected === m.id
+                ? 'border-apple-blue bg-blue-50/50 ring-1 ring-apple-blue/30'
+                : 'border-apple-border hover:border-apple-border-heavy hover:bg-apple-fill-tertiary'
+            }`}
+          >
+            <input
+              type="radio"
+              name={radioName}
+              value={m.id}
+              checked={selected === m.id}
+              onChange={() => onChange(m.id)}
+              className="mt-0.5 accent-blue-600"
+            />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-apple-sm font-medium text-apple-text">{m.label}</span>
+                {providerBadge(m.provider)}
+              </div>
+              <p className="text-apple-xs text-apple-text-secondary mt-0.5">{m.description}</p>
+            </div>
+            <span className="text-[11px] font-mono text-apple-text-tertiary whitespace-nowrap mt-0.5">
+              {m.costLabel}
+            </span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsView({ projectId, projectName, isOwner }: SettingsViewProps) {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,8 +93,10 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
   const [success, setSuccess] = useState('');
 
   const prefs = getModelPreferences(projectId);
-  const [imageModel, setImageModel] = useState(prefs.imageModel);
-  const [videoModel, setVideoModel] = useState(prefs.videoModel);
+  const [textToImage, setTextToImage] = useState(prefs.textToImage);
+  const [imageEdit, setImageEdit] = useState(prefs.imageEdit);
+  const [textToVideo, setTextToVideo] = useState(prefs.textToVideo);
+  const [imageToVideo, setImageToVideo] = useState(prefs.imageToVideo);
   const [modelSaved, setModelSaved] = useState(false);
 
   const fetchMembers = useCallback(async () => {
@@ -52,22 +119,25 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
 
   useEffect(() => {
     const p = getModelPreferences(projectId);
-    setImageModel(p.imageModel);
-    setVideoModel(p.videoModel);
+    setTextToImage(p.textToImage);
+    setImageEdit(p.imageEdit);
+    setTextToVideo(p.textToVideo);
+    setImageToVideo(p.imageToVideo);
   }, [projectId]);
 
-  const handleImageModelChange = (model: string) => {
-    setImageModel(model);
-    setModelPreferences(projectId, { imageModel: model });
+  const showSaved = () => {
     setModelSaved(true);
     setTimeout(() => setModelSaved(false), 2000);
   };
 
-  const handleVideoModelChange = (model: string) => {
-    setVideoModel(model);
-    setModelPreferences(projectId, { videoModel: model });
-    setModelSaved(true);
-    setTimeout(() => setModelSaved(false), 2000);
+  const handleChange = (category: string, model: string) => {
+    const update: Record<string, string> = { [category]: model };
+    if (category === 'textToImage') { setTextToImage(model); update.imageModel = model; }
+    else if (category === 'imageEdit') setImageEdit(model);
+    else if (category === 'textToVideo') { setTextToVideo(model); update.videoModel = model; }
+    else if (category === 'imageToVideo') setImageToVideo(model);
+    setModelPreferences(projectId, update);
+    showSaved();
   };
 
   const handleAddMember = async () => {
@@ -129,98 +199,53 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
       <div className="card p-6 mb-6">
         <div className="flex items-center gap-2 mb-1">
           <h2 className="text-apple-title3 font-semibold text-apple-text">AI Models</h2>
-          <InfoTooltip text="Choose which AI models to use for image and video generation across the platform." position="right" />
+          <InfoTooltip text="Choose default AI models for each capability. These defaults are used across the platform unless overridden during generation." position="right" />
           {modelSaved && (
             <span className="text-apple-xs text-green-600 font-medium ml-2 animate-fade-in">Saved</span>
           )}
         </div>
         <p className="text-apple-xs text-apple-text-tertiary mb-5">
-          Selected models apply to blog images, social media images, ad creatives, and video generation.
+          Prices shown include a 30% service markup on raw API costs.
         </p>
 
         <div className="space-y-5">
-          {/* Image Generation Model */}
-          <div>
-            <label className="block text-apple-sm font-medium text-apple-text mb-2">
-              Image Generation
-            </label>
-            <div className="space-y-2">
-              {IMAGE_MODELS.map((m) => (
-                <label
-                  key={m.id}
-                  className={`flex items-start gap-3 p-3 rounded-apple-sm border cursor-pointer transition-all ${
-                    imageModel === m.id
-                      ? 'border-apple-blue bg-blue-50/50 ring-1 ring-apple-blue/30'
-                      : 'border-apple-border hover:border-apple-border-heavy hover:bg-apple-fill-tertiary'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="imageModel"
-                    value={m.id}
-                    checked={imageModel === m.id}
-                    onChange={() => handleImageModelChange(m.id)}
-                    className="mt-0.5 accent-blue-600"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-apple-sm font-medium text-apple-text">{m.label}</span>
-                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                        m.provider === 'google' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
-                      }`}>
-                        {m.provider === 'google' ? 'Google' : 'OpenAI'}
-                      </span>
-                      <span className="text-[10px] text-apple-text-tertiary">{m.cost}</span>
-                    </div>
-                    <p className="text-apple-xs text-apple-text-secondary mt-0.5">{m.description}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
-          </div>
+          <ModelSection
+            title="Image Generation"
+            models={TEXT_TO_IMAGE_MODELS}
+            selected={textToImage}
+            radioName="textToImage"
+            onChange={(m) => handleChange('textToImage', m)}
+          />
 
-          {/* Divider */}
           <div className="border-t border-apple-border" />
 
-          {/* Video Generation Model */}
-          <div>
-            <label className="block text-apple-sm font-medium text-apple-text mb-2">
-              Video Generation
-            </label>
-            <div className="space-y-2">
-              {VIDEO_MODELS.map((m) => (
-                <label
-                  key={m.id}
-                  className={`flex items-start gap-3 p-3 rounded-apple-sm border cursor-pointer transition-all ${
-                    videoModel === m.id
-                      ? 'border-apple-blue bg-blue-50/50 ring-1 ring-apple-blue/30'
-                      : 'border-apple-border hover:border-apple-border-heavy hover:bg-apple-fill-tertiary'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="videoModel"
-                    value={m.id}
-                    checked={videoModel === m.id}
-                    onChange={() => handleVideoModelChange(m.id)}
-                    className="mt-0.5 accent-blue-600"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-apple-sm font-medium text-apple-text">{m.label}</span>
-                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                        m.provider === 'google' ? 'bg-blue-100 text-blue-700' : m.provider === 'ltx' ? 'bg-violet-100 text-violet-700' : 'bg-emerald-100 text-emerald-700'
-                      }`}>
-                        {m.provider === 'google' ? 'Google' : m.provider === 'ltx' ? 'LTX' : 'OpenAI'}
-                      </span>
-                      <span className="text-[10px] text-apple-text-tertiary">{m.cost}</span>
-                    </div>
-                    <p className="text-apple-xs text-apple-text-secondary mt-0.5">{m.description}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
-          </div>
+          <ModelSection
+            title="Image Editing"
+            models={IMAGE_EDIT_MODELS}
+            selected={imageEdit}
+            radioName="imageEdit"
+            onChange={(m) => handleChange('imageEdit', m)}
+          />
+
+          <div className="border-t border-apple-border" />
+
+          <ModelSection
+            title="Video Generation"
+            models={TEXT_TO_VIDEO_MODELS}
+            selected={textToVideo}
+            radioName="textToVideo"
+            onChange={(m) => handleChange('textToVideo', m)}
+          />
+
+          <div className="border-t border-apple-border" />
+
+          <ModelSection
+            title="Image to Video"
+            models={IMAGE_TO_VIDEO_MODELS}
+            selected={imageToVideo}
+            radioName="imageToVideo"
+            onChange={(m) => handleChange('imageToVideo', m)}
+          />
         </div>
       </div>
 

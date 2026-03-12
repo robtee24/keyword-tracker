@@ -1,8 +1,14 @@
 import { authenticateRequest } from '../_config.js';
 import { generateImage } from '../_imageGen.js';
+import { enforceCredits, deductCredits } from '../_credits.js';
 import sharp from 'sharp';
 
 export const config = { maxDuration: 300 };
+
+const MODEL_COSTS = {
+  'dall-e-3': 0.04,
+  'gpt-image-1': 0.04,
+};
 
 function buildTextOverlaySvg(text, width, height) {
   if (!text) return null;
@@ -74,6 +80,11 @@ export default async function handler(req, res) {
 
   console.log(`[BlogImages] Generating ${toGenerate.length} images with model: ${imageModel}`);
 
+  const rawCost = MODEL_COSTS[imageModel] || 0.04;
+  const creditCost = rawCost * 1.3;
+  const totalEstimatedCost = creditCost * toGenerate.length;
+  if (!(await enforceCredits(auth.user.id, totalEstimatedCost, res))) return;
+
   const results = [];
   for (let i = 0; i < toGenerate.length; i++) {
     const item = toGenerate[i];
@@ -85,6 +96,8 @@ export default async function handler(req, res) {
     try {
       console.log(`[BlogImages] Generating image ${i + 1}/${toGenerate.length}`);
       const { imageUrl } = await generateImage(prompt, { model: imageModel, size: '1792x1024' });
+
+      await deductCredits(auth.user.id, creditCost, imageModel, `Blog image ${i + 1}/${toGenerate.length}`);
 
       if (caption) {
         try {

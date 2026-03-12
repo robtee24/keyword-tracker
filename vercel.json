@@ -69,6 +69,24 @@
     },
     "api/build/modify-page.js": {
       "maxDuration": 120
+    },
+    "api/social/generate-video.js": {
+      "maxDuration": 300
+    },
+    "api/video-ads/generate-video.js": {
+      "maxDuration": 300
+    },
+    "api/media/edit-image.js": {
+      "maxDuration": 120
+    },
+    "api/media/image-to-video.js": {
+      "maxDuration": 300
+    },
+    "api/media/background-remove.js": {
+      "maxDuration": 60
+    },
+    "api/media/upscale.js": {
+      "maxDuration": 120
     }
   },
   "rewrites": [

@@ -47,6 +47,9 @@ import { BackgroundTaskProvider } from './contexts/BackgroundTaskContext';
 import BackgroundTaskIndicator from './components/BackgroundTaskIndicator';
 import UpgradePrompt from './components/UpgradePrompt';
 import SettingsView from './components/SettingsView';
+import BillingView from './components/BillingView';
+import CreditsBar from './components/CreditsBar';
+import { CreditsProvider } from './contexts/CreditsContext';
 import BrandView from './components/BrandView';
 import VideoIdeasView from './components/VideoIdeasView';
 import VideoCreateView from './components/VideoCreateView';
@@ -463,6 +466,7 @@ function App() {
 
   return (
     <PlanProvider isAuthenticated={appState === 'authenticated'}>
+    <CreditsProvider isAuthenticated={appState === 'authenticated'}>
     <BackgroundTaskProvider>
     <div className="flex h-screen bg-apple-bg overflow-hidden">
       <Sidebar
@@ -859,11 +863,16 @@ function App() {
           {currentView === 'activity' && activeProject && (
             <ActivityLogView key={connectionVersion} siteUrl={getSiteUrl(activeProject)} scope="all" />
           )}
+          {currentView === 'billing' && activeProject && (
+            <BillingView projectId={activeProject.id} />
+          )}
         </main>
+        <CreditsBar onNavigateToBilling={() => handleNavigate('billing' as View)} />
       </div>
       <BackgroundTaskIndicator />
     </div>
     </BackgroundTaskProvider>
+    </CreditsProvider>
     </PlanProvider>
   );
 }

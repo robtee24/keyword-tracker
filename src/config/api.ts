@@ -100,6 +100,16 @@ export const API_ENDPOINTS = {
     suggestPages: `${API_BASE_URL}/api/build/suggest-pages`,
     createPage: `${API_BASE_URL}/api/build/create-page`,
   },
+  credits: {
+    balance: `${API_BASE_URL}/api/credits/balance`,
+    purchase: `${API_BASE_URL}/api/credits/purchase`,
+  },
+  media: {
+    editImage: `${API_BASE_URL}/api/media/edit-image`,
+    imageToVideo: `${API_BASE_URL}/api/media/image-to-video`,
+    backgroundRemove: `${API_BASE_URL}/api/media/background-remove`,
+    upscale: `${API_BASE_URL}/api/media/upscale`,
+  },
   plans: {
     current: `${API_BASE_URL}/api/plans/current`,
     check: `${API_BASE_URL}/api/plans/check`,

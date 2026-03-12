@@ -5,6 +5,8 @@ import { logActivity } from '../utils/activityLog';
 import { useBackgroundTasks } from '../contexts/BackgroundTaskContext';
 import { parseJsonOrThrow } from '../utils/apiResponse';
 import { getModelPreferences } from '../config/models';
+import MediaEditButton from './MediaEditButton';
+import { useCredits } from '../contexts/CreditsContext';
 
 interface ArticleImage {
   description: string;
@@ -213,6 +215,7 @@ export default function CompletedArticlesView({ siteUrl, projectId, highlightArt
   });
   const contentEditRef = useRef<HTMLDivElement>(null);
 
+  const { refreshCredits } = useCredits();
   const { startTask, getTask, getTasksByType, clearTask } = useBackgroundTasks();
   const modifyTasks = getTasksByType('blog-modify');
   const imageTasks = getTasksByType('blog-images');
@@ -421,6 +424,40 @@ export default function CompletedArticlesView({ siteUrl, projectId, highlightArt
     }
     setEditSaving(false);
   };
+
+  const updateArticleImage = useCallback(async (articleId: string, oldUrl: string, newUrl: string) => {
+    setArticles((prev) =>
+      prev.map((a) => {
+        if (a.id !== articleId) return a;
+        const escaped = oldUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return {
+          ...a,
+          images: a.images.map((img) =>
+            img.imageUrl === oldUrl ? { ...img, imageUrl: newUrl } : img
+          ),
+          content: a.content.replace(new RegExp(escaped, 'g'), newUrl),
+        };
+      })
+    );
+    try {
+      const article = articles.find((a) => a.id === articleId);
+      if (article) {
+        const updatedImages = article.images.map((img) =>
+          img.imageUrl === oldUrl ? { ...img, imageUrl: newUrl } : img
+        );
+        const escaped = oldUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const updatedContent = article.content.replace(new RegExp(escaped, 'g'), newUrl);
+        await authenticatedFetch(API_ENDPOINTS.db.blogArticles, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: articleId, images: updatedImages, content: updatedContent }),
+        });
+      }
+    } catch (err) {
+      console.error('Failed to persist image update:', err);
+    }
+    refreshCredits();
+  }, [articles, refreshCredits]);
 
   const sourceLabel = (s: string) => s === 'idea' ? 'From Idea' : s === 'series' ? 'Series' : s === 'queue' ? 'From Queue' : s === 'rewrite' ? 'Rewrite' : 'Manual';
 
@@ -657,6 +694,33 @@ export default function CompletedArticlesView({ siteUrl, projectId, highlightArt
                       `}
                       dangerouslySetInnerHTML={isEditing ? undefined : { __html: getRenderedHtml(article) }}
                     />
+
+                    {/* Image edit overlays */}
+                    {hasImages && !isEditing && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {article.images.filter((img) => img.imageUrl).map((img, idx) => (
+                          <div key={idx} className="relative group rounded-xl overflow-hidden border border-apple-divider">
+                            <img
+                              src={img.imageUrl!}
+                              alt={img.caption || img.description || ''}
+                              className="w-full aspect-[4/3] object-cover"
+                            />
+                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <MediaEditButton
+                                imageUrl={img.imageUrl!}
+                                projectId={projectId}
+                                onImageUpdated={(newUrl) => updateArticleImage(article.id, img.imageUrl!, newUrl)}
+                              />
+                            </div>
+                            {img.caption && (
+                              <div className="px-2 py-1.5 text-[10px] text-apple-text-tertiary bg-apple-fill-secondary truncate">
+                                {img.caption}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
                     {/* Unsaved changes indicator */}
                     {isEditing && editDirty && (

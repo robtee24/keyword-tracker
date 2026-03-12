@@ -1,7 +1,13 @@
 import { authenticateRequest } from '../_config.js';
 import { generateImage } from '../_imageGen.js';
+import { enforceCredits, deductCredits } from '../_credits.js';
 
 export const config = { maxDuration: 120 };
+
+const MODEL_COSTS = {
+  'dall-e-3': 0.04,
+  'gpt-image-1': 0.04,
+};
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -50,11 +56,17 @@ VISUAL QUALITY:
 - Depth of field to create visual hierarchy
 - No stock photo clichés (no handshakes, no pointing at screens)`;
 
+  const rawCost = MODEL_COSTS[imageModel] || 0.04;
+  const creditCost = rawCost * 1.3;
+  if (!(await enforceCredits(auth.user.id, creditCost, res))) return;
+
   try {
     const { imageUrl, revisedPrompt } = await generateImage(prompt, {
       model: imageModel,
       size,
     });
+
+    await deductCredits(auth.user.id, creditCost, imageModel, 'Ad image generation');
 
     return res.status(200).json({ imageUrl, revisedPrompt });
   } catch (err) {
