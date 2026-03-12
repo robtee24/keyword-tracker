@@ -13,17 +13,16 @@ interface CreditTransaction {
   created_at: string;
 }
 
-interface MonthlyUsage {
+interface CycleUsage {
   used: number;
-  periodStart: string;
-  periodEnd: string;
+  cycleTotal: number;
 }
 
 interface CreditsContextType {
   balance: number;
   unlimited: boolean;
   transactions: CreditTransaction[];
-  monthlyUsage: MonthlyUsage;
+  usage: CycleUsage;
   loading: boolean;
   refreshCredits: () => Promise<void>;
   formatCost: (cost: number) => string;
@@ -33,7 +32,7 @@ const CreditsContext = createContext<CreditsContextType>({
   balance: -1,
   unlimited: true,
   transactions: [],
-  monthlyUsage: { used: 0, periodStart: '', periodEnd: '' },
+  usage: { used: 0, cycleTotal: -1 },
   loading: true,
   refreshCredits: async () => {},
   formatCost: () => '$0.00',
@@ -47,7 +46,7 @@ export function CreditsProvider({ children, isAuthenticated }: { children: React
   const [balance, setBalance] = useState(-1);
   const [unlimited, setUnlimited] = useState(true);
   const [transactions, setTransactions] = useState<CreditTransaction[]>([]);
-  const [monthlyUsage, setMonthlyUsage] = useState<MonthlyUsage>({ used: 0, periodStart: '', periodEnd: '' });
+  const [usage, setUsage] = useState<CycleUsage>({ used: 0, cycleTotal: -1 });
   const [loading, setLoading] = useState(true);
 
   const refreshCredits = useCallback(async () => {
@@ -55,7 +54,7 @@ export function CreditsProvider({ children, isAuthenticated }: { children: React
       setBalance(-1);
       setUnlimited(true);
       setTransactions([]);
-      setMonthlyUsage({ used: 0, periodStart: '', periodEnd: '' });
+      setUsage({ used: 0, cycleTotal: -1 });
       setLoading(false);
       return;
     }
@@ -67,7 +66,7 @@ export function CreditsProvider({ children, isAuthenticated }: { children: React
         setBalance(data.balance);
         setUnlimited(data.unlimited);
         setTransactions(data.transactions || []);
-        setMonthlyUsage(data.monthlyUsage || { used: 0, periodStart: '', periodEnd: '' });
+        setUsage(data.usage || { used: 0, cycleTotal: -1 });
       }
     } catch {
       // Silent fail
@@ -86,7 +85,7 @@ export function CreditsProvider({ children, isAuthenticated }: { children: React
   }, []);
 
   return (
-    <CreditsContext.Provider value={{ balance, unlimited, transactions, monthlyUsage, loading, refreshCredits, formatCost }}>
+    <CreditsContext.Provider value={{ balance, unlimited, transactions, usage, loading, refreshCredits, formatCost }}>
       {children}
     </CreditsContext.Provider>
   );

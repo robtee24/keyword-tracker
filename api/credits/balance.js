@@ -1,5 +1,5 @@
 import { authenticateRequest } from '../_config.js';
-import { getCreditsBalance, getTransactions, getMonthlyUsage } from '../_credits.js';
+import { getCreditsBalance, getTransactions, getCycleUsage } from '../_credits.js';
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -8,11 +8,11 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const [{ balance, unlimited }, transactions, monthlyUsage] = await Promise.all([
+  const [{ balance, unlimited }, transactions, usage] = await Promise.all([
     getCreditsBalance(auth.user.id),
     getTransactions(auth.user.id, 50),
-    getMonthlyUsage(auth.user.id),
+    getCycleUsage(auth.user.id),
   ]);
 
-  return res.status(200).json({ balance, unlimited, transactions, monthlyUsage });
+  return res.status(200).json({ balance, unlimited, transactions, usage });
 }

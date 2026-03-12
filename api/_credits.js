@@ -139,33 +139,56 @@ export async function enforceCredits(userId, amount, res) {
 }
 
 /**
- * Get total usage (credits spent) for the current monthly billing cycle.
- * Returns { used: number, periodStart: string, periodEnd: string }.
+ * Get usage since the last credit purchase/grant.
+ * For unlimited accounts, sums all usage ever.
+ * For paid accounts, sums usage since the most recent purchase/grant.
+ * Returns { used: number, cycleTotal: number }.
+ *   cycleTotal = -1 for unlimited, or the amount of the last purchase.
  */
-export async function getMonthlyUsage(userId) {
+export async function getCycleUsage(userId) {
   const supabase = getSupabase();
-  if (!supabase) return { used: 0, periodStart: '', periodEnd: '' };
+  if (!supabase) return { used: 0, cycleTotal: -1 };
 
-  const now = new Date();
-  const periodStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const periodEnd = nextMonth.toISOString();
+  const { unlimited } = await getCreditsBalance(userId);
 
-  const { data, error } = await supabase
+  let sinceDate = null;
+  let cycleTotal = -1;
+
+  if (!unlimited) {
+    const { data: lastPurchase } = await supabase
+      .from('ai_credit_transactions')
+      .select('created_at, amount')
+      .eq('user_id', userId)
+      .in('type', ['purchase', 'grant'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (lastPurchase) {
+      sinceDate = lastPurchase.created_at;
+      cycleTotal = Math.abs(lastPurchase.amount);
+    }
+  }
+
+  let query = supabase
     .from('ai_credit_transactions')
     .select('amount')
     .eq('user_id', userId)
-    .eq('type', 'usage')
-    .gte('created_at', periodStart)
-    .lt('created_at', periodEnd);
+    .eq('type', 'usage');
+
+  if (sinceDate) {
+    query = query.gte('created_at', sinceDate);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
-    console.error('[Credits] Monthly usage query error:', error.message);
-    return { used: 0, periodStart, periodEnd };
+    console.error('[Credits] Cycle usage query error:', error.message);
+    return { used: 0, cycleTotal };
   }
 
   const used = (data || []).reduce((sum, t) => sum + Math.abs(t.amount), 0);
-  return { used: Math.round(used * 100) / 100, periodStart, periodEnd };
+  return { used: Math.round(used * 100) / 100, cycleTotal };
 }
 
 /**
