@@ -380,7 +380,7 @@ export default function AdCreatorView({ siteUrl, projectId, platform }: AdCreato
     });
   };
 
-  const buildAdContext = (variation: { imageDescription?: string; textOverlay?: string }): GenerationContext => ({
+  const buildAdContext = (variation: { imageDescription?: string; textOverlay?: string | null }): GenerationContext => ({
     contentType: 'ad',
     subject: variation.imageDescription || '',
     style: 'photorealistic',
