@@ -119,7 +119,15 @@ For detailed specs and format variations, see [references/platform-specs.md](ref
 
 ## Generating Ad Visuals
 
-For image and video ad creative, use generative AI tools and code-based video rendering. See [references/generative-tools.md](references/generative-tools.md) for the complete guide covering:
+For image and video ad creative, use generative AI tools and code-based video rendering.
+
+**Skills to use:**
+- **ai-image-generation** — Image generation with correct model/prompt by type (ads, social, blog)
+- **ai-video-generation** — Video generation (Veo, LTX) with context routing
+- **social-media-designer** — Platform dimensions and safe zones for social
+- **social-graphic** — Social graphics workflow and brand compliance
+
+See [references/generative-tools.md](references/generative-tools.md) for the complete guide covering:
 
 - **Image generation** — Nano Banana Pro (Gemini), Flux, Ideogram for static ad images
 - **Video generation** — Veo, Kling, Runway, Sora, Seedance, Higgsfield for video ads

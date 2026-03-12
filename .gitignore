@@ -29,3 +29,35 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Agent skills (installed via npx skills add)
+.agent/
+.agents/
+.claude/
+.codebuddy/
+.commandcode/
+.continue/
+.crush/
+.factory/
+.goose/
+.junie/
+.kilocode/
+.kiro/
+.kode/
+.mcpjam/
+.mux/
+.neovate/
+.openhands/
+.pi/
+.pochi/
+.qoder/
+.qwen/
+.roo/
+.trae/
+.windsurf/
+.zencoder/
+skills-lock.json
+
+# Symlinked skills (installed via npx, point to .agents/)
+skills/gemini-3-image-generation
+skills/social-graphic

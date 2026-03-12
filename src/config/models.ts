@@ -1,7 +1,7 @@
 export interface ModelOption {
   id: string;
   label: string;
-  provider: 'openai' | 'google';
+  provider: 'openai' | 'google' | 'ltx';
   cost: string;
   description: string;
 }
@@ -15,7 +15,8 @@ export const IMAGE_MODELS: ModelOption[] = [
 ];
 
 export const VIDEO_MODELS: ModelOption[] = [
-  { id: 'veo-3.1-generate-preview', label: 'Veo 3.1 Preview', provider: 'google', cost: 'Preview pricing', description: 'Google — text-to-video generation' },
+  { id: 'veo-3.1-generate-preview', label: 'Veo 3.1 Preview', provider: 'google', cost: 'Preview pricing', description: 'Google — text-to-video for video ads' },
+  { id: 'ltx-2-fast', label: 'LTX 2 Fast', provider: 'ltx', cost: 'Per-video pricing', description: 'LTX — fast text-to-video for social posts' },
 ];
 
 const SETTINGS_KEY_PREFIX = 'kt_model_prefs_';

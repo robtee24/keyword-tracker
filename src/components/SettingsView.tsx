@@ -116,9 +116,6 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
     } catch { /* silently fail */ }
   };
 
-  const selectedImageModel = IMAGE_MODELS.find(m => m.id === imageModel);
-  const selectedVideoModel = VIDEO_MODELS.find(m => m.id === videoModel);
-
   return (
     <div className="max-w-3xl mx-auto">
       <div className="mb-8">
@@ -180,13 +177,6 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
                 </label>
               ))}
             </div>
-            {selectedImageModel && (
-              <p className="text-apple-xs text-apple-text-tertiary mt-2">
-                {selectedImageModel.provider === 'google'
-                  ? 'Requires GEMINI_API_KEY in environment variables.'
-                  : 'Requires OPENAI_API_KEY in environment variables.'}
-              </p>
-            )}
           </div>
 
           {/* Divider */}
@@ -219,9 +209,9 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
                     <div className="flex items-center gap-2">
                       <span className="text-apple-sm font-medium text-apple-text">{m.label}</span>
                       <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                        m.provider === 'google' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
+                        m.provider === 'google' ? 'bg-blue-100 text-blue-700' : m.provider === 'ltx' ? 'bg-violet-100 text-violet-700' : 'bg-emerald-100 text-emerald-700'
                       }`}>
-                        {m.provider === 'google' ? 'Google' : 'OpenAI'}
+                        {m.provider === 'google' ? 'Google' : m.provider === 'ltx' ? 'LTX' : 'OpenAI'}
                       </span>
                       <span className="text-[10px] text-apple-text-tertiary">{m.cost}</span>
                     </div>
@@ -230,11 +220,6 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
                 </label>
               ))}
             </div>
-            {selectedVideoModel && (
-              <p className="text-apple-xs text-apple-text-tertiary mt-2">
-                Requires GEMINI_API_KEY in environment variables.
-              </p>
-            )}
           </div>
         </div>
       </div>

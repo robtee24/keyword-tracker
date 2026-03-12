@@ -272,6 +272,10 @@ Instead of guessing, analyze what's working for top creators in your niche:
 
 ## Related Skills
 
+- **ai-image-generation**: For social post images, carousels, stories — correct model and prompting by platform
+- **ai-video-generation**: For Reels, TikTok, LinkedIn video — Veo, LTX with platform specs
+- **social-media-designer**: Platform dimensions, safe zones, design specs
+- **social-graphic**: Social graphics workflow, brand compliance
 - **copywriting**: For longer-form content that feeds social
 - **launch-strategy**: For coordinating social with launches
 - **email-sequence**: For nurturing social audience via email

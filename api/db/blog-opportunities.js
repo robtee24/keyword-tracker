@@ -51,6 +51,7 @@ export default async function handler(req, res) {
     try { batchId = crypto.randomUUID(); } catch { batchId = `batch_${Date.now()}`; }
     const inserted = [];
     const errors = [];
+    let lastDbError = null;
 
     for (const opp of opportunities) {
       const fullRow = {
@@ -80,17 +81,24 @@ export default async function handler(req, res) {
         created_at: fullRow.created_at,
       };
 
+      const bareRow = { site_url: siteUrl, title: fullRow.title, status: fullRow.status };
+
       let saved = false;
-      for (const [label, payload] of [['full', fullRow], ['core', coreRow], ['minimal', minRow]]) {
+      for (const [label, payload] of [['full', fullRow], ['core', coreRow], ['minimal', minRow], ['bare', bareRow]]) {
         const { data: d, error: e } = await supabase.from('blog_opportunities').insert(payload).select().single();
         if (!e && d) { inserted.push(d); saved = true; break; }
-        console.warn(`[BlogOpps] POST insert (${label}) failed for "${fullRow.title}":`, e?.message);
+        lastDbError = e?.message || e?.details || String(e);
+        console.warn(`[BlogOpps] POST insert (${label}) failed for "${fullRow.title}":`, lastDbError);
       }
       if (!saved) errors.push(fullRow.title);
     }
 
     if (inserted.length === 0) {
-      return res.status(500).json({ error: `Failed to save any of ${opportunities.length} ideas. The blog_opportunities table may be missing columns. Check Supabase logs.` });
+      const errDetail = lastDbError || 'unknown database error';
+      return res.status(500).json({
+        error: `Failed to save any of ${opportunities.length} ideas. ${errDetail}`,
+        hint: 'Run the SQL in supabase/migrations/007_blog_opportunities.sql and 008_blog_opportunities_batch_id.sql in Supabase SQL Editor.',
+      });
     }
 
     return res.status(200).json({

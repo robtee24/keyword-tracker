@@ -2,6 +2,19 @@
 
 Reference for using AI image generators, video generators, and code-based video tools to produce ad visuals at scale.
 
+**Skills for image/video generation:**
+- **ai-image-generation** — Routes to correct model by image type (ads, social, blog); see [image-prompting-by-context.md](../../ai-image-generation/references/image-prompting-by-context.md)
+- **ai-video-generation** — Routes to Veo (ads) or LTX (social) by context
+
+**External skills (install for extended capabilities):**
+```bash
+npx skills add https://github.com/inference-shell/skills --skill ai-image-generation
+npx skills add https://github.com/inference-shell/skills --skill ai-video-generation
+npx skills add https://github.com/adaptationio/skrillz --skill gemini-3-image-generation
+npx skills add https://github.com/eddiebe147/claude-settings --skill 'Social Media Designer'
+npx skills add https://github.com/kenneth-liao/ai-launchpad-marketplace --skill social-graphic
+```
+
 ---
 
 ## When to Use Generative Tools

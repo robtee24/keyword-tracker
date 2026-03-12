@@ -156,11 +156,13 @@ export default function BlogOpportunityView({ siteUrl, projectId }: BlogOpportun
         body: JSON.stringify({ opportunities, projectId, siteUrl }),
       });
       const text = await resp.text();
-      let data: { opportunities?: Record<string, unknown>[]; saved?: number; total?: number; error?: string; warning?: string };
+      let data: { opportunities?: Record<string, unknown>[]; saved?: number; total?: number; error?: string; warning?: string; hint?: string };
       try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text.slice(0, 300) }; }
 
       if (!resp.ok) {
-        setWarning(`Retry failed (${resp.status}): ${data.error || 'Unknown server error'}`);
+        const msg = data.error || 'Unknown server error';
+        const hint = data.hint ? ` ${data.hint}` : '';
+        setWarning(`Retry failed (${resp.status}): ${msg}${hint}`);
         setRetrySaving(false);
         return;
       }

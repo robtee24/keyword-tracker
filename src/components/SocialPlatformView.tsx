@@ -891,10 +891,11 @@ function CreateTab({ siteUrl, projectId, platform, config, isConnected, connecti
   const autoGenerateVideo = (shots: unknown[]) => {
     setMediaError(null);
     startTask(mediaTaskId, 'social-media', `${config.name} video`, async () => {
+      const videoModel = getModelPreferences(projectId).videoModel;
       const resp = await authenticatedFetch(API_ENDPOINTS.social.generateVideo, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, shots }),
+        body: JSON.stringify({ platform, shots, model: videoModel.startsWith('ltx') ? videoModel : 'ltx-2-fast' }),
       });
       if (!resp.ok) throw new Error('Video generation failed');
       const data = await resp.json();

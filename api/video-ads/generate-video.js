@@ -9,7 +9,7 @@ async function generateVeoVideo(prompt, aspectRatio = '16:9', durationSeconds = 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
 
-  const model = modelOverride || 'veo-3.1-generate-preview';
+  const model = (modelOverride && modelOverride.startsWith('veo')) ? modelOverride : 'veo-3.1-generate-preview';
 
   const response = await fetch(
     `${VEO_BASE}/models/${model}:predictLongRunning`,
