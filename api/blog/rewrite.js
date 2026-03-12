@@ -44,6 +44,18 @@ async function callClaude(systemPrompt, userMessage, maxTokens = 16000) {
   }
 }
 
+function decodeHtmlEntities(text) {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0*39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
 async function crawlPage(url) {
   try {
     const resp = await fetch(url, {
@@ -58,12 +70,12 @@ async function crawlPage(url) {
     const html = await resp.text();
 
     const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    const title = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : '';
+    const title = titleMatch ? decodeHtmlEntities(titleMatch[1].replace(/\s+/g, ' ').trim()) : '';
 
     const metaDescMatch =
       html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([\s\S]*?)["']/i) ||
       html.match(/<meta[^>]*content=["']([\s\S]*?)["'][^>]*name=["']description["']/i);
-    const metaDescription = metaDescMatch ? metaDescMatch[1].trim() : '';
+    const metaDescription = metaDescMatch ? decodeHtmlEntities(metaDescMatch[1].trim()) : '';
 
     const bodyHtml = html
       .replace(/<script[\s\S]*?<\/script>/gi, '')
