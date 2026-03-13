@@ -51,6 +51,7 @@ import BillingView from './components/BillingView';
 import TestView from './components/TestView';
 
 import { CreditsProvider } from './contexts/CreditsContext';
+import AdsStandalonePage from './components/ads/AdsStandalonePage';
 import BrandView from './components/BrandView';
 import VideoIdeasView from './components/VideoIdeasView';
 import VideoCreateView from './components/VideoCreateView';
@@ -229,6 +230,7 @@ function App() {
   const [connectionVersion, setConnectionVersion] = useState(0);
 
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     let authResolved = false;
@@ -254,7 +256,7 @@ function App() {
       if (s) {
         setAppState('authenticated');
         const loc = window.location.pathname;
-        if (loc !== '/app' && !loc.startsWith('/app')) {
+        if (loc !== '/app' && !loc.startsWith('/app') && !loc.startsWith('/ads')) {
           navigate('/app', { replace: true });
         }
       } else {
@@ -460,9 +462,14 @@ function App() {
         <Route path="/resources/automated-seo" element={<AutomatedSeoPage onOpenApp={openApp} />} />
         <Route path="/compare/seauto-vs-hiring" element={<SeautoVsHiringPage onOpenApp={openApp} />} />
         <Route path="/pricing" element={<PricingPage onOpenApp={openApp} />} />
+        <Route path="/ads" element={<AdsStandalonePage />} />
         <Route path="*" element={<LandingPage onOpenApp={openApp} />} />
       </Routes>
     );
+  }
+
+  if (location.pathname === '/ads') {
+    return <AdsStandalonePage />;
   }
 
   return (

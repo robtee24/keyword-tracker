@@ -386,7 +386,7 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
 
         if (data.status === 'completed' && data.videoUrl) {
           setGeneratingScenes(prev => ({ ...prev, [key]: false }));
-          await fetchProjects();
+          await loadProjects();
         } else if (data.operationName) {
           startPolling(vpId, sceneIdx, data.operationName);
         }
@@ -432,7 +432,7 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
           }
         }
         if (!hasPolling) {
-          await fetchProjects();
+          await loadProjects();
         }
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : 'Failed to generate videos');
