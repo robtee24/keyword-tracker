@@ -434,6 +434,11 @@ function App() {
   const showsDateControls = activeProject && (currentView === 'overview' || currentView === 'keywords');
   const needsDataLoad = currentView === 'keywords';
 
+  // Standalone ads page bypasses the entire auth state machine
+  if (location.pathname === '/ads') {
+    return <AdsStandalonePage />;
+  }
+
   if (appState === 'loading') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3">
@@ -462,14 +467,9 @@ function App() {
         <Route path="/resources/automated-seo" element={<AutomatedSeoPage onOpenApp={openApp} />} />
         <Route path="/compare/seauto-vs-hiring" element={<SeautoVsHiringPage onOpenApp={openApp} />} />
         <Route path="/pricing" element={<PricingPage onOpenApp={openApp} />} />
-        <Route path="/ads" element={<AdsStandalonePage />} />
         <Route path="*" element={<LandingPage onOpenApp={openApp} />} />
       </Routes>
     );
-  }
-
-  if (location.pathname === '/ads') {
-    return <AdsStandalonePage />;
   }
 
   return (

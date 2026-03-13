@@ -24,21 +24,45 @@ function getSupabaseAdmin() {
   return _supabaseAdmin;
 }
 
+const ADS_STANDALONE_PASSWORD = process.env.ADS_STANDALONE_PASSWORD || 'BNBCALC';
+
 /**
  * Validate the Supabase JWT from the Authorization header.
+ * Also accepts X-Ads-Auth header for the standalone /ads page,
+ * which looks up the BNBCalc project owner as the authenticated user.
  * Returns { user } on success or null on failure.
  */
 export async function authenticateRequest(req) {
   const authHeader = req.headers.authorization || req.headers.Authorization || '';
-  if (!authHeader.startsWith('Bearer ')) return null;
 
-  const token = authHeader.slice(7);
-  const supabase = getSupabaseAdmin();
-  if (!supabase) return null;
+  // Standard Supabase JWT auth
+  if (authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    const supabase = getSupabaseAdmin();
+    if (!supabase) return null;
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) return null;
+    return { user };
+  }
 
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-  if (error || !user) return null;
-  return { user };
+  // Standalone ads page auth via shared password
+  const adsAuth = req.headers['x-ads-auth'];
+  if (adsAuth && adsAuth === ADS_STANDALONE_PASSWORD) {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) return null;
+    const { data: projects } = await supabase
+      .from('projects')
+      .select('owner_id')
+      .or('domain.ilike.%bnbcalc%,name.ilike.%bnbcalc%')
+      .limit(1);
+    const ownerId = projects?.[0]?.owner_id;
+    if (!ownerId) return null;
+    const { data: { user }, error } = await supabase.auth.admin.getUserById(ownerId);
+    if (error || !user) return null;
+    return { user };
+  }
+
+  return null;
 }
 
 /**

@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { supabase } from '../../services/supabaseClient';
-import { onAuthStateChange, authenticatedFetch } from '../../services/authService';
-import { API_ENDPOINTS } from '../../config/api';
+import { API_BASE_URL } from '../../config/api';
 import { PlanProvider } from '../../contexts/PlanContext';
 import { CreditsProvider } from '../../contexts/CreditsContext';
 import { BackgroundTaskProvider } from '../../contexts/BackgroundTaskContext';
@@ -14,6 +13,7 @@ import TestView from '../TestView';
 import type { Project } from '../ProjectsView';
 
 const ACCESS_PASSWORD = 'BNBCALC';
+const SESSION_ENDPOINT = `${API_BASE_URL}/api/ads/session`;
 
 type AdsView =
   | 'video-ideas' | 'video-create'
@@ -46,7 +46,7 @@ function getSiteUrl(project: Project): string {
   return project.gsc_property || project.domain;
 }
 
-/* ── Sidebar nav helpers ── */
+/* ── Sidebar NavGroup ── */
 
 function NavGroup({
   label,
@@ -169,172 +169,83 @@ function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
   );
 }
 
-/* ── Login Form (Supabase email/password) ── */
-
-function LoginForm({ onAuthenticated }: { onAuthenticated: () => void }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    try {
-      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
-      if (authError) {
-        setError(authError.message);
-      } else {
-        onAuthenticated();
-      }
-    } catch {
-      setError('Login failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <form onSubmit={handleLogin} className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-sm">
-        <h1 className="text-xl font-semibold text-gray-900 mb-1 text-center">Sign In</h1>
-        <p className="text-sm text-gray-500 mb-6 text-center">Sign in to access Ad Studio</p>
-        <div className="space-y-3">
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
-            autoFocus
-            className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
-          />
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
-          />
-        </div>
-        {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full mt-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
-        >
-          {loading ? 'Signing in...' : 'Sign In'}
-        </button>
-      </form>
-    </div>
-  );
-}
-
 /* ── Main Standalone Page ── */
 
 export default function AdsStandalonePage() {
   const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem('ads_unlocked') === '1');
-  const [hasSession, setHasSession] = useState(false);
-  const [authLoading, setAuthLoading] = useState(true);
   const [project, setProject] = useState<Project | null>(null);
-  const [projectLoading, setProjectLoading] = useState(true);
-  const [projectError, setProjectError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [currentView, setCurrentView] = useState<AdsView>('video-ideas');
   const [videoExpanded, setVideoExpanded] = useState(true);
   const [staticExpanded, setStaticExpanded] = useState(false);
   const [adTizeIdea, setAdTizeIdea] = useState<Record<string, unknown> | null>(null);
-  const fetchedRef = useRef(false);
+  const initRef = useRef(false);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      if (cancelled) return;
-      setHasSession(!!s);
-      setAuthLoading(false);
-    });
-
-    const { data: { subscription } } = onAuthStateChange((s) => {
-      if (cancelled) return;
-      setHasSession(!!s);
-      setAuthLoading(false);
-    });
-
-    return () => { cancelled = true; subscription.unsubscribe(); };
-  }, []);
-
-  const fetchProject = useCallback(async () => {
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
-    setProjectLoading(true);
-    setProjectError('');
+  const initSession = useCallback(async () => {
+    if (initRef.current) return;
+    initRef.current = true;
+    setLoading(true);
+    setError('');
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
-      const res = await authenticatedFetch(API_ENDPOINTS.projects.list, {
-        signal: controller.signal,
+      // Call the backend to get a Supabase session + project for the ads page
+      const res = await fetch(SESSION_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: ACCESS_PASSWORD }),
       });
-      clearTimeout(timeout);
-      const data = await res.json();
-      const projects: Project[] = data.projects || [];
 
-      const bnbProject = projects.find((p: Project) =>
-        p.domain.toLowerCase().includes('bnbcalc') ||
-        p.name.toLowerCase().includes('bnbcalc')
-      );
-      setProject(bnbProject || projects[0] || null);
-      if (projects.length === 0) setProjectError('No projects found in your account.');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Server error (${res.status})`);
+      }
+
+      const data = await res.json();
+
+      // Set the session on the Supabase client so authenticatedFetch works
+      await supabase.auth.setSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+      });
+
+      setProject(data.project as Project);
     } catch (err: unknown) {
-      fetchedRef.current = false;
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      setProjectError(msg.includes('abort') ? 'Request timed out. Please retry.' : `Failed to load project: ${msg}`);
-      setProject(null);
+      initRef.current = false;
+      setError(err instanceof Error ? err.message : 'Failed to initialize');
     } finally {
-      setProjectLoading(false);
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (hasSession && !fetchedRef.current) fetchProject();
-  }, [hasSession, fetchProject]);
+    if (unlocked) initSession();
+  }, [unlocked, initSession]);
 
   // Gate 1: Password
   if (!unlocked) {
     return <PasswordGate onUnlock={() => setUnlocked(true)} />;
   }
 
-  // Gate 2: Supabase auth
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-400 text-sm">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!hasSession) {
-    return <LoginForm onAuthenticated={() => setHasSession(true)} />;
-  }
-
-  // Gate 3: Project loading
-  if (projectLoading) {
+  // Gate 2: Loading session
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <div className="text-gray-400 text-sm">Loading project...</div>
+          <div className="text-gray-400 text-sm">Setting up...</div>
         </div>
       </div>
     );
   }
 
-  if (!project) {
+  // Gate 3: Error
+  if (error || !project) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-sm text-center">
-          <p className="text-gray-600 text-sm mb-4">{projectError || 'No project found'}</p>
+          <p className="text-gray-600 text-sm mb-4">{error || 'Could not load project'}</p>
           <button
-            onClick={() => { fetchedRef.current = false; fetchProject(); }}
+            onClick={() => { initRef.current = false; initSession(); }}
             className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
           >
             Retry
@@ -356,12 +267,10 @@ export default function AdsStandalonePage() {
       <div className="flex h-screen bg-gray-50 overflow-hidden">
         {/* Sidebar */}
         <div className="w-[220px] shrink-0 bg-white/80 backdrop-blur-xl border-r border-gray-200 flex flex-col">
-          {/* Logo / Title */}
           <div className="h-14 flex items-center px-4 border-b border-gray-200">
             <span className="text-[15px] font-semibold text-gray-900">Ad Studio</span>
           </div>
 
-          {/* Navigation */}
           <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
             <NavGroup
               label="Video Ads"
@@ -410,7 +319,6 @@ export default function AdsStandalonePage() {
             </button>
           </nav>
 
-          {/* Footer */}
           <div className="border-t border-gray-200 px-4 py-3">
             <div className="text-xs text-gray-400 truncate">{project.name}</div>
             <div className="text-[10px] text-gray-300 truncate">{siteUrl}</div>
@@ -420,7 +328,6 @@ export default function AdsStandalonePage() {
         {/* Main content */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <main className="flex-1 overflow-y-auto p-6 lg:p-8">
-            {/* Video Ads */}
             {currentView === 'video-ideas' && (
               <VideoIdeasView
                 siteUrl={siteUrl}
@@ -440,7 +347,6 @@ export default function AdsStandalonePage() {
               />
             )}
 
-            {/* Static Ads */}
             {STATIC_PLATFORM_MAP[currentView] && (
               <AdCreatorView
                 key={currentView}
@@ -450,7 +356,6 @@ export default function AdsStandalonePage() {
               />
             )}
 
-            {/* API Test */}
             {currentView === 'api-test' && (
               <TestView projectId={projectId} />
             )}
