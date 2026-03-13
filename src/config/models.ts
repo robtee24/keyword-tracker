@@ -1,6 +1,7 @@
 export type ModelProvider = 'openai' | 'google' | 'fal' | 'anthropic';
 export type ModelCategory =
   | 'textToImage' | 'imageEdit' | 'textToVideo' | 'imageToVideo'
+  | 'avatarVideo' | 'lipsync'
   | 'backgroundRemoval' | 'imageUpscale'
   | 'contentGeneration' | 'analysisAudit' | 'ideaGeneration';
 
@@ -169,7 +170,7 @@ export const TEXT_TO_IMAGE_MODELS: ModelOption[] = [
   },
   {
     id: 'fal-seedream-4.5', label: 'Seedream 4.5', vendor: 'ByteDance', provider: 'fal',
-    falModelId: 'fal-ai/bytedance/seedream/v4.5', cost: 0.03, userCost: markup(0.03), costLabel: costLabel(0.03, 'image'),
+    falModelId: 'fal-ai/bytedance/seedream/v4.5/text-to-image', cost: 0.03, userCost: markup(0.03), costLabel: costLabel(0.03, 'image'),
     description: 'ByteDance\'s unified model with strong composition and lighting at low cost.', category: 'textToImage',
   },
   {
@@ -179,7 +180,7 @@ export const TEXT_TO_IMAGE_MODELS: ModelOption[] = [
   },
   {
     id: 'fal-imagineart-1.5', label: 'ImagineArt 1.5', vendor: 'ImagineArt', provider: 'fal',
-    falModelId: 'fal-ai/imagineart/imagineart-1.5-preview/text-to-image', cost: 0.04, userCost: markup(0.04), costLabel: costLabel(0.04, 'image'),
+    falModelId: 'imagineart/imagineart-1.5-preview/text-to-image', cost: 0.04, userCost: markup(0.04), costLabel: costLabel(0.04, 'image'),
     description: 'Lifelike realism with legible text output and strong aesthetics.', category: 'textToImage',
   },
 ];
@@ -240,11 +241,11 @@ export const TEXT_TO_VIDEO_MODELS: ModelOption[] = [
     ],
   },
   {
-    id: 'veo-3.1-fast', label: 'Veo 3.1 Fast', vendor: 'Google', provider: 'google',
+    id: 'veo-3.1-fast-generate-preview', label: 'Veo 3.1 Fast', vendor: 'Google', provider: 'google',
     cost: 0.15, userCost: markup(0.15), costLabel: costLabel(0.15, 'sec'),
     description: 'Faster Veo variant — same audio capabilities at 60% lower cost.', category: 'textToVideo',
     routes: [
-      { provider: 'google', modelId: 'veo-3.1-fast', label: 'Direct' },
+      { provider: 'google', modelId: 'veo-3.1-fast-generate-preview', label: 'Direct' },
       { provider: 'fal', modelId: 'fal-veo-3.1-fast', falModelId: 'fal-ai/veo3.1/fast', label: 'fal.ai' },
     ],
   },
@@ -357,6 +358,54 @@ export const UPSCALE_MODELS: ModelOption[] = [
   },
 ];
 
+// --------------- AVATAR VIDEO (talking head / image-to-video with audio) ---------------
+export const AVATAR_VIDEO_MODELS: ModelOption[] = [
+  {
+    id: 'fal-omnihuman-1.5', label: 'OmniHuman v1.5', vendor: 'ByteDance', provider: 'fal',
+    falModelId: 'fal-ai/bytedance/omnihuman/v1.5', cost: 0.15, userCost: markup(0.15), costLabel: costLabel(0.15, 'video'),
+    description: 'High-quality talking avatar from image + audio with vivid emotions and body motion.', category: 'avatarVideo',
+  },
+  {
+    id: 'fal-creatify-aurora', label: 'Creatify Aurora', vendor: 'Creatify', provider: 'fal',
+    falModelId: 'fal-ai/creatify/aurora', cost: 0.20, userCost: markup(0.20), costLabel: costLabel(0.20, 'video'),
+    description: 'Studio-quality talking avatar with natural lip-sync and singing support.', category: 'avatarVideo',
+  },
+  {
+    id: 'fal-veed-fabric', label: 'VEED Fabric 1.0', vendor: 'VEED', provider: 'fal',
+    falModelId: 'veed/fabric-1.0', cost: 0.15, userCost: markup(0.15), costLabel: costLabel(0.15, 'video'),
+    description: 'Image-to-talking-video with natural speech and head movements.', category: 'avatarVideo',
+  },
+  {
+    id: 'fal-ai-avatar-text', label: 'AI Avatar (Text)', vendor: 'fal.ai', provider: 'fal',
+    falModelId: 'fal-ai/ai-avatar/single-text', cost: 0.10, userCost: markup(0.10), costLabel: costLabel(0.10, 'video'),
+    description: 'Generates talking avatar from image + text prompt with auto TTS and lip-sync.', category: 'avatarVideo',
+  },
+  {
+    id: 'fal-heygen-avatar4', label: 'HeyGen Avatar 4', vendor: 'HeyGen', provider: 'fal',
+    falModelId: 'fal-ai/heygen/avatar4/image-to-video', cost: 0.25, userCost: markup(0.25), costLabel: costLabel(0.25, 'video'),
+    description: 'Premium photo avatar model for studio-quality UGC and spokesperson videos.', category: 'avatarVideo',
+  },
+  {
+    id: 'fal-kling-ai-avatar', label: 'Kling AI Avatar', vendor: 'Kling', provider: 'fal',
+    falModelId: 'fal-ai/kling-video/v1/pro/ai-avatar', cost: 0.112, userCost: markup(0.112), costLabel: costLabel(0.112, 'video'),
+    description: 'Creates avatar videos with humans, animals, cartoons, or stylized characters.', category: 'avatarVideo',
+  },
+];
+
+// --------------- LIPSYNC (video-to-video) ---------------
+export const LIPSYNC_MODELS: ModelOption[] = [
+  {
+    id: 'fal-sync-lipsync', label: 'Sync Lipsync 2.0', vendor: 'Sync', provider: 'fal',
+    falModelId: 'fal-ai/sync-lipsync/v2', cost: 0.10, userCost: markup(0.10), costLabel: costLabel(0.10, 'video'),
+    description: 'Realistic lipsync animations from audio with high-quality synchronization.', category: 'lipsync',
+  },
+  {
+    id: 'fal-pixverse-lipsync', label: 'PixVerse Lipsync', vendor: 'PixVerse', provider: 'fal',
+    falModelId: 'fal-ai/pixverse/lipsync', cost: 0.08, userCost: markup(0.08), costLabel: costLabel(0.08, 'video'),
+    description: 'Budget-friendly lipsync with natural mouth movements from audio input.', category: 'lipsync',
+  },
+];
+
 // --------------- LLM: CONTENT GENERATION ---------------
 export const CONTENT_GENERATION_MODELS: ModelOption[] = [
   {
@@ -450,6 +499,8 @@ export const ALL_MODELS: ModelOption[] = [
   ...IMAGE_EDIT_MODELS,
   ...TEXT_TO_VIDEO_MODELS,
   ...IMAGE_TO_VIDEO_MODELS,
+  ...AVATAR_VIDEO_MODELS,
+  ...LIPSYNC_MODELS,
   ...BG_REMOVAL_MODELS,
   ...UPSCALE_MODELS,
   ...CONTENT_GENERATION_MODELS,
@@ -477,6 +528,8 @@ export interface ModelPreferences {
   imageEdit: string;
   textToVideo: string;
   imageToVideo: string;
+  avatarVideo: string;
+  lipsync: string;
   backgroundRemoval: string;
   imageUpscale: string;
   contentGeneration: string;
@@ -491,6 +544,8 @@ const DEFAULTS: ModelPreferences = {
   imageEdit: 'nano-banana-pro-edit',
   textToVideo: 'veo-3.1-generate-preview',
   imageToVideo: 'fal-veo-3.1-fast-i2v',
+  avatarVideo: 'fal-omnihuman-1.5',
+  lipsync: 'fal-sync-lipsync',
   backgroundRemoval: 'fal-bria-bg-remove',
   imageUpscale: 'fal-seedvr-upscale',
   contentGeneration: 'claude-sonnet-4',

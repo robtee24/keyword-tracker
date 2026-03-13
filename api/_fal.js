@@ -32,7 +32,7 @@ export async function falTextToImage(modelId, { prompt, aspectRatio = '16:9', nu
   assertKey();
   const input = { prompt, num_images: numImages };
 
-  if (modelId.includes('nano-banana')) {
+  if (modelId.includes('nano-banana') || modelId.includes('gemini')) {
     input.aspect_ratio = aspectRatio;
     input.resolution = resolution;
   } else if (modelId.includes('flux')) {
@@ -44,6 +44,15 @@ export async function falTextToImage(modelId, { prompt, aspectRatio = '16:9', nu
       '3:4': 'portrait_4_3',
     };
     input.image_size = sizeMap[aspectRatio] || 'landscape_4_3';
+  } else if (modelId.includes('seedream') || modelId.includes('recraft') || modelId.includes('qwen') || modelId.includes('gpt-image')) {
+    const sizeMap = {
+      '1:1': 'square_hd',
+      '16:9': 'landscape_16_9',
+      '9:16': 'portrait_16_9',
+      '4:3': 'landscape_4_3',
+      '3:4': 'portrait_4_3',
+    };
+    input.image_size = sizeMap[aspectRatio] || 'landscape_16_9';
   }
 
   const result = await fal.subscribe(modelId, { input });
@@ -57,11 +66,21 @@ export async function falTextToImage(modelId, { prompt, aspectRatio = '16:9', nu
 
 /**
  * Image editing via fal.ai (image-to-image).
- * Returns { imageUrl, images }
+ * Models use either image_url (single) or image_urls (array).
  */
 export async function falEditImage(modelId, { imageUrl, prompt, aspectRatio }) {
   assertKey();
-  const input = { prompt, image_url: imageUrl };
+  const input = { prompt };
+
+  const usesImageUrls = modelId.includes('flux-2-pro') || modelId.includes('gpt-image')
+    || modelId.includes('seedream') || modelId.includes('qwen');
+
+  if (usesImageUrls) {
+    input.image_urls = [imageUrl];
+  } else {
+    input.image_url = imageUrl;
+  }
+
   if (aspectRatio) input.aspect_ratio = aspectRatio;
 
   const result = await fal.subscribe(modelId, { input });
@@ -73,30 +92,48 @@ export async function falEditImage(modelId, { imageUrl, prompt, aspectRatio }) {
   return { imageUrl: firstUrl, images };
 }
 
+function parseDurationSec(duration) {
+  if (typeof duration === 'number') return duration;
+  if (typeof duration === 'string') return parseInt(duration) || 8;
+  return 8;
+}
+
+function snapToAllowed(value, allowed) {
+  return allowed.reduce((best, v) => Math.abs(v - value) < Math.abs(best - value) ? v : best, allowed[0]);
+}
+
 /**
  * Text-to-video via fal.ai.
  * Returns { videoUrl }
  */
 export async function falTextToVideo(modelId, { prompt, duration = '8s', aspectRatio = '16:9', resolution = '720p', generateAudio = true, negativePrompt }) {
   assertKey();
+  const rawSec = parseDurationSec(duration);
   const input = { prompt };
 
-  if (modelId.includes('veo')) {
-    input.duration = typeof duration === 'number' ? `${duration}s` : duration;
+  if (modelId.includes('sora')) {
+    input.duration = snapToAllowed(rawSec, [4, 8, 12, 16, 20]);
+    input.aspect_ratio = aspectRatio;
+    input.resolution = resolution;
+  } else if (modelId.includes('veo')) {
+    input.duration = `${rawSec}s`;
     input.aspect_ratio = aspectRatio;
     input.resolution = resolution;
     input.generate_audio = generateAudio;
     if (negativePrompt) input.negative_prompt = negativePrompt;
   } else if (modelId.includes('kling')) {
-    input.duration = typeof duration === 'number' ? String(duration) : duration.replace('s', '');
+    input.duration = String(snapToAllowed(rawSec, [5, 10]));
     input.aspect_ratio = aspectRatio;
   } else if (modelId.includes('ltx')) {
-    input.duration = typeof duration === 'number' ? duration : parseInt(duration);
+    input.duration = snapToAllowed(rawSec, [6, 8, 10]);
     input.aspect_ratio = aspectRatio;
-    input.resolution = resolution;
+    input.resolution = resolution || '1080p';
     input.generate_audio = generateAudio;
+  } else if (modelId.includes('wan') || modelId.includes('cosmos') || modelId.includes('minimax') || modelId.includes('pixverse')) {
+    input.duration = rawSec;
+    if (aspectRatio) input.aspect_ratio = aspectRatio;
   } else {
-    input.duration = duration;
+    input.duration = rawSec;
     if (aspectRatio) input.aspect_ratio = aspectRatio;
   }
 
@@ -113,24 +150,51 @@ export async function falTextToVideo(modelId, { prompt, duration = '8s', aspectR
  */
 export async function falImageToVideo(modelId, { imageUrl, prompt, duration = '8s', aspectRatio = '16:9', resolution = '720p', generateAudio = true }) {
   assertKey();
+  const rawSec = parseDurationSec(duration);
   const input = { image_url: imageUrl };
   if (prompt) input.prompt = prompt;
 
-  if (modelId.includes('veo')) {
-    input.duration = typeof duration === 'number' ? `${duration}s` : duration;
+  if (modelId.includes('sora')) {
+    input.duration = snapToAllowed(rawSec, [4, 8, 12, 16, 20]);
+    input.aspect_ratio = aspectRatio;
+    input.resolution = resolution;
+  } else if (modelId.includes('veo')) {
+    input.duration = `${rawSec}s`;
     if (aspectRatio) input.aspect_ratio = aspectRatio;
     input.resolution = resolution;
     input.generate_audio = generateAudio;
   } else if (modelId.includes('kling')) {
-    input.duration = typeof duration === 'number' ? String(duration) : duration.replace('s', '');
+    input.duration = String(snapToAllowed(rawSec, [5, 10]));
   } else if (modelId.includes('ltx')) {
-    input.duration = typeof duration === 'number' ? duration : parseInt(duration);
-    input.aspect_ratio = aspectRatio;
-    input.resolution = resolution;
+    input.duration = snapToAllowed(rawSec, [6, 8, 10]);
+    input.aspect_ratio = aspectRatio || 'auto';
+    input.resolution = resolution || '1080p';
     input.generate_audio = generateAudio;
+  } else if (modelId.includes('wan') || modelId.includes('cosmos') || modelId.includes('minimax') || modelId.includes('pixverse')) {
+    input.duration = rawSec;
   } else {
-    if (duration) input.duration = duration;
+    if (duration) input.duration = rawSec;
   }
+
+  const result = await fal.subscribe(modelId, { input });
+  const data = result.data;
+
+  const videoUrl = data.video?.url || null;
+  return { videoUrl };
+}
+
+/**
+ * Avatar/lipsync video via fal.ai.
+ * Returns { videoUrl }
+ */
+export async function falAvatarVideo(modelId, { imageUrl, audioUrl, text, duration }) {
+  assertKey();
+  const input = {};
+
+  if (imageUrl) input.image_url = imageUrl;
+  if (audioUrl) input.audio_url = audioUrl;
+  if (text) input.text = text;
+  if (duration) input.duration = parseDurationSec(duration);
 
   const result = await fal.subscribe(modelId, { input });
   const data = result.data;

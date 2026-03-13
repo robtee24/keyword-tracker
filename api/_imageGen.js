@@ -31,9 +31,9 @@ export const IMAGE_MODELS = {
   'fal-flux-2-pro': { provider: 'fal', falModelId: 'fal-ai/flux-2-pro', label: 'FLUX 2 Pro', cost: '$0.03' },
   'fal-recraft-v3': { provider: 'fal', falModelId: 'fal-ai/recraft/v3/text-to-image', label: 'Recraft V3', cost: '$0.04' },
   'fal-recraft-v4-pro': { provider: 'fal', falModelId: 'fal-ai/recraft/v4/pro/text-to-image', label: 'Recraft V4 Pro', cost: '$0.25' },
-  'fal-seedream-4.5': { provider: 'fal', falModelId: 'fal-ai/bytedance/seedream/v4.5', label: 'Seedream 4.5', cost: '$0.03' },
+  'fal-seedream-4.5': { provider: 'fal', falModelId: 'fal-ai/bytedance/seedream/v4.5/text-to-image', label: 'Seedream 4.5', cost: '$0.03' },
   'fal-qwen-image-2': { provider: 'fal', falModelId: 'fal-ai/qwen-image-2/text-to-image', label: 'Qwen Image 2.0', cost: '$0.02' },
-  'fal-imagineart-1.5': { provider: 'fal', falModelId: 'fal-ai/imagineart/imagineart-1.5-preview/text-to-image', label: 'ImagineArt 1.5', cost: '$0.04' },
+  'fal-imagineart-1.5': { provider: 'fal', falModelId: 'imagineart/imagineart-1.5-preview/text-to-image', label: 'ImagineArt 1.5', cost: '$0.04' },
 };
 
 export const VIDEO_MODELS = {

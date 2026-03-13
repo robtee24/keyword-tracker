@@ -20,7 +20,7 @@ const EDIT_COSTS = {
 };
 
 const VIDEO_COSTS_PER_SEC = {
-  'veo-3.1-generate-preview': 0.40, 'veo-3.1-fast': 0.15,
+  'veo-3.1-generate-preview': 0.40, 'veo-3.1-fast-generate-preview': 0.15,
   'fal-sora-2': 0.30, 'fal-sora-2-pro': 0.50,
   'fal-kling-3-pro': 0.112, 'fal-kling-2.5-turbo': 0.07,
   'fal-ltx-2.3-fast': 0.04, 'fal-ltx-2.3-pro': 0.06,
@@ -73,7 +73,7 @@ export default async function handler(req, res) {
 
     if (type === 'textToVideo') {
       const durationSec = 5;
-      if (model.startsWith('veo-') || model === 'veo-3.1-generate-preview' || model === 'veo-3.1-fast') {
+      if (model.startsWith('veo-') || model === 'veo-3.1-generate-preview' || model === 'veo-3.1-fast-generate-preview') {
         const geminiKey = process.env.GEMINI_API_KEY;
         if (!geminiKey) throw new Error('GEMINI_API_KEY not configured');
         const veoBase = 'https://generativelanguage.googleapis.com/v1beta';
@@ -82,7 +82,7 @@ export default async function handler(req, res) {
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
           body: JSON.stringify({
             instances: [{ prompt: prompt || 'A calm ocean wave rolling onto a sandy beach at golden hour' }],
-            parameters: { aspectRatio: '16:9', sampleCount: 1, durationSeconds: durationSec, generateAudio: true, personGeneration: 'allow_all' },
+            parameters: { aspectRatio: '16:9', sampleCount: 1, durationSeconds: Math.max(4, Math.min(8, durationSec)), generateAudio: true, personGeneration: 'allow_all', resolution: '720p' },
           }),
         });
         if (!veoResp.ok) {

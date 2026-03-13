@@ -4,6 +4,7 @@ import { API_ENDPOINTS } from '../config/api';
 import { InfoTooltip } from './Tooltip';
 import {
   TEXT_TO_IMAGE_MODELS, IMAGE_EDIT_MODELS, TEXT_TO_VIDEO_MODELS, IMAGE_TO_VIDEO_MODELS,
+  AVATAR_VIDEO_MODELS, LIPSYNC_MODELS,
   CONTENT_GENERATION_MODELS, ANALYSIS_AUDIT_MODELS, IDEA_GENERATION_MODELS,
   getModelPreferences, setModelPreferences, formatModelOption,
 } from '../config/models';
@@ -90,6 +91,8 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
   const [imageEdit, setImageEdit] = useState(prefs.imageEdit);
   const [textToVideo, setTextToVideo] = useState(prefs.textToVideo);
   const [imageToVideo, setImageToVideo] = useState(prefs.imageToVideo);
+  const [avatarVideo, setAvatarVideo] = useState(prefs.avatarVideo);
+  const [lipsync, setLipsync] = useState(prefs.lipsync);
   const [contentGeneration, setContentGeneration] = useState(prefs.contentGeneration);
   const [analysisAudit, setAnalysisAudit] = useState(prefs.analysisAudit);
   const [ideaGeneration, setIdeaGeneration] = useState(prefs.ideaGeneration);
@@ -117,6 +120,8 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
     setImageEdit(p.imageEdit);
     setTextToVideo(p.textToVideo);
     setImageToVideo(p.imageToVideo);
+    setAvatarVideo(p.avatarVideo);
+    setLipsync(p.lipsync);
     setContentGeneration(p.contentGeneration);
     setAnalysisAudit(p.analysisAudit);
     setIdeaGeneration(p.ideaGeneration);
@@ -134,6 +139,8 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
       case 'imageEdit': setImageEdit(model); break;
       case 'textToVideo': setTextToVideo(model); update.videoModel = model; break;
       case 'imageToVideo': setImageToVideo(model); break;
+      case 'avatarVideo': setAvatarVideo(model); break;
+      case 'lipsync': setLipsync(model); break;
       case 'contentGeneration': setContentGeneration(model); break;
       case 'analysisAudit': setAnalysisAudit(model); break;
       case 'ideaGeneration': setIdeaGeneration(model); break;
@@ -232,6 +239,20 @@ export default function SettingsView({ projectId, projectName, isOwner }: Settin
             models={IMAGE_TO_VIDEO_MODELS}
             selected={imageToVideo}
             onChange={(m) => handleChange('imageToVideo', m)}
+          />
+          <ModelDropdown
+            label="Avatar / Talking Head"
+            hint="Generate talking avatar videos from image + audio or text"
+            models={AVATAR_VIDEO_MODELS}
+            selected={avatarVideo}
+            onChange={(m) => handleChange('avatarVideo', m)}
+          />
+          <ModelDropdown
+            label="Lipsync"
+            hint="Add lip-sync to existing videos from audio"
+            models={LIPSYNC_MODELS}
+            selected={lipsync}
+            onChange={(m) => handleChange('lipsync', m)}
           />
         </div>
       </div>

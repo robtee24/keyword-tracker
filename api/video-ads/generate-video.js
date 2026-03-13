@@ -29,7 +29,7 @@ const MODEL_COSTS_PER_SEC = {
   'fal-ltx-2.3-fast': 0.04,
   'fal-ltx-2.3-pro': 0.06,
   'veo-3.1-generate-preview': 0.40,
-  'veo-3.1-fast': 0.15,
+  'veo-3.1-fast-generate-preview': 0.15,
 };
 
 function isFalModel(model) {
@@ -41,6 +41,7 @@ async function generateVeoVideo(prompt, aspectRatio = '16:9', durationSeconds = 
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
 
   const model = (modelOverride && modelOverride.startsWith('veo')) ? modelOverride : 'veo-3.1-generate-preview';
+  const dur = Math.max(4, Math.min(8, Math.round(Number(durationSeconds) || 8)));
 
   const response = await fetch(
     `${VEO_BASE}/models/${model}:predictLongRunning`,
@@ -54,9 +55,11 @@ async function generateVeoVideo(prompt, aspectRatio = '16:9', durationSeconds = 
         instances: [{ prompt }],
         parameters: {
           aspectRatio,
-          durationSeconds,
+          durationSeconds: dur,
           sampleCount: 1,
           resolution: '720p',
+          generateAudio: true,
+          personGeneration: 'allow_all',
         },
       }),
     }

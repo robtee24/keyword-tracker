@@ -382,9 +382,12 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
             projectId,
           }),
         });
-        const data = await parseJsonOrThrow<{ operationName: string; sceneIndex: number }>(resp);
+        const data = await parseJsonOrThrow<{ operationName?: string; videoUrl?: string; sceneIndex: number; status?: string }>(resp);
 
-        if (data.operationName) {
+        if (data.status === 'completed' && data.videoUrl) {
+          setGeneratingScenes(prev => ({ ...prev, [key]: false }));
+          await fetchProjects();
+        } else if (data.operationName) {
           startPolling(vpId, sceneIdx, data.operationName);
         }
       } catch (err: unknown) {
@@ -406,7 +409,7 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ videoProjectId: vpId, generateAll: true, model: getModelPreferences(projectId).videoModel, context: buildVideoContext(project), projectId }),
         });
-        const data = await parseJsonOrThrow<{ operations: Array<{ sceneIndex: number; operationName?: string; status: string; error?: string }> }>(resp);
+        const data = await parseJsonOrThrow<{ operations: Array<{ sceneIndex: number; operationName?: string; videoUrl?: string; status: string; error?: string }> }>(resp);
 
         const failedOps = data.operations.filter(op => op.status === 'failed');
         if (failedOps.length === data.operations.length) {
@@ -417,12 +420,19 @@ export default function VideoCreateView({ siteUrl, projectId, initialIdea, onCle
           setError(`${failedOps.length} scene(s) failed. ${data.operations.length - failedOps.length} generating.`);
         }
 
+        let hasPolling = false;
         for (const op of data.operations) {
-          if (op.operationName) {
+          if (op.status === 'completed' && op.videoUrl) {
+            continue;
+          } else if (op.operationName) {
             const key = `${vpId}-${op.sceneIndex}`;
             setGeneratingScenes(prev => ({ ...prev, [key]: true }));
             startPolling(vpId, op.sceneIndex, op.operationName);
+            hasPolling = true;
           }
+        }
+        if (!hasPolling) {
+          await fetchProjects();
         }
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : 'Failed to generate videos');
