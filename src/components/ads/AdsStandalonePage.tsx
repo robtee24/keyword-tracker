@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { onAuthStateChange, authenticatedFetch } from '../../services/authService';
@@ -12,7 +12,6 @@ import VideoCreateView from '../VideoCreateView';
 import AdCreatorView from '../AdCreatorView';
 import TestView from '../TestView';
 import type { Project } from '../ProjectsView';
-import type { Session } from '@supabase/supabase-js';
 
 const ACCESS_PASSWORD = 'BNBCALC';
 
@@ -235,54 +234,69 @@ function LoginForm({ onAuthenticated }: { onAuthenticated: () => void }) {
 
 export default function AdsStandalonePage() {
   const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem('ads_unlocked') === '1');
-  const [session, setSession] = useState<Session | null>(null);
+  const [hasSession, setHasSession] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [project, setProject] = useState<Project | null>(null);
-  const [projectLoading, setProjectLoading] = useState(false);
+  const [projectLoading, setProjectLoading] = useState(true);
+  const [projectError, setProjectError] = useState('');
   const [currentView, setCurrentView] = useState<AdsView>('video-ideas');
   const [videoExpanded, setVideoExpanded] = useState(true);
   const [staticExpanded, setStaticExpanded] = useState(false);
   const [adTizeIdea, setAdTizeIdea] = useState<Record<string, unknown> | null>(null);
+  const fetchedRef = useRef(false);
 
-  // Check for existing Supabase session
   useEffect(() => {
+    let cancelled = false;
+
     supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
+      if (cancelled) return;
+      setHasSession(!!s);
       setAuthLoading(false);
     });
 
     const { data: { subscription } } = onAuthStateChange((s) => {
-      setSession(s);
+      if (cancelled) return;
+      setHasSession(!!s);
       setAuthLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => { cancelled = true; subscription.unsubscribe(); };
   }, []);
 
-  // Fetch projects and auto-select BNBCalc
   const fetchProject = useCallback(async () => {
-    if (!session) return;
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
     setProjectLoading(true);
+    setProjectError('');
     try {
-      const res = await authenticatedFetch(API_ENDPOINTS.projects.list);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const res = await authenticatedFetch(API_ENDPOINTS.projects.list, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
       const data = await res.json();
       const projects: Project[] = data.projects || [];
 
-      const bnbProject = projects.find((p) =>
+      const bnbProject = projects.find((p: Project) =>
         p.domain.toLowerCase().includes('bnbcalc') ||
         p.name.toLowerCase().includes('bnbcalc')
       );
       setProject(bnbProject || projects[0] || null);
-    } catch {
+      if (projects.length === 0) setProjectError('No projects found in your account.');
+    } catch (err: unknown) {
+      fetchedRef.current = false;
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setProjectError(msg.includes('abort') ? 'Request timed out. Please retry.' : `Failed to load project: ${msg}`);
       setProject(null);
     } finally {
       setProjectLoading(false);
     }
-  }, [session]);
+  }, []);
 
   useEffect(() => {
-    if (session) fetchProject();
-  }, [session, fetchProject]);
+    if (hasSession && !fetchedRef.current) fetchProject();
+  }, [hasSession, fetchProject]);
 
   // Gate 1: Password
   if (!unlocked) {
@@ -298,15 +312,34 @@ export default function AdsStandalonePage() {
     );
   }
 
-  if (!session) {
-    return <LoginForm onAuthenticated={() => {}} />;
+  if (!hasSession) {
+    return <LoginForm onAuthenticated={() => setHasSession(true)} />;
   }
 
   // Gate 3: Project loading
-  if (projectLoading || !project) {
+  if (projectLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-400 text-sm">{projectLoading ? 'Loading project...' : 'No project found'}</div>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <div className="text-gray-400 text-sm">Loading project...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!project) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-sm text-center">
+          <p className="text-gray-600 text-sm mb-4">{projectError || 'No project found'}</p>
+          <button
+            onClick={() => { fetchedRef.current = false; fetchProject(); }}
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
